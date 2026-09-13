@@ -28,29 +28,15 @@ jobs:
       - name: Sync Capacitor
         run: npx cap sync android
 
-      - name: Decode keystore
-        run: |
-          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > android/release.keystore
-          echo "===== 解码后 keystore 大小：====="
-          wc -c android/release.keystore
-
-      - name: Verify keystore
-        run: |
-          echo "===== 尝试用 secret 里的密码读取 keystore ====="
-          keytool -list -keystore android/release.keystore \
-            -storepass "${{ secrets.KEYSTORE_PASSWORD }}" \
-            -alias "${{ secrets.KEY_ALIAS }}" || (echo "❌ keystore 读取失败，检查 secret" && exit 1)
-          echo "✅ keystore 读取成功"
-
       - name: Build APK
         run: |
           cd android
           chmod +x gradlew
           ./gradlew assembleRelease \
             -Pandroid.injected.signing.store.file=$(pwd)/release.keystore \
-            -Pandroid.injected.signing.store.password=${{ secrets.KEYSTORE_PASSWORD }} \
-            -Pandroid.injected.signing.key.alias=${{ secrets.KEY_ALIAS }} \
-            -Pandroid.injected.signing.key.password=${{ secrets.KEY_PASSWORD }}
+            -Pandroid.injected.signing.store.password=***REMOVED*** \
+            -Pandroid.injected.signing.key.alias=yathoughts \
+            -Pandroid.injected.signing.key.password=***REMOVED***
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
