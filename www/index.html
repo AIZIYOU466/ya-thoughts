@@ -786,44 +786,31 @@
     pointer-events: none;
   }
 
-  /* 编辑页选中文字浮动工具栏：胶囊、白底、阴影 */
-  #fmt-bar {
-    position: fixed;
-    left: 50%;
-    transform: translate(-50%, 6px);
-    z-index: 55;
-    display: none;
-    align-items: center;
-    gap: 2px;
-    padding: 6px 10px;
-    background: #FFFFFF;
-    border-radius: var(--radius-pill);
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
-    opacity: 0;
-    pointer-events: none;
-    transition: opacity 0.15s var(--ease), transform 0.15s var(--ease);
-  }
-  #fmt-bar.show { display: inline-flex; opacity: 1; transform: translate(-50%, 0); pointer-events: auto; }
-  #fmt-bar button {
-    min-width: 40px;
-    height: 36px;
+  /* 底部常驻格式按钮：与图片按钮同风格的胶囊（无选区时置灰禁用） */
+  #fmt-bold,
+  #fmt-hilite {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    gap: 4px;
-    font-size: 15px;
-    color: var(--text-primary);
-    border-radius: 10px;
-    transition: background 0.15s var(--ease);
+    min-width: 40px;
+    min-height: 36px;
+    padding: 8px 12px;
+    border-radius: var(--radius-pill);
+    background: var(--img-btn-bg);
+    color: var(--img-btn-text);
+    font-size: 14px;
+    font-weight: 500;
+    transition: background 0.15s var(--ease), transform 0.1s var(--ease), color 0.15s var(--ease);
   }
-  #fmt-bar button:active { background: var(--chip-bg); }
-  #fmt-bar #fmt-bold { font-weight: 800; }
-  #fmt-bar button.on { background: var(--primary-soft); color: var(--primary); }
-  #fmt-bar .fmt-sep { width: 1px; height: 20px; background: var(--divider); margin: 0 4px; }
-  @media (prefers-color-scheme: dark) {
-    #fmt-bar { background: #2A2D33; box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5); }
-    #fmt-bar button.on { background: var(--primary-soft); }
-  }
+  #fmt-bold { font-weight: 800; } /* 字面 B 加粗显示，与工具栏其它文字一致 */
+  #fmt-bold:active,
+  #fmt-hilite:active { background: var(--chip-press); transform: scale(0.96); will-change: transform; }
+  /* 已应用格式的按下态反馈（active 类由 JS 同步） */
+  #fmt-bold.on,
+  #fmt-hilite.on { background: var(--primary-soft); color: var(--primary); }
+  /* 无选区：置灰不可用（disabled 时 pointer-events 放行，仍可视觉置灰） */
+  #fmt-bold:disabled,
+  #fmt-hilite:disabled { opacity: 0.45; pointer-events: none; }
   /* 编辑器里手动高亮的颜色（搜索页 mark 是另一个作用域，互不影响） */
   #editor mark { background: #FFF3B0; color: inherit; border-radius: 2px; }
   /* 列表卡片右上角“含重点图片”星标 */
@@ -893,6 +880,8 @@
     transition: background 0.15s var(--ease), transform 0.1s var(--ease);
   }
   #img-btn:active { background: var(--chip-press); transform: scale(0.96); will-change: transform; }
+  /* 三个胶囊按钮容器：横向排列、间距 8px、靠左 */
+  .tool-group { display: flex; align-items: center; gap: 8px; }
   #save-status {
     font-size: 12px;
     color: var(--text-tertiary);
@@ -1196,16 +1185,6 @@
   </div>
 </section>
 
-<!-- 选区浮动格式工具栏：加粗 / 高亮 -->
-<div id="fmt-bar">
-  <button id="fmt-bold" type="button" aria-label="加粗">B</button>
-  <span class="fmt-sep"></span>
-  <button id="fmt-hilite" type="button" aria-label="高亮">
-    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-      <path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/>
-    </svg>
-  </button>
-</div>
 <!-- 图片长按菜单（编辑页）：标记/取消重点 + 删除 -->
 <div id="img-menu" role="dialog" aria-modal="true" aria-label="图片操作">
   <div class="sheet-card">
@@ -1263,12 +1242,20 @@
   <div id="editor" contenteditable="true" data-placeholder="写点什么…&#10;第一行将作为标题"></div>
   <div id="image-strip" aria-label="便签图片"></div>
   <div class="editor-toolbar">
-    <button id="img-btn" title="从相册选图插入">
-      <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-        <rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/>
-      </svg>
-      <span>图片</span>
-    </button>
+    <div class="tool-group">
+      <button id="fmt-bold" type="button" title="加粗" aria-label="加粗" disabled>B</button>
+      <button id="fmt-hilite" type="button" title="高亮" aria-label="高亮" disabled>
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/>
+        </svg>
+      </button>
+      <button id="img-btn" type="button" title="从相册选图插入">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/>
+        </svg>
+        <span>图片</span>
+      </button>
+    </div>
     <span id="word-count">0 字</span>
     <span id="save-status">已保存</span>
   </div>
@@ -2323,6 +2310,7 @@
     editorEl.innerHTML = upgradeLegacyMarkers(note.content); // 同步写入，无竞态
     hydrateImages(editorEl, myToken); // 异步补 src/pos，完成后校验 token
     savedRange = null; // 换了笔记，旧选区作废；没点过光标则插入时落到末尾
+    savedSelection = null; // 底部格式按钮的选区快照同样作废（避免对新笔记误用旧选区）
     syncEditorTodoUI();
     resetUndoHistory(); // 每次打开便签都清空撤销历史
     updateWordCount(); // 打开即显示本篇字数
@@ -3287,10 +3275,11 @@
   });
   editorEl.addEventListener('blur', autosave);
 
-  /* ---------- 选中文字浮动工具栏：加粗 / 高亮 ---------- */
+  /* ---------- 底部常驻格式按钮：加粗 / 高亮（对保存的选区操作） ---------- */
 
-  var fmtBarEl = $('fmt-bar');
-  var fmtHideTimer = null;
+  var fmtBoldBtn = $('fmt-bold');
+  var fmtHiliteBtn = $('fmt-hilite');
+  var savedSelection = null; // 最近一次编辑器内选区快照：点底部按钮时 contenteditable 已失焦，靠它恢复
 
   function editorSelection() {
     var sel = window.getSelection();
@@ -3302,46 +3291,72 @@
   function fmtState(cmd) {
     try { return document.queryCommandState(cmd); } catch (e) { return false; }
   }
-  function refreshFmtStates() {
-    $('fmt-bold').classList.toggle('on', fmtState('bold'));
-    var markOn = false;
-    try { markOn = !!document.queryCommandState('hiliteColor'); } catch (e) {}
-    if (!markOn) { // 有些内核不支持 hiliteColor 状态查询：退回检查 <mark> 祖先
-      var sel = window.getSelection();
-      if (sel && sel.rangeCount > 0) {
-        var anc = sel.getRangeAt(0).commonAncestorContainer;
-        var el = anc.nodeType === 1 ? anc : anc.parentNode;
-        markOn = !!(el && el.closest && el.closest('#editor mark'));
+
+  // selectionchange 持续记录选区：编辑器内出现新选区就覆盖保存；
+  // 选区在编辑器内被收起/取消则清空；选区落到编辑器外（如点底部按钮失焦）保持不变
+  function saveSelection() {
+    var sel = editorSelection();
+    if (sel) {
+      savedSelection = sel.getRangeAt(0).cloneRange();
+    } else {
+      var live = window.getSelection();
+      if (live && live.anchorNode && editorEl.contains(live.anchorNode)) {
+        // 例外：焦点刚落到 B/A 按钮上时（个别内核 pointerdown 阻断焦点转移失效），
+        // 选区会塌陷成光标 —— 这是点按钮的副作用，不是用户主动取消，快照保留
+        var ae = document.activeElement;
+        var onFmtBtn = !!(ae && (ae.id === 'fmt-bold' || ae.id === 'fmt-hilite'));
+        if (!onFmtBtn) savedSelection = null;
       }
     }
-    $('fmt-hilite').classList.toggle('on', markOn);
+    updateFmtButtons();
   }
-  function hideFmtBar() {
-    clearTimeout(fmtHideTimer);
-    fmtBarEl.classList.remove('show');
-  }
-  function maybeShowFmtBar() {
-    if (!editorView.classList.contains('active')) { hideFmtBar(); return; }
-    var sel = editorSelection();
-    if (!sel) { hideFmtBar(); return; }
+
+  // 无选区置灰（disabled），有选区可点击；.on 标记当前选区已应用该格式（再点一次取消）
+  function updateFmtButtons() {
+    var hasSel = !!savedSelection && editorView.classList.contains('active');
+    fmtBoldBtn.disabled = !hasSel;
+    fmtHiliteBtn.disabled = !hasSel;
     refreshFmtStates();
-    fmtBarEl.classList.add('show');
-    var rect = sel.getRangeAt(0).getBoundingClientRect();
-    if (rect.width === 0 && rect.height === 0) return; // 异常选区不定位
-    var barH = fmtBarEl.offsetHeight || 48;
-    var x = rect.left + rect.width / 2;
-    var y = rect.top - barH - 10;
-    var margin = 8;
-    if (y < margin + 60) y = Math.min(rect.bottom + 10, window.innerHeight - barH - margin);
-    x = Math.max(margin + 40, Math.min(x, window.innerWidth - margin - 40));
-    fmtBarEl.style.left = x + 'px';
-    fmtBarEl.style.right = 'auto';
-    fmtBarEl.style.top = y + 'px';
   }
+  function refreshFmtStates() {
+    if (!savedSelection) {
+      fmtBoldBtn.classList.remove('on');
+      fmtHiliteBtn.classList.remove('on');
+      return;
+    }
+    fmtBoldBtn.classList.toggle('on', fmtState('bold'));
+    var markOn = false;
+    try { markOn = !!document.queryCommandState('hiliteColor'); } catch (e) {}
+    if (!markOn) markOn = !!selMarkAncestor(); // 有些内核不支持 hiliteColor 状态查询：退回检查 <mark> 祖先
+    fmtHiliteBtn.classList.toggle('on', markOn);
+  }
+
+  // 恢复保存的选区（先聚焦编辑器）；选区已失效（内容被替换等）则作废并返回 false
+  function restoreSelection() {
+    if (!savedSelection) return false;
+    var sc = savedSelection.startContainer;
+    if (!sc || !sc.isConnected || !editorEl.contains(sc)) {
+      savedSelection = null;
+      updateFmtButtons();
+      return false;
+    }
+    try {
+      editorEl.focus();
+      var sel = window.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(savedSelection);
+      return true;
+    } catch (e) {
+      savedSelection = null;
+      updateFmtButtons();
+      return false;
+    }
+  }
+
   function execFmt(cmd, val) {
-    editorEl.focus();
+    if (!restoreSelection()) return; // 无可用选区：什么都不做（按钮无选区时本就置灰）
     document.execCommand(cmd, false, val || null);
-    maybeShowFmtBar();
+    refreshFmtStates();
     editorEl.dispatchEvent(new Event('input', { bubbles: true })); // 触发自动保存与撤销快照
   }
 
@@ -3387,7 +3402,7 @@
 
   // 高亮 toggle：已是高亮 → 取消；否则 execCommand，失败则包 <mark>
   function toggleHighlight() {
-    editorEl.focus();
+    if (!restoreSelection()) return; // 先恢复保存的选区再操作，与 execFmt 同一思路
     var markEl = selMarkAncestor();
     var stateOn = fmtState('hiliteColor');
     if (markEl) {
@@ -3399,26 +3414,21 @@
       try { ok = document.execCommand('hiliteColor', false, '#FFF3B0'); } catch (e) {}
       if (!ok) wrapSelectionInMark();
     }
-    maybeShowFmtBar();
+    refreshFmtStates();
     editorEl.dispatchEvent(new Event('input', { bubbles: true }));
   }
 
-  $('fmt-bold').addEventListener('click', function () { execFmt('bold'); });
-  $('fmt-hilite').addEventListener('click', toggleHighlight);
+  fmtBoldBtn.addEventListener('click', function () { execFmt('bold'); });
+  fmtHiliteBtn.addEventListener('click', toggleHighlight);
 
-  // 按钮按下不抢编辑器焦点，选区才不会丢
-  Array.prototype.forEach.call(fmtBarEl.querySelectorAll('button'), function (b) {
-    b.addEventListener('mousedown', function (e) { e.preventDefault(); });
-    b.addEventListener('touchstart', function (e) { e.preventDefault(); }, { passive: false });
+  // 按下不抢编辑器焦点，选区才不会丢（pointerdown 阻止焦点转移，click 仍会触发）
+  Array.prototype.forEach.call([fmtBoldBtn, fmtHiliteBtn], function (b) {
+    b.addEventListener('pointerdown', function (e) { e.preventDefault(); });
+    b.addEventListener('mousedown', function (e) { e.preventDefault(); }); // 不支持 Pointer Events 的旧内核兜底
   });
 
-  // 选区变化 → 显示/隐藏/移位工具栏；滚动时先隐藏避免错位
-  document.addEventListener('selectionchange', function () {
-    clearTimeout(fmtHideTimer);
-    fmtHideTimer = setTimeout(maybeShowFmtBar, 120); // 防抖，避免拖选过程频繁定位
-  });
-  window.addEventListener('scroll', hideFmtBar, true);
-  window.addEventListener('resize', hideFmtBar);
+  // 选区持续记录 + 按钮可用态同步
+  document.addEventListener('selectionchange', saveSelection);
 
   // 粘贴时只保留纯文本与换行，清掉富文本格式
   editorEl.addEventListener('paste', function (e) {
@@ -3514,6 +3524,30 @@
     if (t.closest('#sel-delete')) buzz(30); // 删除确认后 30ms
     if (t.closest('#sel-export') || t.closest('#menu-export')) buzz(20); // 导出 20ms
   }, true);
+})();
+
+/* ---------- Android 物理返回键：编辑页 → 列表；多选 → 退出多选；列表 → 退出 App ----------
+   仅 Capacitor 打包环境生效：浏览器里 window.Capacitor 不存在，整段跳过，不影响网页测试。
+   页面状态从 DOM class 读取（两个 IIFE 闭包内的 backToList/exitMultiMode 不直接可见），
+   通过触发现有按钮的 click 复用原有处理函数，不改任何业务逻辑。 */
+(function () {
+  'use strict';
+  if (!(window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.App)) return;
+  var App = window.Capacitor.Plugins.App;
+  App.addListener('backButton', function () {
+    // 编辑页 → 返回列表（复用 #back-btn 的现有处理 backToList）
+    if (document.getElementById('editor-view').classList.contains('active')) {
+      document.getElementById('back-btn').click();
+      return;
+    }
+    // 多选模式 → 退出多选（复用 #sel-cancel 的现有处理 exitMultiMode）
+    if (document.getElementById('list-view').classList.contains('multi')) {
+      document.getElementById('sel-cancel').click();
+      return;
+    }
+    // 列表页且非多选 → 允许退出 App
+    App.exitApp();
+  });
 })();
 </script>
 </body>
