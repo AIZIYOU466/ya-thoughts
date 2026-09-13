@@ -1,0 +1,3510 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content"> <!-- interactive-widget：输入法弹出时压缩视口，列表不被键盘遮挡 -->
+<title>便签 · 极简备忘录</title>
+<style>
+  /* ============ 设计系统：颜色 / 圆角 / 阴影 / 缓动 ============ */
+  :root {
+    --bg-page: #F7F8FA;
+    --bg-card: #FFFFFF;
+    --bg-toolbar: rgba(255, 255, 255, 0.92);
+    --text-primary: #1A1D21;
+    --text-secondary: #6B7280;
+    --text-tertiary: #A8ADB7;
+    --divider: #EDEFF2;
+    --primary: #2E6BE6;
+    --primary-soft: #EAF1FD;
+    --danger: #E5484D;
+    --radius-card: 16px;
+    --radius-btn: 12px;
+    --radius-pill: 999px;
+    --chip-bg: #F0F2F5;
+    --chip-press: #E4E7EC;
+    --tap-press: #FAFBFC;
+    --sel-border: #D0D4DA;
+    --sel-card: #F5F9FF;
+    --icon-idle: #D8DCE3;
+    --mask: rgba(0, 0, 0, 0.4);
+    --shadow-card: 0 2px 6px rgba(0, 0, 0, 0.06);
+    --shadow-fab: 0 6px 20px rgba(46, 107, 230, 0.32);
+    --card-border: 1px solid rgba(0, 0, 0, 0.04);
+    --time-muted: #B0B4BB;
+    --img-btn-bg: #EEF1F5;
+    --img-btn-text: #6B7280;
+    --count-color: #A8ADB7;
+    --ease-swift: cubic-bezier(0.32, 0.72, 0, 1);
+    --shadow-pop: 0 8px 32px rgba(0, 0, 0, 0.12);
+    --ease: cubic-bezier(0.4, 0, 0.2, 1);
+    --ease-out: cubic-bezier(0.32, 0.72, 0, 1);
+    --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg-page: #0F1115;
+      --bg-card: #1A1D21;
+      --bg-toolbar: rgba(26, 29, 33, 0.92);
+      --text-primary: #E8EAED;
+      --text-secondary: #9AA0A6;
+      --text-tertiary: #6E747D;
+      --divider: #22262D;
+      --primary: #2E6BE6;
+      --primary-soft: #16233D;
+      --danger: #E5484D;
+      --chip-bg: #23272E;
+      --chip-press: #2A2F36;
+      --tap-press: #1F2329;
+      --sel-border: #3A3F46;
+      --sel-card: #14202F;
+      --icon-idle: #2E333B;
+      --mask: rgba(0, 0, 0, 0.55);
+      --shadow-card: 0 2px 8px rgba(0, 0, 0, 0.4);
+      --shadow-pop: 0 8px 32px rgba(0, 0, 0, 0.5);
+      --card-border: 1px solid rgba(255, 255, 255, 0.06);
+      --time-muted: #6E747D;
+      --img-btn-bg: #252932;
+      --img-btn-text: #C8CDD5;
+      --count-color: #6E747D;
+    }
+  }
+
+  /* ============ 基础 ============ */
+  * { box-sizing: border-box; margin: 0; padding: 0; scrollbar-width: none; }
+  *::-webkit-scrollbar { display: none; }
+  html, body { height: 100%; }
+  body {
+    font-family: -apple-system, "PingFang SC", "Helvetica Neue", sans-serif;
+    background: var(--bg-page);
+    color: var(--text-primary);
+    -webkit-font-smoothing: antialiased;
+    -webkit-tap-highlight-color: transparent;
+    -webkit-user-select: none;
+    user-select: none;
+    overscroll-behavior: none;
+  }
+  button {
+    font-family: inherit;
+    color: inherit;
+    background: none;
+    border: none;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+  img { -webkit-user-drag: none; }
+
+  .view { display: none; height: 100dvh; }
+  .view.active { display: flex; flex-direction: column; }
+  /* 编辑页盖在列表上层（不透明背景）；切换时列表直接显隐，不再做视差联动 */
+  #editor-view { position: relative; z-index: 2; background: var(--bg-page); }
+
+  /* 页面切换（简化版）：编辑页激活时基线 transform 为 translateX(100%)（初始态），
+     进页加 .slide-in → 滑到 0；返回加 .leaving → 滑回 100%；
+     transitionend（或超时兜底）后移除临时 class 复位，任何情况下不残留中间 transform */
+  #editor-view.active { transform: translateX(100%); transition: transform 0.28s var(--ease-swift); }
+  #editor-view.active.slide-in { transform: translateX(0); }
+  #editor-view.active.leaving { transform: translateX(100%); }
+  @keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
+  @keyframes fade-out { from { opacity: 1; } to { opacity: 0; } }
+  @keyframes pop-in { from { opacity: 0; transform: scale(0.96); } to { opacity: 1; transform: scale(1); } }
+  @keyframes box-pop { from { transform: scale(0); } to { transform: scale(1); } }
+
+  /* ============ 列表页：毛玻璃顶栏（悬浮，列表从其下滚过） ============ */
+  #list-view { position: relative; max-width: 640px; margin: 0 auto; width: 100%; }
+  #list-header {
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    z-index: 5;
+    height: 56px;
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    align-items: center;
+    padding: 0 10px 0 20px;
+    background: var(--bg-toolbar);
+    -webkit-backdrop-filter: blur(20px);
+    backdrop-filter: blur(20px);
+    border-bottom: 1px solid var(--divider);
+  }
+  #list-header h1 { grid-column: 2; font-size: 17px; font-weight: 600; text-align: center; }
+  #list-header .count { display: none; } /* 计数已移到列表第一行 #note-count-bar */
+
+  .menu-btn {
+    justify-self: end;
+    width: 44px; height: 44px;
+    display: inline-flex; align-items: center; justify-content: center;
+    border-radius: 50%;
+    color: var(--text-secondary);
+    transition: background 0.15s var(--ease), transform 0.1s var(--ease);
+  }
+  .menu-btn:active { background: var(--chip-bg); transform: scale(0.94); will-change: transform; }
+
+  /* 顶栏右侧动作区：「选择」入口 + ⋮ 菜单 */
+  .hdr-actions { grid-column: 3; justify-self: end; display: inline-flex; align-items: center; }
+  #sel-enter {
+    min-height: 44px;
+    padding: 0 8px 0 12px;
+    font-size: 14px;
+    color: var(--primary);
+    border-radius: 10px;
+    transition: background 0.15s var(--ease), transform 0.1s var(--ease);
+  }
+  #sel-enter:active { background: var(--chip-bg); transform: scale(0.96); }
+
+  /* 多选模式顶栏：取消 / 已选 X 条 / 导出 */
+  #sel-bar { display: none; align-items: center; gap: 8px; grid-column: 1 / -1; justify-content: space-between; }
+  #list-header.selecting h1,
+  #list-header.selecting .count,
+  #list-header.selecting .menu-btn,
+  #list-header.selecting .hdr-actions { display: none; }
+  #list-header.selecting #sel-bar { display: flex; }
+  #sel-bar button {
+    min-height: 44px;
+    padding: 0 10px;
+    font-size: 15px;
+    color: var(--primary);
+    border-radius: 10px;
+    transition: background 0.15s var(--ease), transform 0.1s var(--ease);
+  }
+  #sel-cancel { font-weight: 500; }
+  #sel-delete { color: var(--danger); font-weight: 600; }
+  #sel-delete:active { background: rgba(229, 72, 77, 0.1); }
+  #sel-export { font-weight: 600; }
+  #sel-bar button:active { background: var(--chip-bg); transform: scale(0.96); }
+  #sel-count { font-size: 14px; color: var(--text-secondary); animation: fade-in 0.2s var(--ease); }
+
+  /* 列表页第一行：条数小字提示（#note-count 由原 JS 继续写入，位置从顶栏移到这里） */
+  #note-count-bar {
+    flex: 0 0 auto;
+    margin: calc(env(safe-area-inset-top) + 68px) 20px 0;
+    font-size: 14px;
+    line-height: 1;
+    color: var(--count-color);
+  }
+  #list-view.multi #note-count-bar { visibility: hidden; }
+
+  /* 搜索框：顶栏下方、分段控件上方 */
+  #search-wrap {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    height: 40px;
+    margin: 10px 20px 0;
+    padding: 0 12px;
+    background: #F0F2F5;
+    border: 1px solid transparent;
+    border-radius: 10px;
+    transition: background 0.15s var(--ease), border-color 0.15s var(--ease);
+  }
+  #search-wrap:focus-within { background: var(--bg-card); border-color: var(--primary); }
+  #search-icon { flex: 0 0 auto; color: #A8ADB7; }
+  #search-input {
+    flex: 1;
+    min-width: 0;
+    height: 100%;
+    border: none;
+    outline: none;
+    background: transparent;
+    font-family: inherit;
+    font-size: 14px;
+    color: var(--text-primary);
+  }
+  #search-input::placeholder { color: #A8ADB7; }
+  #search-input::-webkit-search-cancel-button { -webkit-appearance: none; appearance: none; } /* 用自定义 ×，隐藏原生清除按钮 */
+  #search-clear {
+    flex: 0 0 auto;
+    width: 20px; height: 20px;
+    display: none;
+    align-items: center; justify-content: center;
+    border-radius: 50%;
+    color: #A8ADB7;
+    background: rgba(0, 0, 0, 0.06);
+    transition: background 0.15s var(--ease);
+  }
+  #search-clear:active { background: rgba(0, 0, 0, 0.12); }
+  #search-wrap.has-text #search-clear { display: inline-flex; }
+  @media (prefers-color-scheme: dark) {
+    #search-wrap { background: #252932; }
+    #search-wrap:focus-within { border-color: var(--primary); }
+    #search-input { color: #E8EAED; }
+    #search-input::placeholder { color: #6B7280; }
+    #search-clear { color: #6B7280; background: rgba(255, 255, 255, 0.08); }
+  }
+  /* 关键词高亮 */
+  .note-item .title mark,
+  .note-item .excerpt mark {
+    background: #FFF3B0;
+    color: inherit;
+    border-radius: 2px;
+    padding: 0 1px;
+  }
+  @media (prefers-color-scheme: dark) {
+    .note-item .title mark,
+    .note-item .excerpt mark { background: rgba(255, 243, 176, 0.28); color: #E8EAED; }
+  }
+  /* 搜索无结果提示 */
+  #search-empty {
+    display: none;
+    padding: 80px 20px 0;
+    text-align: center;
+    font-size: 14px;
+    color: #8A8F99;
+  }
+
+  /* 列表区与卡片 */
+  #note-list {
+    flex: 1;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    list-style: none;
+    padding: 12px 20px calc(110px + env(safe-area-inset-bottom));
+  }
+  .note-item {
+    position: relative;
+    background: var(--bg-card);
+    border: var(--card-border);
+    border-radius: var(--radius-card);
+    padding: 18px 20px;
+    margin-bottom: 10px;
+    cursor: pointer;
+    box-shadow: var(--shadow-card);
+    transition: background 0.18s var(--ease), transform 0.1s var(--ease), box-shadow 0.18s var(--ease);
+  }
+  .note-item:active { background: var(--tap-press); transform: scale(0.98); will-change: transform; }
+  .note-item.lp-press { background: rgba(0, 0, 0, 0.03); } /* 长按反馈：轻微变暗 */
+  .note-item .note-body {
+    flex: 1; min-width: 0;
+    display: grid;
+    grid-template-columns: 1fr auto;
+    grid-template-areas:
+      "title time"
+      "excerpt excerpt";
+  }
+  .note-item .title {
+    grid-area: title;
+    font-size: 16px; font-weight: 600; line-height: 1.4;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .note-item .excerpt {
+    grid-area: excerpt;
+    font-size: 14px; line-height: 1.5; color: var(--text-secondary);
+    margin-top: 8px;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    overflow: hidden;
+  }
+  .note-item .time { grid-area: time; align-self: baseline; font-size: 12px; color: var(--time-muted); padding-left: 10px; }
+
+  /* 多选模式：圆形复选框 + 选中态 */
+  .note-item .sel-box {
+    display: none;
+    flex: 0 0 auto;
+    width: 22px; height: 22px; margin-top: 2px;
+    border: 2px solid var(--sel-border);
+    border-radius: 50%;
+    background: var(--bg-card);
+    align-items: center; justify-content: center;
+    font-size: 13px; line-height: 1;
+    color: transparent;
+  }
+  #list-view.multi .note-item { display: flex; gap: 12px; padding-left: 28px; }
+  #list-view.multi .sel-box { display: inline-flex; animation: box-pop 0.2s var(--ease-spring); }
+  .note-item .sel-box.on { background: var(--primary); border-color: var(--primary); color: #fff; }
+  .note-item:has(.sel-box.on) { background: var(--sel-card); }
+
+  /* 分段控件：全部 / 待办 / 已完成（选中项白底浮起） */
+  #seg-bar {
+    flex: 0 0 auto;
+    display: flex;
+    width: max-content;
+    margin: 10px 20px 4px;
+    padding: 3px;
+    background: var(--chip-bg);
+    border-radius: var(--radius-pill);
+    transition: background 0.18s var(--ease);
+  }
+  #seg-bar .seg-item {
+    min-height: 34px;
+    padding: 0 18px;
+    font-size: 14px;
+    color: var(--text-secondary);
+    border-radius: var(--radius-pill);
+    transition: color 0.18s var(--ease), background 0.18s var(--ease), box-shadow 0.18s var(--ease);
+  }
+  #seg-bar .seg-item.on {
+    background: var(--bg-card);
+    color: var(--text-primary);
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.12);
+  }
+  #list-view.multi #seg-bar { display: none; }
+
+  /* 待办卡片：左侧圆形复选框 + 完成态 + 倒计时角标 */
+  .note-item .todo-chk {
+    display: none;
+    flex: 0 0 auto;
+    width: 22px; height: 22px;
+    margin-top: 2px;
+    border: 2px solid var(--sel-border);
+    border-radius: 50%;
+    background: var(--bg-card);
+    align-items: center; justify-content: center;
+    font-size: 13px; line-height: 1;
+    color: transparent;
+    cursor: pointer;
+    transition: background 0.2s var(--ease), border-color 0.2s var(--ease);
+  }
+  #list-view:not(.multi) .is-todo .todo-chk { display: inline-flex; animation: box-pop 0.2s var(--ease-spring); }
+  .note-item .todo-chk.on { background: var(--primary); border-color: var(--primary); color: #fff; }
+  .note-item.is-done { opacity: 0.6; }
+  .note-item.is-done .title { text-decoration: line-through; }
+  .note-item .due-badge {
+    position: absolute;
+    top: 12px; right: 14px;
+    font-size: 12px; line-height: 1;
+    color: var(--text-secondary);
+    padding: 3px 8px;
+    background: var(--chip-bg);
+    border-radius: var(--radius-pill);
+  }
+  .note-item .due-badge.overdue { color: #fff; background: var(--danger); }
+  /* 倒计时角标占用标题行右侧位置：有角标时隐藏时间戳，避免重叠 */
+  .note-item.has-due .time { display: none; }
+
+  /* 空状态 */
+  #empty {
+    display: none;
+    flex: 1;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 68px 20px 80px;
+    text-align: center;
+  }
+  #empty .empty-icon { color: var(--icon-idle); }
+  #empty .empty-title { font-size: 15px; color: var(--text-secondary); margin-top: 24px; }
+  #empty .empty-hint { font-size: 13px; color: var(--text-tertiary); margin-top: 6px; }
+
+  /* 新建选项 action sheet：底部滑入 */
+  #fab-sheet {
+    position: fixed; inset: 0;
+    z-index: 40;
+    display: none;
+    align-items: flex-end;
+    justify-content: center;
+    background: var(--mask);
+  }
+  #fab-sheet.open { display: flex; }
+  #fab-sheet .sheet-card {
+    width: calc(100% - 24px);
+    max-width: 400px;
+    margin: 0 12px calc(env(safe-area-inset-bottom) + 16px);
+    padding: 8px;
+    background: var(--bg-card);
+    border-radius: 16px;
+    box-shadow: var(--shadow-pop);
+    animation: sheet-in 0.28s var(--ease-swift);
+  }
+  #fab-sheet .sheet-opt,
+  #fab-sheet .sheet-cancel {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    min-height: 52px;
+    font-size: 16px;
+    color: var(--text-primary);
+    border-radius: 12px;
+    transition: background 0.15s var(--ease);
+  }
+  #fab-sheet .sheet-opt:active,
+  #fab-sheet .sheet-cancel:active { background: var(--bg-page); }
+  #fab-sheet .sheet-cancel {
+    margin-top: 6px;
+    color: var(--text-secondary);
+    border-top: 1px solid var(--divider);
+    border-radius: 0 0 12px 12px;
+  }
+  @keyframes sheet-in { from { opacity: 0; transform: translateY(48px); } to { opacity: 1; transform: none; } }
+
+  /* 单条操作 action sheet：长按卡片弹出，底部滑入、贴屏、半透明毛玻璃 */
+  #note-sheet {
+    position: fixed; inset: 0;
+    z-index: 41;
+    display: none;
+    align-items: flex-end;
+    justify-content: center;
+    background: var(--mask);
+  }
+  #note-sheet.open { display: flex; }
+  #note-sheet .sheet-card {
+    width: 100%;
+    max-width: 400px;
+    padding: 8px 8px calc(8px + env(safe-area-inset-bottom));
+    background: rgba(255, 255, 255, 0.82);
+    -webkit-backdrop-filter: blur(20px) saturate(1.4);
+    backdrop-filter: blur(20px) saturate(1.4);
+    border-radius: 16px 16px 0 0;
+    box-shadow: var(--shadow-pop);
+    animation: sheet-in 0.28s var(--ease-swift);
+  }
+  #note-sheet .sheet-opt,
+  #note-sheet .sheet-cancel {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    width: 100%;
+    min-height: 52px;
+    font-size: 16px;
+    color: var(--text-primary);
+    border-radius: 12px;
+    transition: background 0.15s var(--ease);
+  }
+  #note-sheet .sheet-opt:active,
+  #note-sheet .sheet-cancel:active { background: rgba(0, 0, 0, 0.05); }
+  #note-sheet .sheet-opt svg { flex: 0 0 auto; color: var(--text-secondary); }
+  #note-sheet .sheet-opt.danger,
+  #note-sheet .sheet-opt.danger svg { color: var(--danger); }
+  #note-sheet .sheet-cancel {
+    justify-content: center;
+    min-height: 48px;
+    margin-top: 6px;
+    color: var(--text-secondary);
+    border-top: 1px solid var(--divider);
+    border-radius: 0 0 12px 12px;
+  }
+
+  /* 图片长按菜单（编辑页）：与单条操作菜单同风格 */
+  #img-menu {
+    position: fixed; inset: 0;
+    z-index: 41;
+    display: none;
+    align-items: flex-end;
+    justify-content: center;
+    background: var(--mask);
+  }
+  #img-menu.open { display: flex; }
+  #img-menu .sheet-card {
+    width: 100%;
+    max-width: 400px;
+    padding: 8px 8px calc(8px + env(safe-area-inset-bottom));
+    background: rgba(255, 255, 255, 0.82);
+    -webkit-backdrop-filter: blur(20px) saturate(1.4);
+    backdrop-filter: blur(20px) saturate(1.4);
+    border-radius: 16px 16px 0 0;
+    box-shadow: var(--shadow-pop);
+    animation: sheet-in 0.28s var(--ease-swift);
+  }
+  #img-menu .sheet-opt,
+  #img-menu .sheet-cancel {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    width: 100%;
+    min-height: 52px;
+    font-size: 16px;
+    color: var(--text-primary);
+    border-radius: 12px;
+    transition: background 0.15s var(--ease);
+  }
+  #img-menu .sheet-opt:active,
+  #img-menu .sheet-cancel:active { background: rgba(0, 0, 0, 0.05); }
+  #img-menu .sheet-opt svg { flex: 0 0 auto; color: var(--text-secondary); }
+  #img-menu .sheet-opt.danger,
+  #img-menu .sheet-opt.danger svg { color: var(--danger); }
+  #img-menu .sheet-cancel {
+    justify-content: center;
+    min-height: 48px;
+    margin-top: 6px;
+    color: var(--text-secondary);
+    border-top: 1px solid var(--divider);
+    border-radius: 0 0 12px 12px;
+  }
+
+  /* 编辑页：待办头部（完成复选框）与提醒按钮/弹层 */
+  #editor-todo-head {
+    display: none;
+    align-items: center;
+    gap: 12px;
+    width: 100%;
+    max-width: 640px;
+    margin: 0 auto;
+    padding: 14px 20px 0;
+  }
+  #editor-todo-chk {
+    flex: 0 0 auto;
+    width: 24px; height: 24px;
+    border: 2px solid var(--sel-border);
+    border-radius: 50%;
+    background: var(--bg-card);
+    display: inline-flex; align-items: center; justify-content: center;
+    font-size: 14px; line-height: 1;
+    color: transparent;
+    transition: background 0.2s var(--ease), border-color 0.2s var(--ease);
+  }
+  #editor-todo-chk.on { background: var(--primary); border-color: var(--primary); color: #fff; }
+  #editor-todo-chk + span { font-size: 13px; color: var(--text-secondary); }
+  #due-btn {
+    display: none;
+    align-items: center;
+    gap: 6px;
+    min-height: 36px;
+    padding: 8px 14px;
+    margin-left: 12px;
+    border-radius: var(--radius-pill);
+    background: var(--img-btn-bg);
+    color: var(--img-btn-text);
+    font-size: 14px; font-weight: 500;
+    transition: background 0.15s var(--ease), transform 0.1s var(--ease);
+  }
+  #due-btn:active { background: var(--chip-press); transform: scale(0.96); will-change: transform; }
+  #due-pop {
+    position: absolute;
+    bottom: calc(60px + env(safe-area-inset-bottom));
+    left: 12px;
+    z-index: 20;
+    display: none;
+    padding: 12px;
+    background: var(--bg-card);
+    border: 1px solid var(--divider);
+    border-radius: 14px;
+    box-shadow: var(--shadow-pop);
+  }
+  #due-pop.open { display: block; animation: pop-in 0.18s var(--ease); }
+  #due-input {
+    font-family: inherit;
+    font-size: 14px;
+    color: var(--text-primary);
+    background: var(--bg-page);
+    border: 1px solid var(--divider);
+    border-radius: 10px;
+    padding: 8px 10px;
+  }
+  #due-clear {
+    min-height: 36px;
+    margin-left: 8px;
+    padding: 0 12px;
+    font-size: 14px;
+    color: var(--danger);
+    border-radius: 10px;
+    transition: background 0.15s var(--ease);
+  }
+  #due-clear:active { background: rgba(229, 72, 77, 0.1); }
+
+  /* 撤销/重做状态提示 toast：底部安全区上方，不遮挡工具栏 */
+  #undo-toast {
+    position: fixed;
+    bottom: calc(env(safe-area-inset-bottom) + 76px);
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 60;
+    padding: 8px 16px;
+    background: rgba(0, 0, 0, 0.75);
+    color: #fff;
+    font-size: 13px;
+    border-radius: var(--radius-pill);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.2s var(--ease);
+  }
+  #undo-toast.show { opacity: 1; }
+
+  /* 悬浮新建按钮 */
+  #add-btn {
+    position: fixed;
+    right: max(20px, env(safe-area-inset-right));
+    bottom: max(28px, calc(env(safe-area-inset-bottom) + 28px));
+    width: 56px; height: 56px;
+    border-radius: 50%;
+    background: var(--primary);
+    color: #fff;
+    display: flex; align-items: center; justify-content: center;
+    box-shadow: var(--shadow-fab);
+    z-index: 10;
+    animation: fab-pop 0.4s var(--ease-spring); /* 入场弹入（呼吸动画放在 svg 上，避免占用 transform 冲突） */
+    transition: transform 0.3s var(--ease-spring), background 0.15s var(--ease), filter 0.15s var(--ease);
+  }
+  #list-view.sheet-open #add-btn { transform: scale(0.9); opacity: 0.7; }
+  #add-btn svg { animation: fab-breathe 1.5s var(--ease) 0.4s infinite; will-change: transform; }
+  #add-btn:active { transform: scale(0.94); filter: brightness(0.9); will-change: transform; }
+  @keyframes fab-breathe { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.02); } }
+
+  /* ============ 编辑页 ============ */
+  .editor-bar {
+    height: 56px;
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    align-items: center;
+    padding: 0 8px;
+    background: var(--bg-toolbar);
+    -webkit-backdrop-filter: blur(20px);
+    backdrop-filter: blur(20px);
+    border-bottom: 1px solid var(--divider);
+  }
+  .editor-bar-left { display: flex; justify-self: start; }
+  #back-btn {
+    width: 40px; height: 40px;
+    display: inline-flex; align-items: center; justify-content: center;
+    border-radius: 50%;
+    color: var(--text-secondary);
+    transition: background 0.15s var(--ease), transform 0.1s var(--ease);
+  }
+  #back-btn:active { background: var(--chip-bg); transform: scale(0.94); will-change: transform; }
+  .bar-spacer { width: 1px; }
+  .editor-bar-right { display: flex; justify-self: end; align-items: center; gap: 8px; }
+  .undo-redo-btn {
+    width: 40px; height: 40px;
+    display: inline-flex; align-items: center; justify-content: center;
+    border-radius: 50%;
+    color: var(--text-secondary);
+    transition: background 0.15s var(--ease), transform 0.1s var(--ease), opacity 0.15s var(--ease);
+  }
+  .undo-redo-btn:active { background: var(--chip-bg); transform: scale(0.94); will-change: transform; }
+  .undo-redo-btn:disabled { opacity: 0.3; pointer-events: none; }
+  #delete-btn {
+    justify-self: end;
+    min-height: 44px;
+    padding: 0 12px;
+    font-size: 15px; font-weight: 500;
+    color: var(--danger);
+    border-radius: 10px;
+    transition: background 0.15s var(--ease), transform 0.1s var(--ease);
+  }
+  #delete-btn:active { background: rgba(229, 72, 77, 0.1); transform: scale(0.96); will-change: transform; }
+  /* 分享按钮：主色图标，点击区域 44x44 */
+  #share-btn {
+    width: 44px; height: 44px;
+    display: inline-flex; align-items: center; justify-content: center;
+    border-radius: 50%;
+    color: var(--primary);
+    transition: background 0.15s var(--ease), transform 0.1s var(--ease);
+  }
+  #share-btn:active { background: var(--chip-bg); transform: scale(0.94); will-change: transform; }
+
+  /* 分享兜底 modal：剪贴板 API 不可用时手动复制 */
+  #share-mask {
+    position: fixed; inset: 0; z-index: 60;
+    display: none;
+    align-items: center; justify-content: center;
+    background: var(--mask);
+  }
+  #share-mask.open { display: flex; animation: fade-in 0.2s var(--ease); }
+  #share-card {
+    background: var(--bg-card);
+    border-radius: 20px;
+    padding: 20px;
+    width: calc(100% - 48px); max-width: 360px;
+    box-shadow: var(--shadow-pop);
+    animation: pop-in 0.2s var(--ease);
+  }
+  #share-card h3 { font-size: 16px; font-weight: 600; margin-bottom: 12px; }
+  #share-text {
+    width: 100%; height: 180px;
+    font-family: inherit;
+    font-size: 13px; line-height: 1.5;
+    color: var(--text-primary);
+    background: var(--bg-page);
+    border: 1px solid var(--divider);
+    border-radius: 10px;
+    padding: 10px;
+    resize: none;
+    outline: none;
+  }
+  #share-actions { display: flex; gap: 10px; margin-top: 14px; }
+  #share-actions button {
+    flex: 1;
+    min-height: 40px;
+    border-radius: var(--radius-btn);
+    font-size: 14px; font-weight: 600;
+    transition: transform 0.1s var(--ease);
+  }
+  #share-actions button:active { transform: scale(0.96); }
+  #share-copy { background: var(--primary); color: #fff; }
+  #share-close { background: var(--chip-bg); color: var(--text-secondary); }
+
+  #editor {
+    flex: 1;
+    width: 100%;
+    max-width: 640px;
+    margin: 0 auto;
+    border: none;
+    outline: none;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    background: transparent;
+    color: var(--text-primary);
+    caret-color: var(--primary);
+    font-size: 16px;
+    line-height: 1.75;
+    padding: 20px;
+    min-height: calc(100vh - 180px);
+    white-space: pre-wrap;
+    word-break: break-word;
+    -webkit-user-select: text;
+    user-select: text;
+  }
+  #editor:empty::before {
+    content: attr(data-placeholder);
+    color: var(--text-tertiary);
+    pointer-events: none;
+  }
+  #editor img {
+    max-width: 100%;
+    border-radius: 10px;
+    margin: 10px 0;
+    vertical-align: middle;
+    -webkit-touch-callout: none; /* 长按不弹系统菜单 */
+    -webkit-user-select: none;
+    user-select: none;
+  }
+  #editor img.lp-dim { filter: brightness(0.65); transition: filter 0.15s ease; }
+  /* 图片重点标注：主色边框 + 右上角小星标 */
+  #editor img.starred {
+    position: relative;
+    border: 2px solid var(--primary);
+  }
+  #editor img.starred::after {
+    content: '⭐';
+    position: absolute;
+    top: 6px; right: 6px;
+    font-size: 18px;
+    line-height: 1;
+    filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.25));
+    pointer-events: none;
+  }
+  /* 缩略图条同步显示重点标注 */
+  .img-thumb { position: relative; }
+  .img-thumb.starred { outline: 2px solid var(--primary); outline-offset: -2px; }
+  .img-thumb.starred::after {
+    content: '⭐';
+    position: absolute;
+    top: 4px; right: 4px;
+    font-size: 18px;
+    line-height: 1;
+    pointer-events: none;
+  }
+
+  /* 编辑页选中文字浮动工具栏：胶囊、白底、阴影 */
+  #fmt-bar {
+    position: fixed;
+    left: 50%;
+    transform: translate(-50%, 6px);
+    z-index: 55;
+    display: none;
+    align-items: center;
+    gap: 2px;
+    padding: 6px 10px;
+    background: #FFFFFF;
+    border-radius: var(--radius-pill);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.15s var(--ease), transform 0.15s var(--ease);
+  }
+  #fmt-bar.show { display: inline-flex; opacity: 1; transform: translate(-50%, 0); pointer-events: auto; }
+  #fmt-bar button {
+    min-width: 40px;
+    height: 36px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    font-size: 15px;
+    color: var(--text-primary);
+    border-radius: 10px;
+    transition: background 0.15s var(--ease);
+  }
+  #fmt-bar button:active { background: var(--chip-bg); }
+  #fmt-bar #fmt-bold { font-weight: 800; }
+  #fmt-bar button.on { background: var(--primary-soft); color: var(--primary); }
+  #fmt-bar .fmt-sep { width: 1px; height: 20px; background: var(--divider); margin: 0 4px; }
+  @media (prefers-color-scheme: dark) {
+    #fmt-bar { background: #2A2D33; box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5); }
+    #fmt-bar button.on { background: var(--primary-soft); }
+  }
+  /* 编辑器里手动高亮的颜色（搜索页 mark 是另一个作用域，互不影响） */
+  #editor mark { background: #FFF3B0; color: inherit; border-radius: 2px; }
+  /* 列表卡片右上角“含重点图片”星标 */
+  .note-item .star-flag {
+    position: absolute;
+    top: 12px; right: 12px;
+    font-size: 16px;
+    line-height: 1;
+  }
+  .note-item.has-star .time { padding-right: 20px; } /* 给星标让位，避免压住时间 */
+  .note-item.has-star.has-due .star-flag { right: 76px; } /* 有倒计时角标时往左让位 */
+
+  /* 置顶卡片：左侧 3px 主色竖条（60% 高、垂直居中）+ 右上角小图钉；多选模式下隐藏 */
+  #list-view:not(.multi) .note-item.is-pinned::before {
+    content: '';
+    position: absolute;
+    left: 0; top: 20%;
+    width: 3px; height: 60%;
+    background: var(--primary);
+    border-radius: 2px;
+  }
+  .note-item .pin-flag {
+    display: none;
+    position: absolute;
+    top: 12px; right: 12px;
+    color: #A8ADB7;
+    line-height: 1;
+  }
+  #list-view:not(.multi) .note-item.is-pinned .pin-flag { display: block; }
+  @media (prefers-color-scheme: dark) {
+    .note-item .pin-flag { color: #9AA0A6; }
+  }
+  .note-item.has-pin .time { padding-right: 22px; } /* 给图钉让位 */
+  .note-item.has-pin.has-due .pin-flag { right: 76px; } /* 有倒计时角标时往左让位 */
+  .note-item.has-pin .star-flag { right: 34px; } /* 星标与图钉并存时错开 */
+  .note-item.has-pin.has-due .star-flag { right: 98px; }
+  /* 置顶区与普通区之间的分割线（只在有置顶便签时渲染） */
+  .pin-divider {
+    height: 1px;
+    margin: 12px 0;
+    background: var(--divider);
+    list-style: none;
+  }
+
+  /* 底部工具条：图片按钮 + 保存状态 */
+  .editor-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    height: calc(60px + env(safe-area-inset-bottom));
+    padding: 8px 12px env(safe-area-inset-bottom);
+    background: var(--bg-toolbar);
+    -webkit-backdrop-filter: blur(20px);
+    backdrop-filter: blur(20px);
+    border-top: 1px solid var(--divider);
+  }
+  #img-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-height: 36px;
+    padding: 8px 14px;
+    border-radius: var(--radius-pill);
+    background: var(--img-btn-bg);
+    color: var(--img-btn-text);
+    font-size: 14px; font-weight: 500;
+    transition: background 0.15s var(--ease), transform 0.1s var(--ease);
+  }
+  #img-btn:active { background: var(--chip-press); transform: scale(0.96); will-change: transform; }
+  #save-status {
+    font-size: 12px;
+    color: var(--text-tertiary);
+    opacity: 0;
+    transition: opacity 0.3s var(--ease);
+    padding-right: 8px;
+  }
+  #save-status.show { opacity: 1; }
+  /* 编辑页字数统计：与图片按钮同行，靠右显示 */
+  #word-count {
+    font-size: 12px;
+    color: #A8ADB7;
+    padding-right: 8px;
+    font-variant-numeric: tabular-nums; /* 数字宽度一致，防跳动 */
+  }
+
+  #image-strip {
+    display: none;
+    gap: 10px;
+    width: 100%;
+    max-width: 640px;
+    margin: 0 auto;
+    padding: 10px 20px;
+    border-bottom: 1px solid var(--divider); /* 极浅分割线（contenteditable 内无法插 DOM，退而求其次放在缩略图条下缘） */
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  .img-thumb {
+    flex: 0 0 auto;
+    width: 72px; height: 72px;
+    border-radius: 10px;
+    overflow: hidden;
+    box-shadow: var(--shadow-card);
+  }
+  .img-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+
+  /* ============ ⋮ 菜单与关于弹窗 ============ */
+  #menu-pop {
+    position: absolute;
+    right: 16px; top: 60px;
+    z-index: 30;
+    display: none;
+    min-width: 160px;
+    padding: 6px;
+    background: var(--bg-card);
+    border: 1px solid var(--divider);
+    border-radius: 14px;
+    box-shadow: var(--shadow-pop);
+    transform-origin: top right;
+  }
+  #menu-pop.open { display: block; animation: pop-in 0.18s var(--ease); }
+  #menu-pop button {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    min-height: 44px;
+    padding: 0 12px;
+    border-radius: 10px;
+    font-size: 15px;
+    color: var(--text-primary);
+    text-align: left;
+    transition: background 0.15s var(--ease);
+  }
+  #menu-pop button:active { background: var(--bg-page); }
+  #menu-pop svg { color: var(--text-secondary); flex: 0 0 auto; }
+  /* 菜单分组分割线 */
+  #menu-pop .menu-sep {
+    height: 1px;
+    margin: 6px 12px;
+    background: var(--divider);
+  }
+  /* 排序选项：勾号占位，未选中留空但保持对齐 */
+  #menu-pop .menu-sort-check {
+    flex: 0 0 auto;
+    width: 18px;
+    text-align: center;
+    font-weight: 700;
+    color: var(--primary);
+  }
+
+  #about-mask {
+    position: fixed; inset: 0; z-index: 50;
+    display: none;
+    align-items: center; justify-content: center;
+    background: var(--mask);
+  }
+  #about-mask.open { display: flex; animation: fade-in 0.2s var(--ease); }
+  #about-card {
+    background: var(--bg-card);
+    border-radius: 20px;
+    padding: 28px 24px;
+    width: calc(100% - 48px); max-width: 320px;
+    text-align: center;
+    box-shadow: var(--shadow-pop);
+    animation: pop-in 0.2s var(--ease);
+  }
+  #about-card h2 { font-size: 17px; font-weight: 600; margin-bottom: 8px; }
+  #about-card p { font-size: 14px; line-height: 1.6; color: var(--text-secondary); margin-bottom: 20px; }
+  #about-close {
+    border-radius: var(--radius-pill);
+    background: var(--primary);
+    color: #fff;
+    font-size: 15px; font-weight: 600;
+    padding: 11px 28px;
+    transition: transform 0.15s var(--ease);
+  }
+  #about-close:active { transform: scale(0.96); }
+
+  /* ============ 图片全屏查看器 ============ */
+  #img-viewer {
+    position: fixed; inset: 0; z-index: 100;
+    display: none;
+    align-items: center; justify-content: center;
+    background: rgba(0, 0, 0, 0.92);
+    touch-action: none; /* 手势交给 JS，浏览器不缩放不滚动 */
+  }
+  #img-viewer.open { display: flex; animation: fade-in 0.2s var(--ease); will-change: opacity; }
+  /* 关闭动画由增强层接管：加 .closing 保持可见并淡出 0.18s */
+  #img-viewer.closing { display: flex; animation: fade-out 0.18s var(--ease) forwards; }
+  #img-viewer.closing #viewer-img { visibility: hidden; } /* 原 close 逻辑已移除 src，隐藏空图 */
+  @keyframes viewer-fade-out { from { opacity: 1; } to { opacity: 0; } }
+  #viewer-img {
+    max-width: 95%;
+    max-height: 95%;
+    border-radius: 8px;
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+    -webkit-user-drag: none;
+    will-change: transform, opacity;
+    animation: viewer-in 0.24s var(--ease-spring);
+  }
+  @keyframes viewer-in { from { opacity: 0; transform: scale(0.95); } to { opacity: 1; transform: scale(1); } }
+  #viewer-close {
+    position: absolute;
+    top: 20px; right: 20px;
+    width: 40px; height: 40px;
+    display: flex; align-items: center; justify-content: center;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.12);
+    color: #fff;
+    transition: background 0.15s var(--ease), transform 0.1s var(--ease);
+  }
+  #viewer-close:active { background: rgba(255, 255, 255, 0.22); transform: scale(0.94); will-change: transform; }
+
+  /* ============ 响应式：平板/横屏 ============ */
+  @media (min-width: 600px) {
+    .note-item { max-width: 640px; margin-left: auto; margin-right: auto; }
+    #editor { max-width: 720px; }
+  }
+
+  /* ============ 首屏卡片依次入场（由增强层临时加 .boot-in） ============ */
+  @keyframes card-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+  #note-list.boot-in .note-item { animation: card-in 0.2s var(--ease-swift) both; will-change: transform, opacity; }
+  #note-list.boot-in .note-item:nth-child(2) { animation-delay: 0.03s; }
+  #note-list.boot-in .note-item:nth-child(3) { animation-delay: 0.06s; }
+  #note-list.boot-in .note-item:nth-child(4) { animation-delay: 0.09s; }
+  #note-list.boot-in .note-item:nth-child(5) { animation-delay: 0.12s; }
+  #note-list.boot-in .note-item:nth-child(6) { animation-delay: 0.15s; }
+  #note-list.boot-in .note-item:nth-child(7) { animation-delay: 0.18s; }
+  #note-list.boot-in .note-item:nth-child(n+8) { animation-delay: 0.2s; } /* 总时长封顶 0.4s */
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: 0.01ms !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+</style>
+</head>
+<body>
+
+<!-- 主界面：便签列表 -->
+<section id="list-view" class="view active">
+  <div id="note-count-bar" aria-live="polite"><span id="note-count"></span></div>
+  <div id="search-wrap">
+    <svg id="search-icon" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+      <circle cx="11" cy="11" r="7"/><path d="M16.5 16.5L21 21"/>
+    </svg>
+    <input id="search-input" type="search" placeholder="搜索便签" autocomplete="off" enterkeyhint="search">
+    <button id="search-clear" type="button" aria-label="清除搜索" title="清除">
+      <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+        <path d="M6 6l12 12M18 6L6 18"/>
+      </svg>
+    </button>
+  </div>
+  <div id="search-empty"></div>
+  <div id="seg-bar" role="tablist">
+    <button class="seg-item on" data-seg="all">全部</button>
+    <button class="seg-item" data-seg="todo">待办</button>
+    <button class="seg-item" data-seg="done">已完成</button>
+  </div>
+  <header id="list-header">
+    <h1>便签</h1>
+    <div class="hdr-actions">
+      <button id="sel-enter" title="选择多条便签">选择</button>
+      <button id="menu-btn" class="menu-btn" title="更多" aria-label="更多菜单">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true">
+          <circle cx="12" cy="5" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="12" cy="19" r="1.7"/>
+        </svg>
+      </button>
+    </div>
+    <div id="sel-bar">
+      <button id="sel-cancel">取消</button>
+      <span id="sel-count">已选 0 条</span>
+      <button id="sel-delete">删除</button>
+      <button id="sel-export">导出</button>
+    </div>
+  </header>
+  <div id="menu-pop">
+    <button id="menu-export">
+      <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M12 3v12m0 0l-4-4m4 4l4-4"/><path d="M4 21h16"/>
+      </svg>
+      <span>导出</span>
+    </button>
+    <button id="menu-import">
+      <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M12 21V9m0 0l-4 4m4-4l4 4"/><path d="M4 3h16"/>
+      </svg>
+      <span>导入</span>
+    </button>
+    <button id="menu-about">
+      <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <circle cx="12" cy="12" r="9"/><path d="M12 8h.01"/><path d="M12 11v5"/>
+      </svg>
+      <span>关于</span>
+    </button>
+    <div class="menu-sep"></div>
+    <button class="menu-sort" data-sort="updated"><span class="menu-sort-check"></span><span>按修改时间</span></button>
+    <button class="menu-sort" data-sort="created"><span class="menu-sort-check"></span><span>按创建时间</span></button>
+    <button class="menu-sort" data-sort="title"><span class="menu-sort-check"></span><span>按标题（A-Z）</span></button>
+  </div>
+  <div id="empty">
+    <svg class="empty-icon" viewBox="0 0 64 64" width="64" height="64" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <rect x="12" y="8" width="30" height="46" rx="4"/>
+      <path d="M20 20h14M20 28h14M20 36h8"/>
+      <path d="M44 32l9 9-13 13-10 1 1-10z"/>
+    </svg>
+    <p class="empty-title">还没有便签</p>
+    <p class="empty-hint">点右下角 + 开始记录</p>
+  </div>
+  <ul id="note-list"></ul>
+  <button id="add-btn" title="新建便签" aria-label="新建便签">
+    <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+      <path d="M12 5v14M5 12h14"/>
+    </svg>
+  </button>
+
+  <div id="about-mask">
+    <div id="about-card" role="dialog" aria-modal="true">
+      <h2>极简备忘录 v0.1.0</h2>
+      <p>如果它帮到你，可以请我喝杯咖啡</p>
+      <button id="about-close">关闭</button>
+    </div>
+  </div>
+  <!-- 分享兜底 modal：剪贴板 API 不可用时手动复制 -->
+  <div id="share-mask">
+    <div id="share-card" role="dialog" aria-modal="true" aria-label="复制分享内容">
+      <h3>复制以下内容</h3>
+      <textarea id="share-text" readonly></textarea>
+      <div id="share-actions">
+        <button id="share-copy">复制</button>
+        <button id="share-close">关闭</button>
+      </div>
+    </div>
+  </div>
+  <input type="file" id="import-input" accept=".json,application/json" hidden>
+  <!-- 新建选项 action sheet：笔记 / 待办 -->
+  <div id="fab-sheet" role="dialog" aria-modal="true" aria-label="新建选项">
+    <div class="sheet-card">
+      <button class="sheet-opt" data-type="note">📝 新建笔记</button>
+      <button class="sheet-opt" data-type="todo">✓ 新建待办</button>
+      <button class="sheet-cancel">取消</button>
+    </div>
+  </div>
+  <!-- 单条操作 action sheet：长按卡片弹出（复制 / 删除） -->
+  <div id="note-sheet" role="dialog" aria-modal="true" aria-label="便签操作">
+    <div class="sheet-card">
+    <button class="sheet-opt" id="ns-pin">
+      <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M12 17v5"/><path d="M9 3h6l1 7 3 3H5l3-3z"/>
+      </svg>
+      <span id="ns-pin-label">置顶</span>
+    </button>
+    <button class="sheet-opt" id="ns-copy">
+      <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+      </svg>
+      <span>复制</span>
+    </button>
+      <button class="sheet-opt danger" id="ns-delete">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M3 6h18"/><path d="M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>
+        </svg>
+        <span>删除</span>
+      </button>
+      <button class="sheet-cancel">取消</button>
+    </div>
+  </div>
+</section>
+
+<!-- 选区浮动格式工具栏：加粗 / 高亮 -->
+<div id="fmt-bar">
+  <button id="fmt-bold" type="button" aria-label="加粗">B</button>
+  <span class="fmt-sep"></span>
+  <button id="fmt-hilite" type="button" aria-label="高亮">
+    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/>
+    </svg>
+  </button>
+</div>
+<!-- 图片长按菜单（编辑页）：标记/取消重点 + 删除 -->
+<div id="img-menu" role="dialog" aria-modal="true" aria-label="图片操作">
+  <div class="sheet-card">
+    <button class="sheet-opt" id="im-star">
+      <span id="im-star-icon">⭐</span><span id="im-star-label">标记重点</span>
+    </button>
+    <button class="sheet-opt danger" id="im-delete">
+      <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M3 6h18"/><path d="M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>
+      </svg>
+      <span>删除</span>
+    </button>
+    <button class="sheet-cancel">取消</button>
+  </div>
+</div>
+<!-- 编辑界面 -->
+<section id="editor-view" class="view">
+  <div class="editor-bar">
+    <div class="editor-bar-left">
+      <button id="back-btn" title="返回列表" aria-label="返回列表">
+        <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M15 18l-6-6 6-6"/>
+        </svg>
+      </button>
+    </div>
+    <div class="bar-spacer"></div>
+    <div class="editor-bar-right">
+      <button id="redo-btn" class="undo-redo-btn" title="重做" aria-label="重做" disabled>
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M15 14l5-5-5-5"/><path d="M20 9H10a6 6 0 0 0-6 6v1"/>
+        </svg>
+      </button>
+      <button id="undo-btn" class="undo-redo-btn" title="撤销" aria-label="撤销" disabled>
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M9 14L4 9l5-5"/><path d="M4 9h10a6 6 0 0 1 6 6v1"/>
+        </svg>
+      </button>
+      <button id="share-btn" title="分享便签" aria-label="分享便签">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M4 12v7a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-7"/><path d="M16 6l-4-4-4 4"/><path d="M12 2v13"/>
+        </svg>
+      </button>
+      <button id="delete-btn" title="删除此便签">删除</button>
+    </div>
+  </div>
+  <div id="editor-todo-head">
+    <div id="editor-todo-chk" role="checkbox" aria-checked="false" tabindex="0">✓</div>
+    <span>已完成</span>
+    <button id="due-btn" title="设置提醒时间">⏰ 设置提醒</button>
+  </div>
+  <div id="editor" contenteditable="true" data-placeholder="写点什么…&#10;第一行将作为标题"></div>
+  <div id="image-strip" aria-label="便签图片"></div>
+  <div class="editor-toolbar">
+    <button id="img-btn" title="从相册选图插入">
+      <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/>
+      </svg>
+      <span>图片</span>
+    </button>
+    <span id="word-count">0 字</span>
+    <span id="save-status">已保存</span>
+  </div>
+  <div id="due-pop">
+    <input type="datetime-local" id="due-input" aria-label="提醒时间">
+    <button id="due-clear">清除</button>
+  </div>
+  <div id="undo-toast" role="status"></div>
+  <input type="file" id="img-input" accept="image/*" multiple hidden>
+</section>
+
+<!-- 图片全屏查看器（编辑页与列表页共用） -->
+<div id="img-viewer" role="dialog" aria-modal="true" aria-label="图片查看">
+  <button id="viewer-close" title="关闭" aria-label="关闭">
+    <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+      <path d="M6 6l12 12M18 6L6 18"/>
+    </svg>
+  </button>
+  <img id="viewer-img" alt="图片预览">
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  var LEGACY_KEY = 'minimal-notes-v1'; // 旧版 localStorage 键，仅用于一次性迁移
+  var DB_NAME = 'minimal-notes';
+  var DB_VERSION = 3; // v3：便签增加待办字段 type/dueAt/doneAt 与预留字段
+  var STORE = 'notes';
+  var IMAGES = 'images';
+  var MARKER_RE = /\[图片:([A-Za-z0-9]+)\]/g; // 旧版正文里的图片标记，仅用于打开时升级
+  var $ = function (id) { return document.getElementById(id); };
+
+  var listView   = $('list-view');
+  var editorView = $('editor-view');
+  var listEl     = $('note-list');
+  var emptyEl    = $('empty');
+  var countEl    = $('note-count');
+  var editorEl   = $('editor');
+  var stripEl    = $('image-strip');
+  var saveStatus = $('save-status');
+  var imgInput   = $('img-input');
+  var importInput = $('import-input');
+  var menuPop    = $('menu-pop');
+  var headerEl   = $('list-header');
+  var selCountEl = $('sel-count');
+  var segBarEl   = $('seg-bar');      // 分段控件（全部/待办/已完成）
+  var fabSheetEl = $('fab-sheet');    // 新建选项 action sheet
+  var editorTodoHead = $('editor-todo-head'); // 编辑页待办区
+  var editorTodoChk  = $('editor-todo-chk');
+  var dueBtn    = $('due-btn');
+  var duePopEl  = $('due-pop');
+  var dueInput  = $('due-input');
+
+  var notes = []; // 内存缓存，启动时从 IndexedDB 加载
+  var currentId = null;
+  var saveTimer = null;
+  var statusTimer = null;
+  var imgUrlCache = {}; // 图片 id → objectURL，本会话内复用
+  var stripRenderToken = 0; // 防止并发渲染重复追加缩略图
+  var openToken = 0; // 每次打开/离开编辑器 +1；在途异步结果回写前先校验，防笔记切换竞态
+  var savedRange = null; // 点「图片」按钮前保存的编辑器选区，插入图片时恢复
+
+  /* ---------- 待办清单状态 ---------- */
+  var segFilter = 'all';            // 分段过滤：'all' | 'todo' | 'done'
+  var SEG_LABELS = { all: '全部', todo: '待办', done: '已完成' };
+  /* 排序方式：localStorage 持久化（ya-sort-by），置顶优先级始终最高 */
+  var SORT_KEY = 'ya-sort-by';
+  var SORT_VALUES = ['updated', 'created', 'title'];
+  var sortBy = 'updated';
+  try {
+    var savedSort = localStorage.getItem(SORT_KEY);
+    if (SORT_VALUES.indexOf(savedSort) !== -1) sortBy = savedSort; // 非法值回落默认
+  } catch (e) { /* 隐私模式等场景 */ }
+  var duePopTimer = null;           // 编辑页提醒弹层延时关闭定时器
+
+  // 记录规范化：旧数据（无 type 字段）读取/写入时补齐默认值，不做批量重写
+  function normalizeNote(n) {
+    n.type = (n.type === 'todo') ? 'todo' : 'note';
+    if (n.dueAt === undefined) n.dueAt = null;
+    if (n.doneAt === undefined) n.doneAt = null;
+    if (n.pinnedAt === undefined) n.pinnedAt = null;   // 预留
+    if (n.color === undefined) n.color = null;         // 预留
+    if (n.starred === undefined) n.starred = false;    // 预留
+    return n;
+  }
+
+  /* ---------- IndexedDB 存储层 ---------- */
+
+  var dbPromise = null;
+
+  function openDB() {
+    if (dbPromise) return dbPromise;
+    dbPromise = new Promise(function (resolve, reject) {
+      var req = indexedDB.open(DB_NAME, DB_VERSION);
+      req.onupgradeneeded = function () {
+        var db = req.result;
+        if (!db.objectStoreNames.contains(STORE)) {
+          var store = db.createObjectStore(STORE, { keyPath: 'id' });
+          store.createIndex('updatedAt', 'updatedAt');
+        }
+        if (!db.objectStoreNames.contains(IMAGES)) {
+          var images = db.createObjectStore(IMAGES, { keyPath: 'id' });
+          images.createIndex('noteId', 'noteId');
+        }
+      };
+      req.onsuccess = function () { resolve(req.result); };
+      req.onerror = function () { dbPromise = null; reject(req.error); };
+      req.onblocked = function () { dbPromise = null; reject(new Error('数据库被其他标签页占用')); };
+    });
+    return dbPromise;
+  }
+
+  function reqAsPromise(req) {
+    return new Promise(function (resolve, reject) {
+      req.onsuccess = function () { resolve(req.result); };
+      req.onerror = function () { reject(req.error); };
+    });
+  }
+
+  function dbGetAll() {
+    return openDB().then(function (db) {
+      return reqAsPromise(db.transaction(STORE).objectStore(STORE).getAll());
+    }).then(function (arr) {
+      arr.forEach(normalizeNote); // 旧记录读取时补齐待办字段，不批量重写
+      return arr;
+    });
+  }
+
+  function dbGetAllImages() {
+    return openDB().then(function (db) {
+      return reqAsPromise(db.transaction(IMAGES).objectStore(IMAGES).getAll());
+    });
+  }
+
+  function dbPut(note) {
+    return openDB().then(function (db) {
+      return reqAsPromise(db.transaction(STORE, 'readwrite').objectStore(STORE).put(normalizeNote(note)));
+    });
+  }
+
+  function dbDelete(id) {
+    return openDB().then(function (db) {
+      return reqAsPromise(db.transaction(STORE, 'readwrite').objectStore(STORE).delete(id));
+    });
+  }
+
+  /* 图片存取：Blob 直接入 IndexedDB，pos 记录在正文中的顺序 */
+
+  function dbPutImage(rec) {
+    return openDB().then(function (db) {
+      return reqAsPromise(db.transaction(IMAGES, 'readwrite').objectStore(IMAGES).put(rec));
+    });
+  }
+
+  function dbGetImage(id) {
+    return openDB().then(function (db) {
+      return reqAsPromise(db.transaction(IMAGES).objectStore(IMAGES).get(id));
+    });
+  }
+
+  function dbDeleteImage(id) {
+    return openDB().then(function (db) {
+      return reqAsPromise(db.transaction(IMAGES, 'readwrite').objectStore(IMAGES).delete(id));
+    });
+  }
+
+  // 删除某便签的全部图片，resolve 被删除的图片 id 列表
+  function dbDeleteImagesForNote(noteId) {
+    return openDB().then(function (db) {
+      return new Promise(function (resolve, reject) {
+        var ids = [];
+        var tx = db.transaction(IMAGES, 'readwrite');
+        var index = tx.objectStore(IMAGES).index('noteId');
+        var req = index.openCursor(IDBKeyRange.only(noteId));
+        req.onsuccess = function () {
+          var cursor = req.result;
+          if (cursor) {
+            ids.push(cursor.primaryKey);
+            cursor.delete();
+            cursor.continue();
+          }
+        };
+        tx.oncomplete = function () { resolve(ids); };
+        tx.onerror = function () { reject(tx.error); };
+      });
+    });
+  }
+
+  // 批量删除：一个事务里同时删 notes 与其关联 images，要么全成功要么全失败
+  function dbDeleteNotesWithImages(noteIds) {
+    return openDB().then(function (db) {
+      return new Promise(function (resolve, reject) {
+        var idSet = {};
+        noteIds.forEach(function (id) { idSet[id] = true; });
+        var imgIds = [];
+        var tx = db.transaction([STORE, IMAGES], 'readwrite');
+        var ns = tx.objectStore(STORE);
+        var is = tx.objectStore(IMAGES);
+        noteIds.forEach(function (id) { ns.delete(id); });
+        // 扫描 images store，按 noteId 命中即删，并记录图片 id 用于撤销 objectURL
+        var req = is.openCursor();
+        req.onsuccess = function () {
+          var cursor = req.result;
+          if (!cursor) return;
+          var g = cursor.value;
+          if (g && g.noteId && idSet[g.noteId]) {
+            imgIds.push(cursor.primaryKey);
+            cursor.delete();
+          }
+          cursor.continue();
+        };
+        tx.oncomplete = function () { resolve(imgIds); };
+        tx.onerror = function () { reject(tx.error); };
+        tx.onabort = function () { reject(tx.error || new Error('事务已中止')); };
+      });
+    });
+  }
+
+  // 把旧版 localStorage 数据一次性迁入 IndexedDB，成功后删除旧键
+  function migrateLegacy() {
+    var raw = null;
+    try { raw = localStorage.getItem(LEGACY_KEY); } catch (e) { /* 隐私模式等场景 */ }
+    if (raw === null) return Promise.resolve();
+
+    var list = [];
+    try {
+      var arr = JSON.parse(raw);
+      if (Array.isArray(arr)) {
+        arr.forEach(function (n) {
+          if (n && n.id) {
+            list.push({
+              id: String(n.id),
+              content: typeof n.content === 'string' ? n.content : '',
+              createdAt: Number(n.createdAt) || Date.now(),
+              updatedAt: Number(n.updatedAt) || Number(n.createdAt) || Date.now()
+            });
+          }
+        });
+      }
+    } catch (e) { /* 数据损坏则按空列表处理 */ }
+
+    if (!list.length) {
+      try { localStorage.removeItem(LEGACY_KEY); } catch (e) {}
+      return Promise.resolve();
+    }
+
+    return openDB().then(function (db) {
+      return new Promise(function (resolve, reject) {
+        var tx = db.transaction(STORE, 'readwrite');
+        var store = tx.objectStore(STORE);
+        list.forEach(function (n) { store.put(n); });
+        tx.oncomplete = function () {
+          try { localStorage.removeItem(LEGACY_KEY); } catch (e) {}
+          resolve();
+        };
+        tx.onerror = function () { reject(tx.error); }; // 迁移失败保留旧数据，下次再试
+      });
+    });
+  }
+
+  function uid() {
+    return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+  }
+
+  function noteById(id) {
+    for (var i = 0; i < notes.length; i++) {
+      if (notes[i].id === id) return notes[i];
+    }
+    return null;
+  }
+
+  /* ---------- 待办工具函数 ---------- */
+
+  function isTodo(note) { return note.type === 'todo'; }
+  function isDone(note) { return note.doneAt != null; }
+
+  // 待办卡片右上角倒计时文案（有 dueAt 且未完成才显示）
+  /* ---------- 字数统计（编辑页）：中文按字、英文按词、数字按连续串 ---------- */
+
+  var wordCountEl = $('word-count');
+  var wordCountTimer = null;
+
+  // 中文字符逐个计；英文单词 [a-zA-Z]+ 计一个；数字连续串 \d+ 计一个；空白/标签不计
+  function countWords(text) {
+    var m = text.match(/[\u4e00-\u9fa5]|[a-zA-Z]+|\d+/g);
+    return m ? m.length : 0;
+  }
+
+  function updateWordCount() {
+    if (!currentId) return;
+    wordCountEl.textContent = countWords(editorEl.textContent) + ' 字';
+  }
+
+  function scheduleWordCount() {
+    clearTimeout(wordCountTimer);
+    wordCountTimer = setTimeout(updateWordCount, 300); // 防抖 300ms，不影响编辑性能
+  }
+
+  /* ---------- 分享便签：系统分享 → 剪贴板 → 手动复制 modal ---------- */
+
+  var shareMaskEl = $('share-mask');
+  var shareTextEl = $('share-text');
+
+  // 分享文本：第一行标题（有才要），空一行，正文纯文本（img→[图片]，<br>/块级边界→换行，其余标签去掉）
+  function buildShareText(note) {
+    var body = String(note.content || '')
+      .replace(/<img[^>]*>/gi, '[图片]')
+      .replace(/<br\s*\/?>/gi, '\n')
+      .replace(/<\/\s*(div|p|li|h[1-6]|blockquote)\s*>/gi, '\n');
+    var d = document.createElement('div');
+    d.innerHTML = body; // 剩余标签剥掉 + 实体解码，与 htmlToPlain 同思路
+    var plain = (d.textContent || '').replace(/\n{3,}/g, '\n\n').trim();
+    var title = titleOf(note);
+    var noTitle = title === '无标题';
+    if (!plain && noTitle) return '';
+    if (noTitle) return plain;
+    return title + '\n\n' + plain;
+  }
+
+  function hideShareMask() { shareMaskEl.classList.remove('open'); }
+
+  // 方式 3 兜底：只读 textarea 自动全选，用户手动复制
+  function openShareFallback(text) {
+    shareTextEl.value = text;
+    shareMaskEl.classList.add('open');
+    setTimeout(function () { shareTextEl.focus(); shareTextEl.select(); }, 50);
+  }
+
+  function doShare() {
+    var note = noteById(currentId);
+    if (!note) return;
+    var text = buildShareText(note);
+    if (!text) { showUndoToast('没有内容可分享'); return; }
+    var title = titleOf(note);
+    // 方式 2：剪贴板 API；再失败进入方式 3 modal
+    var fallbackCopy = function () {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(function () {
+          showUndoToast('已复制到剪贴板');
+        }, function () { openShareFallback(text); });
+      } else {
+        openShareFallback(text);
+      }
+    };
+    // 方式 1：系统分享；用户取消（AbortError）静默不报错
+    if (navigator.share) {
+      navigator.share({ title: title, text: text }).then(function () {
+        showUndoToast('已分享');
+      }).catch(function (e) {
+        if (e && e.name === 'AbortError') return;
+        fallbackCopy();
+      });
+    } else {
+      fallbackCopy();
+    }
+  }
+
+  $('share-btn').addEventListener('click', doShare);
+  $('share-copy').addEventListener('click', function () {
+    shareTextEl.focus();
+    shareTextEl.select(); // 保证有选中态再 copy
+    var ok = false;
+    try { ok = document.execCommand('copy'); } catch (e) {}
+    if (ok) { hideShareMask(); showUndoToast('已复制到剪贴板'); }
+    else showUndoToast('复制失败');
+  });
+  $('share-close').addEventListener('click', hideShareMask);
+  shareMaskEl.addEventListener('click', function (e) {
+    if (e.target === shareMaskEl) hideShareMask();
+  });
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape' && shareMaskEl.classList.contains('open')) hideShareMask();
+  });
+
+  // ⋮ 菜单排序分组：勾选标记 + 立即重渲染
+  function updateSortMenu() {
+    var btns = menuPop.querySelectorAll('.menu-sort');
+    for (var i = 0; i < btns.length; i++) {
+      btns[i].querySelector('.menu-sort-check').textContent =
+        btns[i].dataset.sort === sortBy ? '✓' : '';
+    }
+  }
+
+  menuPop.addEventListener('click', function (e) {
+    var btn = e.target.closest ? e.target.closest('.menu-sort') : null;
+    if (!btn) return;
+    var v = btn.dataset.sort;
+    if (SORT_VALUES.indexOf(v) === -1 || v === sortBy) return;
+    sortBy = v;
+    try { localStorage.setItem(SORT_KEY, sortBy); } catch (err) { /* 隐私模式等场景 */ }
+    updateSortMenu();
+    renderList(); // 切换排序立即重新渲染列表
+  });
+
+  function dueText(note) {
+    if (!note.dueAt) return '';
+    var diff = note.dueAt - Date.now();
+    if (diff <= 0) return '已过期';
+    var oneMin = 60 * 1000, oneHour = 60 * oneMin, oneDay = 24 * oneHour;
+    var d = new Date(note.dueAt);
+    var hm = pad(d.getHours()) + ':' + pad(d.getMinutes());
+    if (diff < oneMin) return '1 分钟内';
+    if (diff < oneHour) return Math.floor(diff / oneMin) + ' 分钟后';
+    if (diff < oneDay) {
+      var h = Math.floor(diff / oneHour);
+      if (h < 6) return h + ' 小时后';
+      return '今天 ' + hm;
+    }
+    var tomorrow = new Date(); tomorrow.setDate(tomorrow.getDate() + 1);
+    if (d.toDateString() === tomorrow.toDateString()) return '明天 ' + hm;
+    return (d.getMonth() + 1) + '月' + d.getDate() + '日 ' + hm;
+  }
+
+  // 切换待办完成状态（列表复选框与编辑页复选框共用）
+  function toggleTodoDone(id) {
+    var note = noteById(id);
+    if (!note || !isTodo(note)) return;
+    note.doneAt = isDone(note) ? null : Date.now();
+    note.updatedAt = Date.now();
+    dbPut(note).catch(function () { /* 存储失败静默 */ });
+    renderList();
+    if (currentId === id) syncEditorTodoUI();
+  }
+
+  /* ---------- 富文本与纯文本工具 ---------- */
+
+  // HTML → 纯文本：块级元素边界与 <br> 转成换行，img 标签整个去掉
+  function htmlToPlain(html) {
+    var s = String(html || '')
+      .replace(/<br\s*\/?>/gi, '\n')
+      .replace(/<\/\s*(div|p|li|h[1-6]|blockquote)\s*>/gi, '\n');
+    var d = document.createElement('div');
+    d.innerHTML = s;
+    return d.textContent || '';
+  }
+
+  // 摘要用：整个去掉 img 标签，只保留纯文本
+  function plainTextOf(html) {
+    return htmlToPlain(html);
+  }
+
+  // 去掉图片后是否没有正文（纯图片便签不算空，不能被自动清理）
+  function isNoteEmpty(note) {
+    var d = document.createElement('div');
+    d.innerHTML = note.content || '';
+    var imgs = d.querySelectorAll('img');
+    for (var i = 0; i < imgs.length; i++) imgs[i].remove();
+    return !d.textContent.trim();
+  }
+
+  // 标题 = 正文第一个非空行
+  function firstLine(plain) {
+    var lines = (plain || '').split('\n');
+    for (var i = 0; i < lines.length; i++) {
+      var t = lines[i].trim();
+      if (t) return t;
+    }
+    return '';
+  }
+
+  function titleOf(note) {
+    return firstLine(plainTextOf(note.content)) || '无标题';
+  }
+
+  // 摘要 = 第二个非空行
+  function excerptOf(note) {
+    var seen = 0;
+    var lines = plainTextOf(note.content).split('\n');
+    for (var i = 0; i < lines.length; i++) {
+      var t = lines[i].trim();
+      if (!t) continue;
+      seen++;
+      if (seen === 2) return t;
+    }
+    return '没有更多内容';
+  }
+
+  function pad(n) { return n < 10 ? '0' + n : '' + n; }
+
+  // datetime-local 值 ↔ 时间戳互转（均为本地时区）
+  function toLocalInputValue(ts) {
+    var d = new Date(ts);
+    return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()) +
+           'T' + pad(d.getHours()) + ':' + pad(d.getMinutes());
+  }
+  function fromLocalInputValue(v) {
+    var ts = new Date(v).getTime();
+    return isNaN(ts) ? null : ts;
+  }
+
+  function formatTime(ts) {
+    var d = new Date(ts);
+    var now = new Date();
+    var diff = Date.now() - ts;
+    var oneMin = 60 * 1000;
+    var oneHour = 60 * oneMin;
+    var oneDay = 24 * oneHour;
+
+    if (diff < oneMin) return '刚刚';
+    if (diff < oneHour) return Math.floor(diff / oneMin) + ' 分钟前';
+
+    var sameDay = d.toDateString() === now.toDateString();
+    var hm = pad(d.getHours()) + ':' + pad(d.getMinutes());
+    if (sameDay) return '今天 ' + hm;
+
+    var yesterday = new Date(now.getTime() - oneDay);
+    if (d.toDateString() === yesterday.toDateString()) return '昨天 ' + hm;
+
+    if (d.getFullYear() === now.getFullYear()) {
+      return (d.getMonth() + 1) + '月' + d.getDate() + '日 ' + hm;
+    }
+    return d.getFullYear() + '年' + (d.getMonth() + 1) + '月' + d.getDate() + '日';
+  }
+
+  /* ---------- 列表渲染 ---------- */
+
+  /* 多选模式状态 */
+  var multiMode = false;
+  var selectedIds = {};
+  var selLpTimer = null, selLpId = null, selLpX = 0, selLpY = 0;
+  var listPressFired = false; // 长按弹出操作菜单后，抑制随后的 click
+  var noteSheetEl = $('note-sheet');   // 单条操作 action sheet（复制 / 删除）
+  var noteSheetId = null;              // 当前菜单对应的便签 id
+  /* 搜索状态 */
+  var searchWrapEl  = $('search-wrap');
+  var searchInput   = $('search-input');
+  var searchClearEl = $('search-clear');
+  var searchEmptyEl = $('search-empty');
+  var searchQuery = '';              // 当前生效的搜索词（防抖后）
+  var searchDebounceTimer = null;    // 输入防抖 200ms
+  var searchTextIndex = null;        // 惰性内存索引：id -> { t: 标题, b: 正文纯文本 }（小写）
+  var searchTextIdxStamp = 0;        // 索引构建时的便签数量与最大 updatedAt，用于失效判断
+
+  function updateSelCount() {
+    selCountEl.textContent = '已选 ' + Object.keys(selectedIds).length + ' 条';
+  }
+
+  /* ---------- 搜索 ---------- */
+
+  // 把当前便签缓存转成小写纯文本索引；<100 条直接遍历，不建索引（避免过度优化）
+  function buildSearchIndex() {
+    var idx = {};
+    var maxUpdated = 0;
+    for (var i = 0; i < notes.length; i++) {
+      var n = notes[i];
+      idx[n.id] = {
+        t: titleOf(n).toLowerCase(),
+        b: plainTextOf(n.content).toLowerCase()
+      };
+      if (n.updatedAt > maxUpdated) maxUpdated = n.updatedAt;
+    }
+    searchTextIdxStamp = notes.length * 1e13 + maxUpdated; // 条数+最新更新时间拼成失效戳
+    searchTextIndex = idx;
+    return idx;
+  }
+
+  // note -> 小写纯文本（优先取索引，未命中或索引失效则现算）
+  function searchableTextOf(note) {
+    if (notes.length >= 100) {
+      if (!searchTextIndex || searchTextIdxStamp !== notes.length * 1e13 + maxUpdatedAtOf()) buildSearchIndex();
+      var hit = searchTextIndex[note.id];
+      if (hit) return hit.t + '\n' + hit.b;
+    }
+    searchTextIndex = null; // <100 条不维护索引
+    return (titleOf(note) + '\n' + plainTextOf(note.content)).toLowerCase();
+  }
+
+  function maxUpdatedAtOf() {
+    var m = 0;
+    for (var i = 0; i < notes.length; i++) if (notes[i].updatedAt > m) m = notes[i].updatedAt;
+    return m;
+  }
+
+  // 分段过滤与搜索是"与"关系；搜索词为空时等价于只按分段过滤
+  function matchesSearch(note) {
+    if (!searchQuery) return true;
+    return searchableTextOf(note).indexOf(searchQuery) !== -1;
+  }
+
+  // 输入防抖 200ms 后统一走 renderList，只重渲染列表
+  function onSearchInput() {
+    searchWrapEl.classList.toggle('has-text', !!searchInput.value);
+    clearTimeout(searchDebounceTimer);
+    searchDebounceTimer = setTimeout(function () {
+      var q = searchInput.value.trim().toLowerCase();
+      if (q === searchQuery) return;
+      searchQuery = q;
+      renderList();
+    }, 200);
+  }
+
+  // 点"×"清空搜索框，恢复当前分段全部便签
+  function clearSearch() {
+    searchInput.value = '';
+    searchWrapEl.classList.remove('has-text');
+    clearTimeout(searchDebounceTimer);
+    if (!searchQuery) return;
+    searchQuery = '';
+    renderList();
+  }
+
+  searchInput.addEventListener('input', onSearchInput);
+  searchClearEl.addEventListener('click', clearSearch);
+
+  // 关键词高亮：纯文本先 HTML 转义再包 <mark>，天然防注入；大小写不敏感
+  function highlightText(text, q) {
+    var esc = String(text).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    if (!q) return esc;
+    var qEsc = q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    return esc.replace(new RegExp(qEsc, 'gi'), '<mark>$&</mark>');
+  }
+
+  function enterMultiMode(firstId) {
+    multiMode = true;
+    selectedIds = {};
+    if (firstId) selectedIds[firstId] = true; // 被长按的那条自动选中
+    renderList();
+  }
+
+  function exitMultiMode() {
+    multiMode = false;
+    selectedIds = {};
+    renderList();
+  }
+
+  function toggleSelect(id) {
+    if (selectedIds[id]) delete selectedIds[id];
+    else selectedIds[id] = true;
+    renderList(); // 重建列表刷新选中态
+  }
+
+  function cancelListPress() {
+    if (selLpTimer) { clearTimeout(selLpTimer); selLpTimer = null; }
+    var pressed = listEl.querySelectorAll('.note-item.lp-press'); // 清除长按变暗反馈
+    for (var i = 0; i < pressed.length; i++) pressed[i].classList.remove('lp-press');
+  }
+
+  // 列表点击用事件委托：容器上只绑一次，点击时按 dataset.id 取当前渲染的 id，
+  // 避免重渲染后旧监听器拿到过期笔记对象
+  listEl.addEventListener('click', function (e) {
+    var t = e.target;
+    var li = t && t.closest ? t.closest('.note-item') : null; // 实际类名是 .note-item
+    if (!li || !listEl.contains(li)) return;
+    var id = li.dataset.id;
+    if (!id) return;
+    if (t.closest('.todo-chk')) return; // 复选框有自己的处理，已 stopPropagation 兜底
+    if (t.closest('#sel-enter') || t.closest('#menu-btn')) return; // 顶栏按钮不在列表容器内，兜底防误开
+    if (listPressFired) { listPressFired = false; return; }
+    if (multiMode) { toggleSelect(id); return; }
+    openNote(id);
+  });
+
+  // 分段控件切换（事件委托）
+  segBarEl.addEventListener('click', function (e) {
+    var btn = e.target.closest ? e.target.closest('.seg-item') : null;
+    if (btn && btn.dataset.seg) setSeg(btn.dataset.seg);
+  });
+
+  // 悬浮 + 按钮：改为弹出「新建笔记 / 新建待办」选项（action sheet）
+  $('add-btn').addEventListener('click', function () {
+    fabSheetEl.classList.add('open');
+    listView.classList.add('sheet-open');
+  });
+  function closeFabSheet() {
+    fabSheetEl.classList.remove('open');
+    listView.classList.remove('sheet-open');
+  }
+  fabSheetEl.addEventListener('click', function (e) {
+    if (e.target === fabSheetEl || e.target === fabSheetEl.querySelector('.sheet-cancel')) {
+      closeFabSheet();
+      return;
+    }
+    var opt = e.target.closest ? e.target.closest('.sheet-opt') : null;
+    if (!opt) return;
+    closeFabSheet();
+    createNote(opt.dataset.type === 'todo' ? 'todo' : 'note');
+  });
+
+  // 列表排序（含分段过滤）：
+  // 全部：未完成待办（有 dueAt 按 dueAt 升序，无按 updatedAt 倒序）→ 普通笔记（updatedAt 倒序）→ 已完成待办（doneAt 倒序）
+  // 待办：type=todo 且未完成；已完成：type=todo 且已完成（doneAt 倒序）
+  /* ---------- 置顶 ---------- */
+
+  function isPinned(n) { return !!(n && n.pinnedAt); }
+
+  // 置顶/取消置顶：写 pinnedAt（置顶时间戳/null），不改动 updatedAt
+  function togglePin(id) {
+    var note = noteById(id);
+    if (!note) return;
+    note.pinnedAt = isPinned(note) ? null : Date.now();
+    dbPut(note).catch(function () { /* 存储失败静默 */ });
+    renderList();
+  }
+
+  // 最后一条置顶便签的下标（无置顶返回 -1），renderList 用它插分割线
+  function lastPinnedIndex(sorted) {
+    var last = -1;
+    for (var i = 0; i < sorted.length; i++) if (isPinned(sorted[i])) last = i;
+    return last;
+  }
+
+  // 排序比较器：按当前 sortBy（更新时间/创建时间倒序，标题 localeCompare 中文拼音）
+  function compareNotesBySort(a, b) {
+    if (sortBy === 'created') return b.createdAt - a.createdAt;
+    if (sortBy === 'title') {
+      var t = titleOf(a).localeCompare(titleOf(b), 'zh-CN');
+      return t !== 0 ? t : b.updatedAt - a.updatedAt; // 标题相同按更新时间兜底，保证顺序稳定
+    }
+    return b.updatedAt - a.updatedAt;
+  }
+
+  function sortedNotesFor(filter) {
+    var rank = function (n) { return isTodo(n) && isDone(n) ? 2 : (isTodo(n) ? 0 : 1); };
+    return notes.slice().filter(function (n) {
+      if (filter === 'todo') return isTodo(n) && !isDone(n);
+      if (filter === 'done') return isTodo(n) && isDone(n);
+      return true;
+    }).sort(function (a, b) {
+      var pa = isPinned(a), pb = isPinned(b);
+      if (pa !== pb) return pa ? -1 : 1; // 置顶永远在前（分段/搜索过滤后依然生效）
+      if (pa && pb) return b.pinnedAt - a.pinnedAt; // 置顶区按 pinnedAt 倒序
+      var ra = rank(a), rb = rank(b);
+      if (ra !== rb) return ra - rb;
+      if (ra === 0) {
+        if (a.dueAt != null && b.dueAt != null) return a.dueAt - b.dueAt;
+        if (a.dueAt != null) return -1;
+        if (b.dueAt != null) return 1;
+        return b.updatedAt - a.updatedAt;
+      }
+      if (ra === 2) return b.doneAt - a.doneAt;
+      return compareNotesBySort(a, b); // 普通区按当前排序方式
+    });
+  }
+
+  function setSeg(filter) {
+    segFilter = filter;
+    var btns = segBarEl.querySelectorAll('.seg-item');
+    for (var i = 0; i < btns.length; i++) {
+      btns[i].classList.toggle('on', btns[i].dataset.seg === filter);
+    }
+    renderList();
+  }
+
+  function renderList() {
+    var sorted = sortedNotesFor(segFilter).filter(matchesSearch); // 分段与搜索"与"关系
+
+    listEl.innerHTML = '';
+
+    var hasNotes = sorted.length > 0;
+    var emptyTitleEl = emptyEl.querySelector('.empty-title');
+    var emptyHintEl = emptyEl.querySelector('.empty-hint');
+    emptyEl.style.display = hasNotes ? 'none' : 'flex';
+    if (emptyTitleEl && emptyHintEl) {
+      if (segFilter === 'todo') {
+        emptyTitleEl.textContent = '没有待办事项';
+        emptyHintEl.textContent = '点右下角 + 新建待办';
+      } else if (segFilter === 'done') {
+        emptyTitleEl.textContent = '还没有完成的待办';
+        emptyHintEl.textContent = '去「待办」里完成一个试试';
+      } else {
+        emptyTitleEl.textContent = '还没有便签';
+        emptyHintEl.textContent = '点右下角 + 开始记录';
+      }
+    }
+    countEl.textContent = hasNotes ? sorted.length + ' 条' : '';
+    // 搜索无结果提示；普通空状态照旧
+    if (searchQuery && !hasNotes) {
+      searchEmptyEl.textContent = '没有找到含“' + searchInput.value.trim() + '”的便签';
+      searchEmptyEl.style.display = 'block';
+    } else {
+      searchEmptyEl.style.display = 'none';
+    }
+    listView.classList.toggle('multi', multiMode);
+    headerEl.classList.toggle('selecting', multiMode);
+    if (multiMode) updateSelCount();
+    var lastPin = lastPinnedIndex(sorted); // 置顶区末尾下标，用于插分割线
+
+    sorted.forEach(function (note, noteIdx) {
+      var li = document.createElement('li');
+      li.className = 'note-item';
+      if (isTodo(note)) li.classList.add('is-todo');
+      if (isTodo(note) && isDone(note)) li.classList.add('is-done');
+
+      var box = document.createElement('div');
+      box.className = 'sel-box' + (selectedIds[note.id] ? ' on' : '');
+      box.textContent = '✓';
+
+      // 待办：卡片左侧圆形复选框，点击直接切换完成状态（不进编辑页）
+      if (isTodo(note)) {
+        var chk = document.createElement('div');
+        chk.className = 'todo-chk' + (isDone(note) ? ' on' : '');
+        chk.textContent = '✓';
+        chk.addEventListener('click', function (e) {
+          e.stopPropagation(); // 不触发卡片打开/多选
+          if (listPressFired) { listPressFired = false; return; }
+          toggleTodoDone(note.id);
+        });
+        li.appendChild(chk);
+      }
+
+      var body = document.createElement('div');
+      body.className = 'note-body';
+
+      var title = document.createElement('div');
+      title.className = 'title';
+      if (searchQuery) {
+        title.innerHTML = highlightText(titleOf(note), searchQuery); // 纯文本经转义后包 mark，无注入
+      } else {
+        title.textContent = titleOf(note); // textContent，天然防注入
+      }
+
+      var time = document.createElement('div');
+      time.className = 'time';
+      time.textContent = formatTime(note.updatedAt);
+
+      // 未完成待办且有截止时间：右上角显示倒计时，已过期标红
+      if (isTodo(note) && !isDone(note) && note.dueAt) {
+        li.classList.add('has-due');
+        var due = document.createElement('div');
+        var txt = dueText(note);
+        due.className = 'due-badge' + (txt === '已过期' ? ' overdue' : '');
+        due.textContent = txt;
+        due.dataset.id = note.id; // 事件委托刷新倒计时文案
+        li.appendChild(due);
+      }
+
+      // 该便签含重点图片 → 右上角小星标提示（异步查库，带缓存）
+      if (note.id) {
+        var starFlag = document.createElement('div');
+        starFlag.className = 'star-flag';
+        starFlag.textContent = '⭐';
+        starFlag.style.display = 'none';
+        li.appendChild(starFlag);
+        noteHasStarredImage(note.id).then(function (has) {
+          if (!has) return;
+          li.classList.add('has-star');
+          starFlag.style.display = 'block';
+        });
+      }
+
+      // 置顶便签：卡片加 is-pinned（左侧竖条由 CSS ::before 绘制），右上角小图钉
+      if (isPinned(note)) {
+        li.classList.add('is-pinned', 'has-pin');
+        var pinFlag = document.createElement('div');
+        pinFlag.className = 'pin-flag';
+        pinFlag.innerHTML = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 17v5"/><path d="M9 3h6l1 7 3 3H5l3-3z"/></svg>';
+        li.appendChild(pinFlag);
+      }
+
+      var excerpt = document.createElement('div');
+      excerpt.className = 'excerpt';
+      if (searchQuery) {
+        excerpt.innerHTML = highlightText(excerptOf(note), searchQuery);
+      } else {
+        excerpt.textContent = excerptOf(note);
+      }
+
+      body.appendChild(title);
+      body.appendChild(excerpt);
+      body.appendChild(time);
+      li.appendChild(box);
+      li.appendChild(body);
+
+      li.dataset.id = note.id; // 事件委托用：点击时从这里取 id
+
+      // 长按 500ms 弹出单条操作菜单（复制 / 删除）；多选模式下点击即切换，无需长按
+      li.addEventListener('pointerdown', function (e) {
+        listPressFired = false;
+        if (multiMode) return;
+        if (e.button !== undefined && e.button !== 0) return;
+        selLpId = note.id;
+        selLpX = e.clientX; selLpY = e.clientY;
+        li.classList.add('lp-press'); // 长按期间卡片轻微变暗，给视觉反馈
+        selLpTimer = setTimeout(function () {
+          selLpTimer = null;
+          listPressFired = true;
+          li.classList.remove('lp-press');
+          if (navigator.vibrate) { try { navigator.vibrate(20); } catch (err) {} }
+          openNoteSheet(selLpId);
+        }, 500);
+      });
+      li.addEventListener('pointermove', function (e) {
+        if (selLpTimer && (Math.abs(e.clientX - selLpX) > 10 || Math.abs(e.clientY - selLpY) > 10)) {
+          cancelListPress(); // 手指移动视为滚动
+        }
+      });
+      li.addEventListener('pointerup', cancelListPress);
+      li.addEventListener('pointercancel', cancelListPress);
+      // 触屏长按可能先触发 contextmenu：改为立即弹菜单，避免双触发
+      li.addEventListener('contextmenu', function (e) {
+        if (selLpTimer) {
+          e.preventDefault();
+          cancelListPress();
+          listPressFired = true;
+          openNoteSheet(note.id);
+        }
+      });
+
+      listEl.appendChild(li);
+
+      // 置顶区与普通区之间插一条极浅分割线（无置顶或置顶排到最后时不显示）
+      if (noteIdx === lastPin && lastPin < sorted.length - 1) {
+        var divider = document.createElement('li');
+        divider.className = 'pin-divider';
+        listEl.appendChild(divider);
+      }
+    });
+  }
+
+  /* ---------- 单条操作菜单（长按卡片弹出）：复制 / 删除 ---------- */
+
+  function openNoteSheet(id) {
+    var note = noteById(id);
+    if (!note) return;
+    noteSheetId = id;
+    $('ns-pin-label').textContent = isPinned(note) ? '取消置顶' : '置顶'; // 按当前状态切换文案
+    noteSheetEl.classList.add('open'); // 已打开时再次长按其他卡片：直接换成新菜单
+  }
+
+  function closeNoteSheet() {
+    noteSheetEl.classList.remove('open');
+    noteSheetId = null;
+  }
+
+  // 点遮罩或「取消」关闭；点条目则执行对应操作
+  noteSheetEl.addEventListener('click', function (e) {
+    if (e.target === noteSheetEl || e.target.closest('.sheet-cancel')) {
+      closeNoteSheet();
+      return;
+    }
+    var opt = e.target.closest ? e.target.closest('.sheet-opt') : null;
+    if (!opt || !noteSheetId) return;
+    var id = noteSheetId;
+    closeNoteSheet();
+    if (opt.id === 'ns-pin') togglePin(id);
+    else if (opt.id === 'ns-copy') copyNoteText(id);
+    else if (opt.id === 'ns-delete') deleteSingleNote(id);
+  });
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape' && noteSheetEl.classList.contains('open')) closeNoteSheet();
+  });
+
+  // 复制标题+正文纯文本；优先 navigator.clipboard，失败（非安全上下文等）退回 execCommand
+  function copyNoteText(id) {
+    var note = noteById(id);
+    if (!note) return;
+    var text = titleOf(note) + '\n' + plainTextOf(note.content);
+    var fallback = function () {
+      var ta = document.createElement('textarea');
+      ta.value = text;
+      ta.setAttribute('readonly', '');
+      ta.style.position = 'fixed';
+      ta.style.left = '-9999px';
+      document.body.appendChild(ta);
+      ta.select();
+      var ok = false;
+      try { ok = document.execCommand('copy'); } catch (e) {}
+      document.body.removeChild(ta);
+      showUndoToast(ok ? '已复制' : '复制失败');
+    };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(function () {
+        showUndoToast('已复制');
+      }, fallback);
+    } else {
+      fallback();
+    }
+  }
+
+  // 删除单条便签及其图片（复用批量删除的事务，删后刷新列表）
+  function deleteSingleNote(id) {
+    var note = noteById(id);
+    if (!note) return;
+    if (!confirm('删除便签「' + titleOf(note) + '」？此操作不可恢复。')) return;
+    dbDeleteNotesWithImages([id]).then(function (imgIds) {
+      imgIds.forEach(function (imgId) {
+        if (imgUrlCache[imgId]) {
+          URL.revokeObjectURL(imgUrlCache[imgId]);
+          delete imgUrlCache[imgId];
+        }
+      });
+      notes = notes.filter(function (n) { return n.id !== id; }); // 更新内存缓存
+      renderList();
+    }).catch(function () {
+      alert('删除失败，请重试'); // 事务失败则什么都没删，数据保持原样
+    });
+  }
+
+  /* ---------- 视图切换（简化版单向滑入/滑出，状态由 show() 全权管理） ---------- */
+
+  var editorLeaveCleanup = null; // 滑出过程的清理函数（transitionend + 超时兜底）
+
+  // 滑出完成：真正隐藏编辑页并复位临时 class（transform 回到基线 100%，无残留）
+  function finishEditorLeave() {
+    if (editorLeaveCleanup) { editorLeaveCleanup(); editorLeaveCleanup = null; }
+    editorView.classList.remove('active', 'leaving');
+  }
+
+  // 中途改道进编辑页：取消进行中的滑出，避免把刚要显示的编辑页藏掉
+  function cancelEditorLeave() {
+    if (editorLeaveCleanup) { editorLeaveCleanup(); editorLeaveCleanup = null; }
+    editorView.classList.remove('leaving');
+  }
+
+  // 返回列表：编辑页滑出，transitionend（或 340ms 兜底）后隐藏复位
+  function hideEditorWithTransition() {
+    if (!editorView.classList.contains('active') || editorLeaveCleanup) return;
+    editorView.classList.remove('slide-in');
+    editorView.classList.add('leaving'); // → translateX(100%)
+    var onEnd = function (e) {
+      if (e.target !== editorView || e.propertyName !== 'transform') return;
+      finishEditorLeave();
+    };
+    var fallback = setTimeout(finishEditorLeave, 340); // 后台标签页等场景 transitionend 不触发
+    editorLeaveCleanup = function () {
+      clearTimeout(fallback);
+      editorView.removeEventListener('transitionend', onEnd);
+    };
+    editorView.addEventListener('transitionend', onEnd);
+  }
+
+  function show(view) {
+    var toEditor = view === 'editor';
+    listView.classList.toggle('active', !toEditor); // 列表直接显隐，不做联动动画
+    if (toEditor) {
+      cancelEditorLeave(); // 上一次滑出未结束也要先取消，保证本次一定能进入
+      editorView.classList.add('active');   // display:flex，transform 从基线 100% 起步
+      void editorView.offsetWidth;          // 强制重排，确保过渡起点是初始态
+      editorView.classList.add('slide-in'); // 100% → 0 滑入
+    } else {
+      hideEditorWithTransition();
+    }
+  }
+
+  /* ---------- 编辑器 ---------- */
+
+  // 旧版正文用 [图片:id] 文本标记，打开时升级为内联 <img>（id 仅含字母数字，无注入风险）
+  function upgradeLegacyMarkers(content) {
+    return String(content || '').replace(MARKER_RE, '<img data-img-id="$1" alt="便签图片">');
+  }
+
+  function openNote(id) {
+    var myToken = ++openToken; // 本次的入场号；后续在途异步都带着它校验
+    var note = noteById(id);
+    if (!note) return;
+    currentId = id;
+    editorEl.innerHTML = upgradeLegacyMarkers(note.content); // 同步写入，无竞态
+    hydrateImages(editorEl, myToken); // 异步补 src/pos，完成后校验 token
+    savedRange = null; // 换了笔记，旧选区作废；没点过光标则插入时落到末尾
+    syncEditorTodoUI();
+    resetUndoHistory(); // 每次打开便签都清空撤销历史
+    updateWordCount(); // 打开即显示本篇字数
+    show('editor');
+    editorEl.focus();
+  }
+
+  // 编辑页待办区（复选框 + 提醒按钮）随当前便签类型显隐与刷新
+  function syncEditorTodoUI() {
+    var note = noteById(currentId);
+    var isT = !!(note && isTodo(note));
+    editorTodoHead.style.display = isT ? 'flex' : 'none';
+    dueBtn.style.display = isT ? 'inline-flex' : 'none';
+    if (!isT) return;
+    editorTodoChk.classList.toggle('on', isDone(note));
+    if (note.dueAt) {
+      var d = new Date(note.dueAt);
+      dueBtn.textContent = '⏰ ' + (d.getMonth() + 1) + '月' + d.getDate() + '日 ' +
+        pad(d.getHours()) + ':' + pad(d.getMinutes());
+      dueBtn.classList.remove('overdue');
+    } else {
+      dueBtn.textContent = '⏰ 设置提醒';
+      dueBtn.classList.remove('overdue');
+    }
+    dueInput.value = note.dueAt ? toLocalInputValue(note.dueAt) : '';
+    hideDuePop();
+  }
+
+  function createNote(type) {
+    var now = Date.now();
+    var note = { id: uid(), content: '', createdAt: now, updatedAt: now };
+    if (type === 'todo') {
+      note.type = 'todo';
+      note.dueAt = null;
+      note.doneAt = null;
+    }
+    notes.unshift(note);
+    dbPut(note).catch(function () { /* 存储失败静默 */ });
+    openNote(note.id);
+  }
+
+  function autosave() {
+    if (!currentId) return;
+    var note = noteById(currentId);
+    if (!note) return;
+    note.content = editorEl.innerHTML.replace(/ class="lp-dim"/g, ''); // 序列化成 HTML 存库；长按反馈类不入库
+    note.updatedAt = Date.now();
+    syncImagesStars(); // 重点标注与正文一起入库
+    invalidateStarFlagCache(currentId);
+    dbPut(note).then(function () {
+      saveStatus.classList.add('show');
+      clearTimeout(statusTimer);
+      statusTimer = setTimeout(function () {
+        saveStatus.classList.remove('show');
+      }, 1200);
+    }).catch(function () { /* 存储失败静默 */ });
+  }
+
+  function backToList() {
+    openToken++; // 离开编辑器，作废该笔记所有在途异步加载
+    // 空便签自动清理，避免留下空条目
+    var note = noteById(currentId);
+    if (note && isNoteEmpty(note)) {
+      notes = notes.filter(function (n) { return n.id !== currentId; });
+      dbDelete(currentId).catch(function () { /* 存储失败静默 */ });
+      cleanupImagesForNote(currentId);
+    }
+    currentId = null;
+    clearTimeout(wordCountTimer); // 取消在途的字数统计，避免空引用
+    renderList();
+    show('list');
+  }
+
+  function deleteCurrent() {
+    var note = noteById(currentId);
+    var label = note ? titleOf(note) : '';
+    if (!confirm('删除便签「' + label + '」？此操作不可恢复。')) return;
+    notes = notes.filter(function (n) { return n.id !== currentId; });
+    dbDelete(currentId).catch(function () { /* 存储失败静默 */ });
+    cleanupImagesForNote(currentId);
+    openToken++; // 同 backToList：删除即离开编辑器，作废在途加载
+    currentId = null;
+    renderList();
+    show('list');
+  }
+
+  /* ---------- 撤销 / 重做（仅编辑页正文与标题内容） ---------- */
+
+  var UNDO_MAX = 50;          // 历史栈上限
+  var undoHistory = [];       // 快照栈：{ content, caretOffset, imgCount }
+  var undoPointer = -1;       // 当前所在的历史位置
+  var undoTimer = null;       // 500ms 防抖定时器
+  var isRestoring = false;    // 恢复快照写 DOM 期间不产生新快照
+  var lastPushedSnap = null;  // 上一次入栈（或打开便签）时的基准，用于识别图片增删
+  var undoToastTimer = null;
+
+  function caretOffsetNow() {
+    var sel = window.getSelection();
+    if (!sel || sel.rangeCount === 0 || !editorEl.contains(sel.anchorNode)) return -1;
+    var r = sel.getRangeAt(0);
+    var range = document.createRange();
+    range.selectNodeContents(editorEl);
+    range.setEnd(r.endContainer, r.endOffset);
+    return range.toString().length; // 纯文本偏移量
+  }
+
+  function snapshotNow() {
+    return {
+      content: editorEl.innerHTML,
+      caretOffset: caretOffsetNow(),
+      imgCount: editorEl.querySelectorAll('img[data-img-id]').length
+    };
+  }
+
+  // 光标按纯文本偏移恢复：从编辑器起点数第 offset 个字符处
+  function setCaretByOffset(root, offset, range) {
+    var remaining = offset;
+    var walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, null, false);
+    var node;
+    while ((node = walker.nextNode())) {
+      var len = node.nodeValue.length;
+      if (remaining <= len) {
+        try { range.setStart(node, remaining); range.collapse(true); return true; }
+        catch (err) { return false; }
+      }
+      remaining -= len;
+    }
+    return false;
+  }
+
+  function pushUndoSnapshot() {
+    undoTimer = null;
+    var snap = snapshotNow();
+    if (lastPushedSnap) {
+      if (snap.content === lastPushedSnap.content) return; // 无实际变化
+      // 仅图片增删（纯文本相同）不入历史：图片有独立的数据管理
+      if (snap.imgCount !== lastPushedSnap.imgCount &&
+          htmlToPlain(snap.content) === htmlToPlain(lastPushedSnap.content)) {
+        lastPushedSnap = snap; // 图片状态同步到基准，但不产生撤销步
+        return;
+      }
+    }
+    undoHistory = undoHistory.slice(0, undoPointer + 1); // 新操作丢弃重做分支
+    if (undoHistory.length >= UNDO_MAX) undoHistory.shift();
+    undoHistory.push(snap);
+    undoPointer = undoHistory.length - 1;
+    lastPushedSnap = snap;
+    updateUndoButtons();
+  }
+
+  // 内容变化后延迟 500ms 入栈，连续输入合并成一个快照
+  function scheduleUndoSnapshot() {
+    if (isRestoring) return;
+    clearTimeout(undoTimer);
+    undoTimer = setTimeout(pushUndoSnapshot, 500);
+  }
+
+  function restoreSnapshot(snap) {
+    isRestoring = true;
+    editorEl.innerHTML = String(snap.content || '').replace(/ class="lp-dim"/g, '');
+    var sel = window.getSelection();
+    var restored = false;
+    if (snap.caretOffset >= 0 && sel) {
+      var range = document.createRange();
+      if (setCaretByOffset(editorEl, snap.caretOffset, range)) {
+        sel.removeAllRanges();
+        sel.addRange(range);
+        restored = true;
+      }
+    }
+    if (!restored) { // 无有效偏移：光标放编辑器末尾
+      editorEl.focus();
+      var end = document.createRange();
+      end.selectNodeContents(editorEl);
+      end.collapse(false);
+      if (sel) { sel.removeAllRanges(); sel.addRange(end); }
+    }
+    var note = noteById(currentId);
+    if (note) {
+      note.content = editorEl.innerHTML;
+      note.updatedAt = Date.now();
+      dbPut(note).catch(function () { /* 存储失败静默 */ });
+    }
+    renderImageStrip();
+    // 快照不含图片增删历史：恢复后清掉库里已不存在的图片节点，避免幽灵图
+    Array.prototype.forEach.call(editorEl.querySelectorAll('img[data-img-id]'), function (img) {
+      var id = img.dataset.imgId;
+      if (!id || imgUrlCache[id]) return;
+      dbGetImage(id).then(function (rec) {
+        if (rec || !img.isConnected) return;
+        img.remove();
+        var n = noteById(currentId);
+        if (n) {
+          n.content = editorEl.innerHTML;
+          dbPut(n).catch(function () { /* 存储失败静默 */ });
+        }
+      });
+    });
+    isRestoring = false;
+  }
+
+  function updateUndoButtons() {
+    $('undo-btn').disabled = undoPointer <= 0; // 最初状态：撤销变灰
+    $('redo-btn').disabled = undoPointer >= undoHistory.length - 1;
+  }
+
+  // 打开便签时重置历史（历史不跨便签、不跨会话）
+  function resetUndoHistory() {
+    clearTimeout(undoTimer);
+    undoTimer = null;
+    isRestoring = true;
+    undoHistory = [snapshotNow()];
+    undoHistory[0].caretOffset = -1;
+    undoPointer = 0;
+    lastPushedSnap = undoHistory[0];
+    isRestoring = false;
+    updateUndoButtons();
+  }
+
+  function undoEdits() {
+    if (undoPointer <= 0) return;
+    clearTimeout(undoTimer);
+    undoPointer--;
+    lastPushedSnap = undoHistory[undoPointer];
+    restoreSnapshot(undoHistory[undoPointer]);
+    showUndoToast('已撤销');
+    updateUndoButtons();
+  }
+
+  function redoEdits() {
+    if (undoPointer >= undoHistory.length - 1) return;
+    clearTimeout(undoTimer);
+    undoPointer++;
+    lastPushedSnap = undoHistory[undoPointer];
+    restoreSnapshot(undoHistory[undoPointer]);
+    showUndoToast('已重做');
+    updateUndoButtons();
+  }
+
+  function showUndoToast(text) {
+    var toast = $('undo-toast');
+    toast.textContent = text;
+    toast.classList.add('show');
+    clearTimeout(undoToastTimer);
+    undoToastTimer = setTimeout(function () { toast.classList.remove('show'); }, 1500);
+  }
+
+  /* ---------- 图片插入 ---------- */
+
+  // 保存编辑器当前选区；光标不在编辑器里时存 null（插入时落到末尾）
+  function saveEditorRange() {
+    var sel = window.getSelection();
+    if (sel && sel.rangeCount > 0 && editorEl.contains(sel.anchorNode)) {
+      savedRange = sel.getRangeAt(0).cloneRange();
+    } else {
+      savedRange = null;
+    }
+  }
+
+  // 保存的选区是否还能用（起点节点必须仍连接在文档里且属于编辑器）
+  function rangeIsValid(range) {
+    return !!(range && range.startContainer && range.startContainer.isConnected &&
+              editorEl.contains(range.startContainer));
+  }
+
+  // 在光标处插入元素：优先恢复点「图片」按钮前保存的选区，无效则落到编辑器末尾
+  function insertNodeAtCaret(node) {
+    editorEl.focus();
+    var sel = window.getSelection();
+    if (rangeIsValid(savedRange)) {
+      sel.removeAllRanges();
+      sel.addRange(savedRange); // 恢复保存的光标位置
+    } else {
+      savedRange = null;
+      var end = document.createRange();
+      end.selectNodeContents(editorEl);
+      end.collapse(false); // 从未保存过有效光标，定位到编辑器末尾
+      sel.removeAllRanges();
+      sel.addRange(end);
+    }
+    var range = sel.getRangeAt(0);
+    range.deleteContents();
+    range.insertNode(node);
+    // 光标移到插入内容之后，同时更新 savedRange，多张图按 DOM 顺序依次插入
+    var r = document.createRange();
+    r.setStartAfter(node);
+    r.collapse(true);
+    sel.removeAllRanges();
+    sel.addRange(r);
+    savedRange = r.cloneRange();
+    // contenteditable 不会因 DOM 操作自动触发 input，手动触发以启动自动保存
+    editorEl.dispatchEvent(new Event('input', { bubbles: true }));
+  }
+
+  function handleImageFiles(files) {
+    if (!currentId || !files || !files.length) return;
+    Array.prototype.forEach.call(files, function (file) {
+      if (!file || file.type.indexOf('image/') !== 0) return;
+      if (file.size > 10 * 1024 * 1024) {
+        alert('图片「' + file.name + '」超过 10MB，已跳过');
+        return;
+      }
+      var rec = {
+        id: uid(),
+        noteId: currentId,
+        mime: file.type,
+        blob: file,
+        pos: Date.now(), // 存储时在正文中的顺序（DOM 顺序）
+        createdAt: Date.now(),
+        starred: false // 图片重点标注，默认无
+      };
+      dbPutImage(rec).then(function () {
+        if (currentId !== rec.noteId) {
+          // 上传落库前用户已离开该笔记：作废插入并清掉孤儿记录，避免图片串到别的便签
+          dbDeleteImage(rec.id).catch(function () { /* 存储失败静默 */ });
+          return;
+        }
+        var img = document.createElement('img');
+        img.dataset.imgId = rec.id;
+        img.dataset.imgNoteId = rec.noteId; // 供重点标注写库时补 noteId
+        img.alt = '便签图片';
+        img.src = URL.createObjectURL(rec.blob); // 立即在正文里显示
+        insertNodeAtCaret(img);
+        renderImageStrip();
+      }).catch(function () {
+        alert('图片保存失败，请重试');
+      });
+    });
+  }
+
+  function getImageURL(id) {
+    if (imgUrlCache[id]) return Promise.resolve(imgUrlCache[id]);
+    return dbGetImage(id).then(function (rec) {
+      if (!rec) return null;
+      var url = URL.createObjectURL(rec.blob);
+      imgUrlCache[id] = url;
+      return url;
+    }).catch(function () { return null; });
+  }
+
+  // 打开笔记时为每张 img 恢复 src 并复用 objectURL；旧记录缺 pos 时按 DOM 顺序补写
+  // myToken：调用时的 openToken，回调回来后不一致说明已切笔记，直接丢弃
+  function hydrateImages(container, myToken) {
+    if (myToken === undefined) myToken = openToken;
+    var imgs = container.querySelectorAll('img[data-img-id]');
+    Array.prototype.forEach.call(imgs, function (img, idx) {
+      var id = img.dataset.imgId;
+      if (!id) return;
+      img.dataset.imgNoteId = currentId || ''; // 供重点标注写库时补 noteId
+      if (imgUrlCache[id]) { img.src = imgUrlCache[id]; return; }
+      getImageURL(id).then(function (url) {
+        if (myToken !== openToken) return; // 已切到别的笔记，丢弃过期结果
+        if (url && img.isConnected) img.src = url;
+      });
+      dbGetImage(id).then(function (rec) {
+        if (myToken !== openToken) return; // 过期结果不回写
+        if (rec && rec.pos === undefined) {
+          rec.pos = idx;
+          return dbPutImage(rec);
+        }
+        if (rec && rec.starred && img.isConnected) {
+          img.classList.add('starred'); // 库里标记了重点 → 恢复样式
+          renderImageStrip();
+        }
+      }).catch(function () { /* 补写失败静默 */ });
+    });
+    renderImageStrip(myToken);
+  }
+
+  function renderImageStrip(myToken) {
+    if (myToken === undefined) myToken = openToken;
+    var ids = [];
+    var seen = {};
+    Array.prototype.forEach.call(editorEl.querySelectorAll('img[data-img-id]'), function (img) {
+      var id = img.dataset.imgId;
+      if (!seen[id]) { seen[id] = true; ids.push(id); }
+    });
+
+    stripEl.innerHTML = '';
+    stripEl.style.display = ids.length ? 'flex' : 'none';
+
+    var token = ++stripRenderToken;
+    ids.forEach(function (id) {
+      getImageURL(id).then(function (url) {
+        // 双重校验：本条渲染已被更新，或已切换笔记，都丢弃过期结果
+        if (!url || token !== stripRenderToken || myToken !== openToken) return;
+        var wrap = document.createElement('div');
+        wrap.className = 'img-thumb';
+        var srcImg = editorEl.querySelector('img[data-img-id="' + id + '"]');
+        if (srcImg && srcImg.classList.contains('starred')) wrap.classList.add('starred'); // 缩略图同步星标
+
+        var img = document.createElement('img');
+        img.src = url;
+        img.alt = '便签图片';
+
+        wrap.appendChild(img);
+        stripEl.appendChild(wrap);
+      });
+    });
+  }
+
+  // 删除便签时清理其图片，并回收已生成的 objectURL
+  function cleanupImagesForNote(noteId) {
+    dbDeleteImagesForNote(noteId).then(function (ids) {
+      ids.forEach(function (id) {
+        if (imgUrlCache[id]) {
+          URL.revokeObjectURL(imgUrlCache[id]);
+          delete imgUrlCache[id];
+        }
+      });
+    }).catch(function () { /* 存储失败静默 */ });
+  }
+
+  /* ---------- 导出 / 导入 ---------- */
+
+  function closeMenu() { menuPop.classList.remove('open'); }
+
+  // Blob → base64（不带 data: 前缀），用 FileReader
+  function blobToBase64(blob) {
+    return new Promise(function (resolve, reject) {
+      var fr = new FileReader();
+      fr.onload = function () {
+        var s = String(fr.result);
+        resolve(s.slice(s.indexOf(',') + 1));
+      };
+      fr.onerror = function () { reject(fr.error); };
+      fr.readAsDataURL(blob);
+    });
+  }
+
+  // base64 → Blob，用 atob + Uint8Array
+  function base64ToBlob(b64, mime) {
+    var bin = atob(String(b64 || ''));
+    var arr = new Uint8Array(bin.length);
+    for (var i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+    return new Blob([arr], { type: mime || 'application/octet-stream' });
+  }
+
+  function fileToText(file) {
+    return new Promise(function (resolve, reject) {
+      var fr = new FileReader();
+      fr.onload = function () { resolve(String(fr.result)); };
+      fr.onerror = function () { reject(fr.error); };
+      fr.readAsText(file);
+    });
+  }
+
+  // 核心导出：只导出 noteIds 里的笔记及其对应图片；filePrefix 决定文件名前缀
+  function exportNotes(noteIds, filePrefix) {
+    var idSet = {};
+    (noteIds || []).forEach(function (id) { idSet[id] = true; });
+    return openDB().then(function (db) {
+      return Promise.all([
+        reqAsPromise(db.transaction(STORE).objectStore(STORE).getAll()),
+        reqAsPromise(db.transaction(IMAGES).objectStore(IMAGES).getAll())
+      ]);
+    }).then(function (all) {
+      var noteRecs = all[0].filter(function (n) { return idSet[n.id]; }).map(normalizeNote);
+      var imgRecs = all[1].filter(function (g) { return g.noteId && idSet[g.noteId]; });
+      return Promise.all(imgRecs.map(function (rec) {
+        return blobToBase64(rec.blob).then(function (b64) {
+          return {
+            id: rec.id, noteId: rec.noteId, mime: rec.mime, dataBase64: b64,
+            pos: rec.pos, createdAt: rec.createdAt, // 附加字段，恢复时保留图片顺序
+            starred: rec.starred === true // 保留重点标注
+          };
+        });
+      })).then(function (imgs) {
+        var payload = {
+          version: 2, // v2：包含待办字段；导入侧兼容 version 1
+          exportedAt: new Date().toISOString(),
+          notes: noteRecs.map(function (n) {
+            return {
+              id: n.id, content: n.content, createdAt: n.createdAt, updatedAt: n.updatedAt,
+              type: n.type, dueAt: n.dueAt, doneAt: n.doneAt,
+              pinnedAt: n.pinnedAt, color: n.color, starred: n.starred
+            };
+          }),
+          images: imgs
+        };
+        var d = new Date();
+        var stamp = d.getFullYear() + pad(d.getMonth() + 1) + pad(d.getDate());
+        var blob = new Blob([JSON.stringify(payload)], { type: 'application/json' });
+        var a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = filePrefix + stamp + '.json';
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        setTimeout(function () { URL.revokeObjectURL(a.href); }, 5000);
+      });
+    }).catch(function () { alert('导出失败，请重试'); });
+  }
+
+  // ⋮ 菜单「导出」= 导出全部
+  function doExport() {
+    closeMenu();
+    exportNotes(notes.map(function (n) { return n.id; }), 'notes-backup-');
+  }
+
+  function doImport() {
+    closeMenu();
+    importInput.click();
+  }
+
+  function validImportPayload(p) {
+    return !!(p && typeof p === 'object' && (p.version === 1 || p.version === 2) &&
+              Array.isArray(p.notes) &&
+              (p.images === undefined || Array.isArray(p.images)));
+  }
+
+  function handleImportFile(file) {
+    if (!file) return;
+    fileToText(file).then(function (text) {
+      var payload = JSON.parse(text); // 解析失败走 catch
+      if (!validImportPayload(payload)) {
+        alert('文件格式不正确，导入已取消');
+        return;
+      }
+      var now = Date.now();
+      var noteRecs = payload.notes.filter(function (n) {
+        return n && typeof n.id === 'string';
+      }).map(function (n) {
+        // version 1 旧备份缺待办字段，按默认值补齐（dueAt/doneAt 为 null）
+        var due = (payload.version >= 2 && typeof n.dueAt === 'number') ? n.dueAt : null;
+        var done = (payload.version >= 2 && typeof n.doneAt === 'number') ? n.doneAt : null;
+        return normalizeNote({
+          id: n.id,
+          content: typeof n.content === 'string' ? n.content : '',
+          createdAt: Number(n.createdAt) || now,
+          updatedAt: Number(n.updatedAt) || Number(n.createdAt) || now,
+          type: n.type === 'todo' ? 'todo' : 'note',
+          dueAt: due,
+          doneAt: done,
+          pinnedAt: (payload.version >= 2 && 'pinnedAt' in n && n.pinnedAt !== undefined) ? n.pinnedAt : null,
+          color: (payload.version >= 2 && 'color' in n && n.color !== undefined) ? n.color : null,
+          starred: (payload.version >= 2 && n.starred === true)
+        });
+      });
+      var imgRecs = (payload.images || []).filter(function (g) {
+        return g && typeof g.id === 'string' && typeof g.dataBase64 === 'string';
+      }).map(function (g) {
+        return {
+          id: g.id,
+          noteId: typeof g.noteId === 'string' ? g.noteId : null,
+          mime: typeof g.mime === 'string' ? g.mime : 'application/octet-stream',
+          blob: base64ToBlob(g.dataBase64, g.mime),
+          pos: Number(g.pos) || 0,
+          createdAt: Number(g.createdAt) || now,
+          starred: g.starred === true // 保留重点标注（旧备份无此字段默认 false）
+        };
+      });
+      return openDB().then(function (db) {
+        // 同一事务写入两个 store；put 天然按 id 覆盖，新 id 直接新增
+        return new Promise(function (resolve, reject) {
+          var tx = db.transaction([STORE, IMAGES], 'readwrite');
+          var ns = tx.objectStore(STORE);
+          var is = tx.objectStore(IMAGES);
+          noteRecs.forEach(function (n) { ns.put(n); });
+          imgRecs.forEach(function (g) { is.put(g); });
+          tx.oncomplete = function () { resolve(); };
+          tx.onerror = function () { reject(tx.error); };
+        });
+      }).then(function () {
+        return dbGetAll().then(function (arr) {
+          notes = arr;
+          renderList();
+          alert('导入了 ' + noteRecs.length + ' 条笔记，' + imgRecs.length + ' 张图片');
+        });
+      });
+    }).catch(function () {
+      alert('导入失败：文件不是合法的备份 JSON');
+    });
+  }
+
+  /* ---------- 图片交互：放大查看 / 长按删除 ---------- */
+
+  var viewerEl = $('img-viewer');
+  var viewerImgEl = $('viewer-img');
+  var viewerCloseEl = $('viewer-close');
+  var vScale = 1, vTx = 0, vTy = 0;            // 查看器当前缩放与平移
+  var pinchStartDist = 0, pinchStartScale = 1; // 双指手势起点
+  var vLastX = 0, vLastY = 0;                  // 单指平移上一次位置
+  var vStartX = 0, vStartY = 0;                // 本轮触摸起点，用于区分点击与拖动
+  var pinchMode = false, vMoved = false;
+  var lpTimer = null, lpImg = null, lpX = 0, lpY = 0;
+  var longPressFired = false; // 长按触发后抑制其后的 click，避免误放大
+
+  function applyViewerTransform() {
+    viewerImgEl.style.transform = 'translate(' + vTx + 'px,' + vTy + 'px) scale(' + vScale + ')';
+  }
+
+  function resetViewerTransform() {
+    vScale = 1; vTx = 0; vTy = 0;
+    applyViewerTransform();
+  }
+
+  function openViewer(src) {
+    if (!src) return;
+    viewerImgEl.src = src;
+    resetViewerTransform();
+    viewerEl.classList.add('open');
+    document.body.style.overflow = 'hidden'; // 查看期间禁止页面滚动
+  }
+
+  function closeViewer() {
+    viewerEl.classList.remove('open');
+    viewerImgEl.removeAttribute('src');
+    document.body.style.overflow = '';
+  }
+
+  // 从事件目标向上找 <img>，只在自己所在的容器（编辑器/缩略图条）内找
+  function imgFromEvent(e, root) {
+    var t = e.target;
+    while (t && t !== root) {
+      if (t.nodeType === 1 && t.tagName === 'IMG') return t;
+      t = t.parentNode;
+    }
+    return null;
+  }
+
+  function touchDist(touches) {
+    var dx = touches[0].clientX - touches[1].clientX;
+    var dy = touches[0].clientY - touches[1].clientY;
+    return Math.sqrt(dx * dx + dy * dy);
+  }
+
+  // 删除正文图片：DOM、IndexedDB、objectURL 三处清理，并触发自动保存
+  function deleteInlineImage(img) {
+    var id = img.dataset && img.dataset.imgId;
+    if (!id) return; // 缩略图等无 id 的图片不参与删除
+    if (!confirm('删除这张图片？')) return;
+    img.remove();
+    dbDeleteImage(id).catch(function () { /* 存储失败静默 */ });
+    if (imgUrlCache[id]) {
+      URL.revokeObjectURL(imgUrlCache[id]);
+      delete imgUrlCache[id];
+    }
+    editorEl.dispatchEvent(new Event('input', { bubbles: true })); // 触发自动保存
+    renderImageStrip();
+  }
+
+  function startLongPress(e) {
+    longPressFired = false;
+    if (e.button !== undefined && e.button !== 0) return; // 只处理主键/触摸
+    var img = imgFromEvent(e, editorEl);
+    if (!img || !img.dataset || !img.dataset.imgId) return;
+    lpImg = img;
+    lpX = e.clientX; lpY = e.clientY;
+    img.classList.add('lp-dim'); // 长按期间稍微变暗
+    lpTimer = setTimeout(function () {
+      lpTimer = null;
+      longPressFired = true; // 抑制随后的 click
+      if (lpImg) lpImg.classList.remove('lp-dim');
+      if (navigator.vibrate) { try { navigator.vibrate(20); } catch (err) {} }
+      openImgMenu(lpImg); // 长按图片弹出菜单：标记/取消重点 + 删除
+      lpImg = null;
+    }, 500);
+  }
+
+  function cancelLongPress() {
+    if (lpTimer) { clearTimeout(lpTimer); lpTimer = null; }
+    if (lpImg) { lpImg.classList.remove('lp-dim'); lpImg = null; }
+  }
+
+  /* ---------- 图片重点标注：长按菜单标记/取消重点，状态存 images.starred ---------- */
+
+  var imgMenuEl = $('img-menu');
+  var imgMenuImg = null; // 菜单当前对应的图片元素
+
+  function openImgMenu(img) {
+    imgMenuImg = img;
+    var starred = img.classList.contains('starred');
+    $('im-star-label').textContent = starred ? '取消重点' : '标记重点';
+    $('im-star-icon').textContent = starred ? '✩' : '⭐';
+    imgMenuEl.classList.add('open');
+  }
+  function closeImgMenu() {
+    imgMenuEl.classList.remove('open');
+    imgMenuImg = null;
+  }
+  imgMenuEl.addEventListener('click', function (e) {
+    if (e.target === imgMenuEl || e.target.closest('.sheet-cancel')) { closeImgMenu(); return; }
+    var opt = e.target.closest ? e.target.closest('.sheet-opt') : null;
+    if (!opt || !imgMenuImg) return;
+    var img = imgMenuImg;
+    closeImgMenu();
+    if (opt.id === 'im-star') toggleImageStar(img);
+    else if (opt.id === 'im-delete') deleteInlineImage(img);
+  });
+
+  // 切换图片重点标注：DOM class 与 IndexedDB images.starred 双写
+  function toggleImageStar(img) {
+    var id = img.dataset && img.dataset.imgId;
+    if (!id) return;
+    var on = !img.classList.contains('starred');
+    img.classList.toggle('starred', on);
+    var patch = { id: id, starred: on };
+    if (img.dataset.imgNoteId) patch.noteId = img.dataset.imgNoteId;
+    dbPutImage(patch).then(function () {
+      if (!on && imgMenuImg === img) closeImgMenu();
+      renderImageStrip(); // 缩略图条同步星标
+      invalidateStarFlagCache(img.dataset.imgNoteId); // 列表星标缓存失效
+      renderList(); // 列表卡片右上角星标刷新
+    }).catch(function () { /* 存储失败静默 */ });
+  }
+
+  // 保存时把编辑器内每张图的 starred 同步进库（整段同步，不一致才写）
+  function syncImagesStars() {
+    var imgs = editorEl.querySelectorAll('img[data-img-id]');
+    var seen = {};
+    var jobs = [];
+    Array.prototype.forEach.call(imgs, function (img) {
+      var id = img.dataset.imgId;
+      if (!id || seen[id]) return;
+      seen[id] = true;
+      var wanted = img.classList.contains('starred');
+      jobs.push(dbGetImage(id).then(function (rec) {
+        if (!rec || !!rec.starred === wanted) return;
+        var patch = { id: id, starred: wanted };
+        if (rec.noteId) patch.noteId = rec.noteId;
+        return dbPutImage(patch);
+      }).catch(function () { /* 存储失败静默 */ }));
+    });
+    return Promise.all(jobs);
+  }
+
+  // 某便签是否有重点图片（列表星标用）；查询结果缓存避免重复读库
+  var starredFlagCache = {};
+  function noteHasStarredImage(noteId) {
+    if (noteId in starredFlagCache) return Promise.resolve(starredFlagCache[noteId]);
+    return dbGetAllImages().then(function (arr) { 
+      var has = arr.some(function (g) { return g.noteId === noteId && g.starred === true; });
+      starredFlagCache[noteId] = has;
+      return has;
+    }).catch(function () { return false; });
+  }
+  function invalidateStarFlagCache(noteId) {
+    if (noteId) delete starredFlagCache[noteId];
+    else starredFlagCache = {};
+  }
+
+  /* ---------- 事件 ---------- */
+
+  $('back-btn').addEventListener('click', backToList);
+  $('delete-btn').addEventListener('click', deleteCurrent);
+
+  // 撤销 / 重做按钮
+  $('undo-btn').addEventListener('click', undoEdits);
+  $('redo-btn').addEventListener('click', redoEdits);
+
+  // 快捷键（仅编辑页）：Ctrl+Z 撤销，Ctrl+Shift+Z / Ctrl+Y 重做；移动端用顶栏按钮
+  document.addEventListener('keydown', function (e) {
+    if (!editorView.classList.contains('active')) return;
+    var mod = e.ctrlKey || e.metaKey;
+    if (!mod) return;
+    var k = (e.key || '').toLowerCase();
+    if (k !== 'z' && k !== 'y') return;
+    e.preventDefault();
+    if (k === 'y' || e.shiftKey) redoEdits(); else undoEdits();
+  });
+
+  // 编辑页：待办完成复选框
+  editorTodoChk.addEventListener('click', function () { toggleTodoDone(currentId); });
+
+  // 编辑页：提醒按钮 + 原生 datetime-local 选择器
+  dueBtn.addEventListener('click', function () {
+    if (duePopEl.classList.contains('open')) { hideDuePop(); return; }
+    duePopEl.classList.add('open');
+    clearTimeout(duePopTimer);
+  });
+  dueInput.addEventListener('change', function () {
+    var note = noteById(currentId);
+    if (!note || !isTodo(note)) { hideDuePop(); return; }
+    note.dueAt = dueInput.value ? fromLocalInputValue(dueInput.value) : null;
+    dbPut(note).catch(function () { /* 存储失败静默 */ });
+    syncEditorTodoUI();
+    renderList();
+    hideDuePop();
+  });
+  $('due-clear').addEventListener('click', function () {
+    var note = noteById(currentId);
+    if (note && isTodo(note)) {
+      note.dueAt = null;
+      dbPut(note).catch(function () { /* 存储失败静默 */ });
+      syncEditorTodoUI();
+      renderList();
+    }
+    hideDuePop();
+  });
+  function hideDuePop() {
+    duePopEl.classList.remove('open');
+    clearTimeout(duePopTimer);
+  }
+  document.addEventListener('click', function (e) {
+    if (!duePopEl.classList.contains('open')) return;
+    if (duePopEl.contains(e.target) || e.target === dueBtn || dueBtn.contains(e.target)) return;
+    hideDuePop();
+  });
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape' && duePopEl.classList.contains('open')) hideDuePop();
+  });
+
+  // ⋮ 菜单与关于弹窗
+  $('menu-btn').addEventListener('click', function (e) {
+    e.stopPropagation();
+    menuPop.classList.toggle('open');
+  });
+  document.addEventListener('click', function (e) {
+    if (menuPop.classList.contains('open') && !menuPop.contains(e.target)) closeMenu();
+  });
+  $('menu-export').addEventListener('click', doExport);
+  $('menu-import').addEventListener('click', doImport);
+  $('menu-about').addEventListener('click', function () {
+    closeMenu();
+    $('about-mask').classList.add('open');
+  });
+  $('about-close').addEventListener('click', function () {
+    $('about-mask').classList.remove('open');
+  });
+  $('about-mask').addEventListener('click', function (e) {
+    if (e.target === $('about-mask')) $('about-mask').classList.remove('open');
+  });
+
+  importInput.addEventListener('change', function () {
+    var f = importInput.files && importInput.files[0];
+    handleImportFile(f);
+    importInput.value = ''; // 允许重复导入同一文件
+  });
+
+  // 顶栏「选择」按钮：进入多选模式（多选入口从长按改为这里）
+  $('sel-enter').addEventListener('click', function () {
+    enterMultiMode(null);
+  });
+
+  // 多选模式顶栏
+  $('sel-cancel').addEventListener('click', exitMultiMode);
+  $('sel-export').addEventListener('click', function () {
+    var ids = Object.keys(selectedIds);
+    if (!ids.length) { alert('请先选择要导出的便签'); return; }
+    exportNotes(ids, 'notes-selected-');
+    exitMultiMode();
+  });
+
+  // 多选模式批量删除
+  $('sel-delete').addEventListener('click', function () {
+    var ids = Object.keys(selectedIds);
+    if (!ids.length) { alert('请先选择要删除的便签'); return; }
+    if (!confirm('确认删除 ' + ids.length + ' 条便签？此操作不可恢复。')) return;
+    dbDeleteNotesWithImages(ids).then(function (imgIds) {
+      imgIds.forEach(function (id) {
+        if (imgUrlCache[id]) {
+          URL.revokeObjectURL(imgUrlCache[id]);
+          delete imgUrlCache[id];
+        }
+      });
+      notes = notes.filter(function (n) { return !selectedIds[n.id]; }); // 更新内存缓存
+      exitMultiMode(); // 退出多选并重渲染，删空时自动显示空状态
+      alert('已删除 ' + ids.length + ' 条便签');
+    }).catch(function () {
+      alert('删除失败，请重试'); // 事务失败则什么都没删，数据保持原样
+    });
+  });
+
+  // 点击正文/缩略图图片 → 全屏放大查看
+  editorEl.addEventListener('click', function (e) {
+    var img = imgFromEvent(e, editorEl);
+    if (!img) return;
+    if (longPressFired) { longPressFired = false; return; }
+    openViewer(img.src);
+  });
+  stripEl.addEventListener('click', function (e) {
+    var img = imgFromEvent(e, stripEl);
+    if (img) openViewer(img.src);
+  });
+
+  // 长按（500ms）正文图片 → 确认删除；桌面端右键等价
+  editorEl.addEventListener('pointerdown', startLongPress);
+  editorEl.addEventListener('pointermove', function (e) {
+    if (lpTimer && (Math.abs(e.clientX - lpX) > 10 || Math.abs(e.clientY - lpY) > 10)) {
+      cancelLongPress(); // 手指移动了，视为滚动而不是长按
+    }
+  });
+  editorEl.addEventListener('pointerup', cancelLongPress);
+  editorEl.addEventListener('pointercancel', cancelLongPress);
+  editorEl.addEventListener('contextmenu', function (e) {
+    var img = imgFromEvent(e, editorEl);
+    if (!img || !img.dataset || !img.dataset.imgId) return; // 非图片保持系统菜单
+    e.preventDefault();
+    if (longPressFired) { longPressFired = false; return; } // 长按已弹过菜单，不重复
+    cancelLongPress(); // 右键先到时取消尚未触发的长按定时器
+    openImgMenu(img); // 桌面端右键等价于长按
+  });
+
+  // 查看器手势：双指缩放（1–5 倍），放大后单指平移
+  viewerEl.addEventListener('touchstart', function (e) {
+    vMoved = false;
+    vStartX = e.touches[0].clientX;
+    vStartY = e.touches[0].clientY;
+    if (e.touches.length === 2) {
+      pinchMode = true;
+      pinchStartDist = touchDist(e.touches);
+      pinchStartScale = vScale;
+    } else {
+      vLastX = e.touches[0].clientX;
+      vLastY = e.touches[0].clientY;
+    }
+  }, { passive: false });
+  viewerEl.addEventListener('touchmove', function (e) {
+    e.preventDefault(); // touch-action:none 的兑底，确保页面不滚动
+    if (e.touches.length === 2) {
+      vMoved = true;
+      var s = pinchStartScale * touchDist(e.touches) / pinchStartDist;
+      vScale = Math.min(5, Math.max(1, s));
+      if (vScale === 1) { vTx = 0; vTy = 0; }
+      applyViewerTransform();
+    } else if (!pinchMode && e.touches.length === 1 && vScale > 1) {
+      var x = e.touches[0].clientX, y = e.touches[0].clientY;
+      if (Math.abs(x - vStartX) > 10 || Math.abs(y - vStartY) > 10) vMoved = true;
+      vTx += x - vLastX;
+      vTy += y - vLastY;
+      vLastX = x; vLastY = y;
+      applyViewerTransform();
+    }
+  }, { passive: false });
+  viewerEl.addEventListener('touchend', function (e) {
+    if (e.touches.length < 2) pinchMode = false;
+    if (e.touches.length === 1) { // 双指抬起一根后继续单指平移
+      vLastX = e.touches[0].clientX;
+      vLastY = e.touches[0].clientY;
+      vStartX = vLastX; vStartY = vLastY;
+    }
+  }, { passive: false });
+
+  // 点遮罩任意位置或 × 关闭；缩放/平移后的合成 click 不触发关闭
+  viewerEl.addEventListener('click', function (e) {
+    if (vMoved) { vMoved = false; return; }
+    if (e.target === viewerEl || e.target === viewerImgEl || e.target === viewerCloseEl) {
+      closeViewer();
+    }
+  });
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape' && viewerEl.classList.contains('open')) closeViewer();
+  });
+
+  $('img-btn').addEventListener('click', function () {
+    saveEditorRange(); // 弹出文件选择器前立刻保存当前光标位置
+    imgInput.click();
+  });
+  imgInput.addEventListener('change', function () {
+    var files = Array.prototype.slice.call(imgInput.files); // 快照，避免重置 input 清空 FileList
+    imgInput.value = ''; // 立即重置，保证同一张图能重复上传
+    handleImageFiles(files);
+  });
+
+  editorEl.addEventListener('input', function () {
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(autosave, 1000); // 输入停止 1 秒后自动保存
+    scheduleUndoSnapshot(); // 内容变化延迟 500ms 压入撤销快照（防抖）
+    scheduleWordCount(); // 字数统计防抖 300ms
+  });
+  editorEl.addEventListener('blur', autosave);
+
+  /* ---------- 选中文字浮动工具栏：加粗 / 高亮 ---------- */
+
+  var fmtBarEl = $('fmt-bar');
+  var fmtHideTimer = null;
+
+  function editorSelection() {
+    var sel = window.getSelection();
+    if (!sel || sel.rangeCount === 0 || sel.isCollapsed) return null;
+    var r = sel.getRangeAt(0);
+    if (!editorEl.contains(r.commonAncestorContainer)) return null;
+    return sel;
+  }
+  function fmtState(cmd) {
+    try { return document.queryCommandState(cmd); } catch (e) { return false; }
+  }
+  function refreshFmtStates() {
+    $('fmt-bold').classList.toggle('on', fmtState('bold'));
+    var markOn = false;
+    try { markOn = !!document.queryCommandState('hiliteColor'); } catch (e) {}
+    if (!markOn) { // 有些内核不支持 hiliteColor 状态查询：退回检查 <mark> 祖先
+      var sel = window.getSelection();
+      if (sel && sel.rangeCount > 0) {
+        var anc = sel.getRangeAt(0).commonAncestorContainer;
+        var el = anc.nodeType === 1 ? anc : anc.parentNode;
+        markOn = !!(el && el.closest && el.closest('#editor mark'));
+      }
+    }
+    $('fmt-hilite').classList.toggle('on', markOn);
+  }
+  function hideFmtBar() {
+    clearTimeout(fmtHideTimer);
+    fmtBarEl.classList.remove('show');
+  }
+  function maybeShowFmtBar() {
+    if (!editorView.classList.contains('active')) { hideFmtBar(); return; }
+    var sel = editorSelection();
+    if (!sel) { hideFmtBar(); return; }
+    refreshFmtStates();
+    fmtBarEl.classList.add('show');
+    var rect = sel.getRangeAt(0).getBoundingClientRect();
+    if (rect.width === 0 && rect.height === 0) return; // 异常选区不定位
+    var barH = fmtBarEl.offsetHeight || 48;
+    var x = rect.left + rect.width / 2;
+    var y = rect.top - barH - 10;
+    var margin = 8;
+    if (y < margin + 60) y = Math.min(rect.bottom + 10, window.innerHeight - barH - margin);
+    x = Math.max(margin + 40, Math.min(x, window.innerWidth - margin - 40));
+    fmtBarEl.style.left = x + 'px';
+    fmtBarEl.style.right = 'auto';
+    fmtBarEl.style.top = y + 'px';
+  }
+  function execFmt(cmd, val) {
+    editorEl.focus();
+    document.execCommand(cmd, false, val || null);
+    maybeShowFmtBar();
+    editorEl.dispatchEvent(new Event('input', { bubbles: true })); // 触发自动保存与撤销快照
+  }
+
+  // 选区内找 mark 祖先（用于高亮 toggle 与状态兜底检测）
+  function selMarkAncestor() {
+    var sel = window.getSelection();
+    if (!sel || sel.rangeCount === 0) return null;
+    var anc = sel.getRangeAt(0).commonAncestorContainer;
+    var el = anc.nodeType === 1 ? anc : anc.parentNode;
+    return el && el.closest ? el.closest('#editor mark') : null;
+  }
+
+  // execCommand('hiliteColor') 不可用时 fallback：手动把选区包进 <mark>
+  function wrapSelectionInMark() {
+    var sel = window.getSelection();
+    if (!sel || sel.rangeCount === 0 || sel.isCollapsed) return;
+    var range = sel.getRangeAt(0);
+    var mk = document.createElement('mark');
+    mk.appendChild(range.extractContents());
+    range.insertNode(mk);
+    sel.removeAllRanges();
+    var r2 = document.createRange();
+    r2.selectNodeContents(mk);
+    sel.addRange(r2); // 选区保留
+  }
+
+  // 取消高亮：把选区 intersect 到的所有 <mark> 拆开（子节点原位移回）
+  function unwrapSelectionMarks() {
+    var sel = window.getSelection();
+    if (!sel || sel.rangeCount === 0) return;
+    var range = sel.getRangeAt(0);
+    var marks = Array.prototype.slice.call(editorEl.querySelectorAll('mark'));
+    marks.forEach(function (mk) {
+      if (!range.intersectsNode(mk)) return;
+      var p = mk.parentNode;
+      if (!p) return;
+      while (mk.firstChild) p.insertBefore(mk.firstChild, mk);
+      p.removeChild(mk);
+    });
+    sel.removeAllRanges();
+    sel.addRange(range); // 选区保留
+  }
+
+  // 高亮 toggle：已是高亮 → 取消；否则 execCommand，失败则包 <mark>
+  function toggleHighlight() {
+    editorEl.focus();
+    var markEl = selMarkAncestor();
+    var stateOn = fmtState('hiliteColor');
+    if (markEl) {
+      unwrapSelectionMarks();
+    } else if (stateOn) {
+      document.execCommand('hiliteColor', false, 'transparent');
+    } else {
+      var ok = false;
+      try { ok = document.execCommand('hiliteColor', false, '#FFF3B0'); } catch (e) {}
+      if (!ok) wrapSelectionInMark();
+    }
+    maybeShowFmtBar();
+    editorEl.dispatchEvent(new Event('input', { bubbles: true }));
+  }
+
+  $('fmt-bold').addEventListener('click', function () { execFmt('bold'); });
+  $('fmt-hilite').addEventListener('click', toggleHighlight);
+
+  // 按钮按下不抢编辑器焦点，选区才不会丢
+  Array.prototype.forEach.call(fmtBarEl.querySelectorAll('button'), function (b) {
+    b.addEventListener('mousedown', function (e) { e.preventDefault(); });
+    b.addEventListener('touchstart', function (e) { e.preventDefault(); }, { passive: false });
+  });
+
+  // 选区变化 → 显示/隐藏/移位工具栏；滚动时先隐藏避免错位
+  document.addEventListener('selectionchange', function () {
+    clearTimeout(fmtHideTimer);
+    fmtHideTimer = setTimeout(maybeShowFmtBar, 120); // 防抖，避免拖选过程频繁定位
+  });
+  window.addEventListener('scroll', hideFmtBar, true);
+  window.addEventListener('resize', hideFmtBar);
+
+  // 粘贴时只保留纯文本与换行，清掉富文本格式
+  editorEl.addEventListener('paste', function (e) {
+    e.preventDefault();
+    var text = e.clipboardData ? e.clipboardData.getData('text/plain') : '';
+    document.execCommand('insertText', false, text);
+  });
+
+  window.addEventListener('beforeunload', function () {
+    if (currentId) autosave();
+  });
+
+  // 应用内提醒：启动时检查已到期未完成的待办，alert 提示（最多列 5 条）
+  function checkDueReminders() {
+    try {
+      if (sessionStorage.getItem('due-reminded') === '1') return; // 本会话已提醒过
+    } catch (e) { /* 隐私模式等场景 */ }
+    var now = Date.now();
+    var due = notes.filter(function (n) {
+      return isTodo(n) && !isDone(n) && n.dueAt && n.dueAt <= now;
+    }).sort(function (a, b) { return a.dueAt - b.dueAt; });
+    if (!due.length) return;
+    var lines = due.slice(0, 5).map(function (n) { return '· ' + titleOf(n); });
+    if (due.length > 5) lines.push('...还有 ' + (due.length - 5) + ' 条');
+    alert('你有 ' + due.length + ' 条待办已到期\n' + lines.join('\n'));
+    try { sessionStorage.setItem('due-reminded', '1'); } catch (e) {}
+  }
+
+  // 启动：打开数据库 → 迁移旧 localStorage 数据 → 加载 → 首次渲染 → 到期提醒
+  openDB()
+    .then(migrateLegacy)
+    .then(dbGetAll)
+    .then(function (arr) {
+      notes = arr;
+      updateSortMenu(); // 应用持久化的排序方式后再首次渲染
+      renderList();
+      checkDueReminders();
+    })
+    .catch(function () {
+      // 数据库打不开（极端隐私模式等）时显示空列表
+      renderList();
+    });
+})();
+
+/* ---------- UI 动效增强层（独立 IIFE，只做表现增强，不改任何业务逻辑） ---------- */
+(function () {
+  'use strict';
+  var listView = document.getElementById('list-view');
+  var editorView = document.getElementById('editor-view');
+  var viewerEl = document.getElementById('img-viewer');
+  var listEl = document.getElementById('note-list');
+  // 触觉反馈：不支持的平台静默忽略
+  function buzz(ms) {
+    try { if (navigator.vibrate) navigator.vibrate(ms); } catch (e) {}
+  }
+
+  /* --- 页面切换动画已简化并内联到业务层 show()：类名增删与 transitionend 清理
+         都在同处完成，不再用 MutationObserver 观察/接管（原实现的存在 400ms
+         静默窗口与 animationend 丢事件两个隐患，会导致 transform 停在中间态） --- */
+
+  /* --- 图片查看器关闭动画接管：open 移除后保活 0.18s 淡出 --- */
+  var closingLatch = false;
+  var vo = new MutationObserver(function () {
+    var open = viewerEl.classList.contains('open');
+    if (!open && !closingLatch) {
+      closingLatch = true;
+      viewerEl.classList.add('closing');
+    } else if (open) {
+      closingLatch = false;
+      viewerEl.classList.remove('closing');
+    }
+  });
+  vo.observe(viewerEl, { attributes: true, attributeFilter: ['class'] });
+  viewerEl.addEventListener('animationend', function (e) {
+    if (e.animationName === 'viewer-fade-out') viewerEl.classList.remove('closing');
+  });
+
+  /* --- 首屏卡片依次入场：只对首次渲染生效，之后的重渲染不闪动 --- */
+  var bootDone = false;
+  var lo = new MutationObserver(function () {
+    if (bootDone || !listEl.children.length) return;
+    bootDone = true;
+    lo.disconnect();
+    listEl.classList.add('boot-in');
+    setTimeout(function () { listEl.classList.remove('boot-in'); }, 600);
+  });
+  lo.observe(listEl, { childList: true });
+
+  /* --- 触觉反馈：capture 阶段监听，不影响原处理逻辑 --- */
+  document.addEventListener('click', function (e) {
+    var t = e.target;
+    if (!t || !t.closest) return;
+    if (t.closest('#sel-delete')) buzz(30); // 删除确认后 30ms
+    if (t.closest('#sel-export') || t.closest('#menu-export')) buzz(20); // 导出 20ms
+  }, true);
+})();
+</script>
+</body>
+</html>
