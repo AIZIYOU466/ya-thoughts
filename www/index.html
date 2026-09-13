@@ -98,11 +98,13 @@
   /* 编辑页盖在列表上层（不透明背景）；切换时列表直接显隐，不再做视差联动 */
   #editor-view { position: relative; z-index: 2; background: var(--bg-page); }
 
-  /* 页面切换（简化版）：编辑页激活时基线 transform 为 translateX(100%)（初始态），
-     进页加 .slide-in → 滑到 0；返回加 .leaving → 滑回 100%；
-     transitionend（或超时兜底）后移除临时 class 复位，任何情况下不残留中间 transform */
-  #editor-view.active { transform: translateX(100%); transition: transform 0.28s var(--ease-swift); }
-  #editor-view.active.slide-in { transform: translateX(0); }
+  /* 页面切换（简化版）：基线态就是到位态 —— #editor-view.active 即 translateX(0)。
+     进页：先加 .entering 摆到屏外 100%，强制重排后移除 → 一次性滑入到 0；
+     返回：加 .leaving → 滑回 100% 后隐藏复位。
+     transitionend（或 340ms 超时兜底）后移除临时 class；即使过渡事件全部丢失，
+     基线最终态也是 translateX(0)，页面任何情况下都能滑到位、不留空白 */
+  #editor-view.active { transform: translateX(0); transition: transform 0.28s var(--ease-swift); }
+  #editor-view.active.entering { transform: translateX(100%); }
   #editor-view.active.leaving { transform: translateX(100%); }
   @keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
   @keyframes fade-out { from { opacity: 1; } to { opacity: 0; } }
@@ -644,7 +646,7 @@
   }
   .editor-bar-left { display: flex; justify-self: start; }
   #back-btn {
-    width: 40px; height: 40px;
+    width: 44px; height: 44px;
     display: inline-flex; align-items: center; justify-content: center;
     border-radius: 50%;
     color: var(--text-secondary);
@@ -654,7 +656,7 @@
   .bar-spacer { width: 1px; }
   .editor-bar-right { display: flex; justify-self: end; align-items: center; gap: 8px; }
   .undo-redo-btn {
-    width: 40px; height: 40px;
+    width: 44px; height: 44px;
     display: inline-flex; align-items: center; justify-content: center;
     border-radius: 50%;
     color: var(--text-secondary);
@@ -663,12 +665,11 @@
   .undo-redo-btn:active { background: var(--chip-bg); transform: scale(0.94); will-change: transform; }
   .undo-redo-btn:disabled { opacity: 0.3; pointer-events: none; }
   #delete-btn {
-    justify-self: end;
-    min-height: 44px;
-    padding: 0 12px;
-    font-size: 15px; font-weight: 500;
+    width: 44px; height: 44px;
+    flex: 0 0 auto;
+    display: inline-flex; align-items: center; justify-content: center;
+    border-radius: 50%;
     color: var(--danger);
-    border-radius: 10px;
     transition: background 0.15s var(--ease), transform 0.1s var(--ease);
   }
   #delete-btn:active { background: rgba(229, 72, 77, 0.1); transform: scale(0.96); will-change: transform; }
@@ -1247,7 +1248,11 @@
           <path d="M4 12v7a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-7"/><path d="M16 6l-4-4-4 4"/><path d="M12 2v13"/>
         </svg>
       </button>
-      <button id="delete-btn" title="删除此便签">删除</button>
+      <button id="delete-btn" title="删除此便签" aria-label="删除此便签">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M3 6h18"/><path d="M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>
+        </svg>
+      </button>
     </div>
   </div>
   <div id="editor-todo-head">
@@ -2255,45 +2260,49 @@
 
   /* ---------- 视图切换（简化版单向滑入/滑出，状态由 show() 全权管理） ---------- */
 
-  var editorLeaveCleanup = null; // 滑出过程的清理函数（transitionend + 超时兜底）
+  var editorAnimCleanup = null; // 滑入/滑出过程的清理函数（transitionend + 超时兜底）
 
-  // 滑出完成：真正隐藏编辑页并复位临时 class（transform 回到基线 100%，无残留）
-  function finishEditorLeave() {
-    if (editorLeaveCleanup) { editorLeaveCleanup(); editorLeaveCleanup = null; }
-    editorView.classList.remove('active', 'leaving');
+  // 动画结束：移除一次性临时 class，编辑页回到基线到位态 translateX(0)
+  function finishEditorAnim() {
+    if (editorAnimCleanup) { editorAnimCleanup(); editorAnimCleanup = null; }
+    editorView.classList.remove('entering', 'leaving');
   }
 
-  // 中途改道进编辑页：取消进行中的滑出，避免把刚要显示的编辑页藏掉
-  function cancelEditorLeave() {
-    if (editorLeaveCleanup) { editorLeaveCleanup(); editorLeaveCleanup = null; }
-    editorView.classList.remove('leaving');
-  }
-
-  // 返回列表：编辑页滑出，transitionend（或 340ms 兜底）后隐藏复位
-  function hideEditorWithTransition() {
-    if (!editorView.classList.contains('active') || editorLeaveCleanup) return;
-    editorView.classList.remove('slide-in');
-    editorView.classList.add('leaving'); // → translateX(100%)
+  // 挂动画结束监听：transitionend（transform）或 340ms 超时兜底
+  //（后台标签页等场景收不到 transitionend，超时强制复位到位态）
+  function watchEditorAnimEnd() {
     var onEnd = function (e) {
       if (e.target !== editorView || e.propertyName !== 'transform') return;
-      finishEditorLeave();
+      finishEditorAnim();
     };
-    var fallback = setTimeout(finishEditorLeave, 340); // 后台标签页等场景 transitionend 不触发
-    editorLeaveCleanup = function () {
+    var fallback = setTimeout(finishEditorAnim, 340);
+    editorAnimCleanup = function () {
       clearTimeout(fallback);
       editorView.removeEventListener('transitionend', onEnd);
     };
     editorView.addEventListener('transitionend', onEnd);
   }
 
+  // 返回列表：编辑页滑出（滑入途中点返回则直接掉头），结束后隐藏复位
+  function hideEditorWithTransition() {
+    if (!editorView.classList.contains('active')) return;
+    if (editorAnimCleanup) { editorAnimCleanup(); editorAnimCleanup = null; } // 取消在途动画
+    editorView.classList.add('leaving'); // → translateX(100%)，从任何当前位置都能过渡
+    watchEditorAnimEnd();
+  }
+
   function show(view) {
     var toEditor = view === 'editor';
     listView.classList.toggle('active', !toEditor); // 列表直接显隐，不做联动动画
     if (toEditor) {
-      cancelEditorLeave(); // 上一次滑出未结束也要先取消，保证本次一定能进入
-      editorView.classList.add('active');   // display:flex，transform 从基线 100% 起步
-      void editorView.offsetWidth;          // 强制重排，确保过渡起点是初始态
-      editorView.classList.add('slide-in'); // 100% → 0 滑入
+      finishEditorAnim(); // 上一次滑出未结束也要先复位，保证本次一定能进入
+      editorView.classList.add('active');       // display:flex + 到位态基线 translateX(0)
+      editorView.classList.add('entering');     // 先摆到屏外起点 100%
+      editorView.style.transition = 'none';     // 摆起点不参与过渡（含中途改道时避免来回弹）
+      void editorView.offsetWidth;              // 强制重排，锁定起点
+      editorView.style.transition = '';         // 恢复过渡
+      editorView.classList.remove('entering');  // 100% → 0 滑入，结束停在基线到位态
+      watchEditorAnimEnd();
     } else {
       hideEditorWithTransition();
     }
@@ -2318,7 +2327,8 @@
     resetUndoHistory(); // 每次打开便签都清空撤销历史
     updateWordCount(); // 打开即显示本篇字数
     show('editor');
-    editorEl.focus();
+    // 不自动聚焦编辑器：避免进入编辑页就弹键盘；用户点一下编辑器再输入
+    if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
   }
 
   // 编辑页待办区（复选框 + 提醒按钮）随当前便签类型显隐与刷新
