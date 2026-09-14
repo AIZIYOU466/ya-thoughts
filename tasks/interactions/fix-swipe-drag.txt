@@ -1,0 +1,127 @@
+修复 /root/workspace/notes-app/index.html 中左滑操作菜单和长按拖拽的两个 bug。
+请加载 motion-web 技能，用它规范"操作反馈"和"拖拽手感"的动效参数。
+
+═══════════════════════════════════════
+Bug 1：左滑露出的操作按钮需要点击两次才生效
+═══════════════════════════════════════
+
+现象：
+- 左滑卡片，露出置顶/复制/删除三个按钮。
+- 第一次点击任一按钮，什么都没发生（或只是卡片弹回原状）。
+- 第二次点击同样的按钮，才执行操作。
+
+根因分析（按优先级排查）：
+1. 检查按钮的 pointerdown / pointerup / click 事件绑定。
+   - 若 pointerdown 里有 preventDefault() 或 stopPropagation()，可能吃掉第一次 click。
+   - 若按钮的父容器（swipe 层）在 pointerdown 时先触发 closeOpenSwipe()（弹回动画 240ms），
+     弹回期间按钮的 pointer-events 可能被设为 none，导致第一次 click 丢失。
+2. 检查 closeOpenSwipe 的实现：是否在启动弹回动画的瞬间就把按钮 pointer-events 关掉。
+   - 正确做法：先记录要执行的操作，等弹回动画结束（transitionend 或 setTimeout）后再执行。
+     或者：直接执行操作，让卡片连同操作结果一起消失，不要先弹回。
+
+修复要求（关键）：
+- 删除"先弹回、再执行"的两段式逻辑。
+- 点击按钮后，直接执行对应操作：
+  · 置顶：立即切换 pinnedAt，卡片带过渡动画移到顶部。
+  · 复制：立即复制到剪贴板。
+  · 删除：立即启动曲线删除动画。
+- 按钮的 pointerdown 不要 preventDefault，让 click 正常触发。
+- 若必须防止滑动，改用 click + touchstart 的组合监听，或使用 passive: false 的 touchstart。
+- 单一明确的事件路径：一个按钮只绑定一个 click 处理器，处理器里只做一件事。
+
+═══════════════════════════════════════
+Bug 2：长按拖拽无法上下移动，松手弹回原位
+═══════════════════════════════════════
+
+现象：
+- 长按 500ms 后卡片有响应（放大、阴影）。
+- 但手指上下移动时，卡片不跟手。
+- 松手后卡片弹回原位。
+
+根因分析（按优先级排查）：
+1. 检查卡片的 CSS touch-action。
+   - 若为 pan-y，浏览器会接管纵向手势并 cancel pointermove，导致拖拽收不到 move 事件。
+   - 正确做法：拖拽状态激活时，把卡片的 touch-action 设为 none；
+     非拖拽状态下才允许 pan-y（让列表可滚动）。
+   - 动态切换：pointerdown 时若进入拖拽候选，立刻设 touch-action: none。
+2. 检查 pointermove 事件是否绑定在 document 或 window 上。
+   - 若绑定在卡片自身，手指滑出卡片边界就收不到 move 了。
+   - 正确做法：pointerdown 后用 setPointerCapture(pointerId)，或把 pointermove/pointerup 监听挂到 window。
+3. 检查 pointermove 里有没有正确计算位移。
+   - dy = currentPointerY - startPointerY，拖拽卡片 transform: translateY(dy)。
+   - 检查是否误用了 e.movementY（部分浏览器返回 0）。
+4. 检查 pointerup 是否被判定为"移动不足"从而取消。
+   - 若拖动距离超过 10px 才进入拖拽模式，那进入后就应该允许任意移动。
+   - 检查拖动阈值判断是否在 pointermove 里只判断一次，之后不再重置。
+
+修复要求（关键）：
+- pointerdown 后，在卡片上设置 setPointerCapture(pointerId)，确保手势不丢。
+- 或者：pointermove / pointerup 监听挂在 window 上，pointerup 时移除。
+- 拖拽激活的瞬间：
+  · 卡片设 touch-action: none（通过内联样式或 .dragging 类）
+  · 卡片设 position: relative 或 fixed，z-index 提升
+  · 其他卡片开始让位
+- pointermove 时：
+  · e.preventDefault()（若监听是 passive: false）
+  · 计算 dy，通过 transform: translate3d(0, dy, 0) 移动卡片
+  · 计算当前 y 坐标落在哪个卡片的索引区，触发其他卡片让位
+- pointerup 时：
+  · 判断落点索引
+  · 调用 saveCustomOrder 写入 IndexedDB
+  · 移除 .dragging 类，清除 inline style，恢复 touch-action
+  · 卡片回到正常文档流位置
+
+═══════════════════════════════════════
+改进 1：操作反馈（参考 motion-web 规范）
+═══════════════════════════════════════
+
+用户要求：操作生效时要有提醒。
+
+实现：
+- 置顶成功 → toast "已置顶"
+- 取消置顶 → toast "已取消置顶"
+- 复制成功 → toast "已复制"
+- 删除成功 → toast "已删除"
+- toast 复用现有的 toast 组件（若已有 undo toast，就用同一个）。
+- 位置：底部安全区上方 80px。
+- 样式：半透明黑底白字，圆角胶囊。
+- 时长：1500ms。
+- 动效（参考 motion-web ease-out 档）：
+  · 入场 200ms，cubic-bezier(0, 0.55, 0.45, 1)（快入）
+  · 出场 150ms，linear
+
+═══════════════════════════════════════
+改进 2：删除确认框改成中文"是/否"
+═══════════════════════════════════════
+
+问题：原生 confirm() 的按钮文字由浏览器语言决定，中文浏览器显示"确定/取消"，
+英文浏览器显示"OK/Cancel"，不受控制。
+
+修复：
+- 弃用原生 confirm()，改成自定义 modal 组件。
+- Modal 结构：
+  · 半透明黑遮罩（rgba(0,0,0,0.4)），淡入 150ms
+  · 中间白色圆角卡片（圆角 16px，宽 280px，padding 24px）
+  · 标题："确认删除"
+  · 正文："删除后无法恢复，确定删除这条便签吗？"
+  · 底部两个按钮并排：
+    - 左："否"（灰底 #F0F2F5，文字 #1A1D21）
+    - 右："是"（红底 #E5484D，白字）
+  · 按钮高度 44px，圆角 10px，间距 12px
+- 深色模式：白卡换成 #1A1D21，文字换成 #E8EAED
+- 点击"是" → 关闭 modal，执行删除
+- 点击"否"或点遮罩 → 关闭 modal，什么都不做
+- 删除模态框要做成可复用的组件函数：confirmDialog({ title, message, confirmText, cancelText }) → Promise<boolean>
+
+═══════════════════════════════════════
+严格约束
+═══════════════════════════════════════
+
+- 只改左滑菜单和长按拖拽这两块，以及新增的 toast 和 confirm modal。
+- 不动以下：自动保存、光标恢复、粘贴、图片交互、撤销/重做、多选批量删除、
+  导出/导入、待办、提醒、搜索、置顶数据字段、字数、排序、分享、主题切换、
+  摘要展开、曲线删除动画。
+- 纯原生 JS，无依赖。
+- 使用 Pointer Events。
+- 使用 transform 驱动所有动画。
+- 改完告诉我：文件大小、新增/修改的函数名、两个 bug 的根因确认、验证结果。

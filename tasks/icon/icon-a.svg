@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="512" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#F0F6FF"/>
+      <stop offset="1" stop-color="#D8E8FA"/>
+    </linearGradient>
+  </defs>
+
+  <!-- 背景：圆角方形 + 顶部到底部渐变 -->
+  <rect width="512" height="512" rx="115" fill="url(#bg)"/>
+
+  <!-- 水波纹：底部两道弧线，40px / 65px -->
+  <path d="M 216 472 Q 256 490 296 472" stroke="#A8C8E8" stroke-width="10" stroke-linecap="round" fill="none" opacity="0.5"/>
+  <path d="M 186 447 Q 256 471 326 447" stroke="#A8C8E8" stroke-width="10" stroke-linecap="round" fill="none" opacity="0.3"/>
+
+  <!-- Y 形树枝：主干 (256,400) → (256,220)，左枝 → (150,110)，右枝 → (360,130) -->
+  <path d="M 256 400 L 256 220 L 150 110 M 256 220 L 360 130" stroke="#4A6B5C" stroke-width="28" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+  <!-- 分叉处平滑 -->
+  <circle cx="256" cy="220" r="15" fill="#4A6B5C"/>
+
+  <!-- 左叶（淡绿）：水滴/贝塞尔 -->
+  <path d="M 96 56 C 116 40 158 66 150 110 C 140 118 100 102 96 56 Z" fill="#7FB89A"/>
+  <!-- 右叶（鸭黄） -->
+  <path d="M 402 93 C 420 78 384 102 360 130 C 362 138 394 110 402 93 Z" fill="#FFC83D"/>
+</svg>

@@ -1,0 +1,101 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <!-- 背景：上浅下深的上下渐变（比旧版深一档） -->
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="512" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#F0F6FF"/>
+      <stop offset="1" stop-color="#B8D4EC"/>
+    </linearGradient>
+    <!-- 中央稍亮：水面反光 -->
+    <radialGradient id="bgGlow" cx="50%" cy="50%" r="85%">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0.28"/>
+      <stop offset="0.45" stop-color="#FFFFFF" stop-opacity="0"/>
+      <stop offset="1" stop-color="#FFFFFF" stop-opacity="0"/>
+    </radialGradient>
+    <!-- 四角略深：角落水色暗角 -->
+    <radialGradient id="vnTL" gradientUnits="userSpaceOnUse" cx="60" cy="60" r="290">
+      <stop offset="0" stop-color="#A3C3E0" stop-opacity="0.5"/>
+      <stop offset="0.55" stop-color="#A3C3E0" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="vnTR" gradientUnits="userSpaceOnUse" cx="452" cy="60" r="290">
+      <stop offset="0" stop-color="#A3C3E0" stop-opacity="0.5"/>
+      <stop offset="0.55" stop-color="#A3C3E0" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="vnBL" gradientUnits="userSpaceOnUse" cx="60" cy="452" r="290">
+      <stop offset="0" stop-color="#A3C3E0" stop-opacity="0.5"/>
+      <stop offset="0.55" stop-color="#A3C3E0" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="vnBR" gradientUnits="userSpaceOnUse" cx="452" cy="452" r="290">
+      <stop offset="0" stop-color="#A3C3E0" stop-opacity="0.5"/>
+      <stop offset="0.55" stop-color="#A3C3E0" stop-opacity="0"/>
+    </radialGradient>
+    <!-- 水面线：鸭子身体下部约 1/4 被水遮住 -->
+    <clipPath id="waterline">
+      <path d="M -40 0 L -40 358 Q 338 340 552 356 L 552 0 Z"/>
+    </clipPath>
+  </defs>
+
+  <!-- 背景：圆角方形（上下渐变 + 中央反光 + 四角略深） -->
+  <rect width="512" height="512" rx="115" fill="url(#bg)"/>
+  <rect width="512" height="512" rx="115" fill="url(#bgGlow)"/>
+  <rect width="512" height="512" rx="115" fill="url(#vnTL)"/>
+  <rect width="512" height="512" rx="115" fill="url(#vnTR)"/>
+  <rect width="512" height="512" rx="115" fill="url(#vnBL)"/>
+  <rect width="512" height="512" rx="115" fill="url(#vnBR)"/>
+
+  <!-- ═══════════ Y：土褐色树枝 ═══════════ -->
+  <g stroke="#8B6B4A" stroke-width="26" stroke-linecap="round" stroke-linejoin="round" fill="none">
+    <!-- 主干（底部 → 分叉） -->
+    <path d="M 222 380 L 204 250"/>
+    <!-- 左分支 -->
+    <path d="M 204 250 L 122 152"/>
+    <!-- 右分支 -->
+    <path d="M 204 250 L 274 162"/>
+  </g>
+  <!-- 分叉处平滑 -->
+  <circle cx="204" cy="250" r="13.5" fill="#8B6B4A"/>
+
+  <!-- 树皮纹路：#6B4F35 短横线，位置不规则（主干 2，左分支 1，右分支 2） -->
+  <g stroke="#6B4F35" stroke-width="3.5" stroke-linecap="round">
+    <!-- 主干 -->
+    <path d="M 207 362 L 226 362"/>
+    <path d="M 199 308 L 216 308"/>
+    <!-- 左分支 -->
+    <path d="M 137 180 L 154 180"/>
+    <!-- 右分支 -->
+    <path d="M 230 204 L 248 204"/>
+    <path d="M 248 182 L 266 182"/>
+  </g>
+
+  <!-- 左叶（淡绿）：左上末端 -->
+  <path d="M 88 110 C 100 94 128 124 120 150 C 108 144 96 134 90 120 Z" fill="#7FB89A"/>
+  <!-- 右叶（鸭黄）：右上末端 -->
+  <path d="M 300 118 C 312 108 296 132 272 158 C 282 166 296 150 304 126 Z" fill="#FFC83D"/>
+
+  <!-- ═══════════ a：小黄鸭（浮在水面） ═══════════ -->
+  <g fill="#FFC83D" clip-path="url(#waterline)">
+    <!-- 尾巴：身体左侧后方，向上翘起的小三角 -->
+    <path d="M 284 334 L 248 310 L 300 322 Z"/>
+    <!-- 身体：横向椭圆（宽 > 高） -->
+    <ellipse cx="336" cy="332" rx="54" ry="33"/>
+    <!-- 头部：身体右侧偏上的小圆，与身体连成一体 -->
+    <circle cx="385" cy="298" r="23"/>
+  </g>
+  <!-- 鸭嘴：头右侧橙色小三角，朝右 -->
+  <path d="M 399 286 L 423 298 L 399 308 Z" fill="#E8912D" stroke="#E8912D" stroke-width="3" stroke-linejoin="round"/>
+  <!-- 眼睛：头部左侧深色小圆点 -->
+  <circle cx="372" cy="291" r="3" fill="#2A2A2A"/>
+
+  <!-- ═══════════ 水波纹：下半部 5 道弧线（宽度、弧度、位置各不相同） ═══════════ -->
+  <g stroke="#6A9CC4" fill="none" stroke-linecap="round">
+    <!-- 鸭子正下方、紧贴身体：弧度明显，宽度覆盖鸭子 -->
+    <path d="M 278 368 Q 334 344 394 366" stroke-width="8" opacity="0.55"/>
+    <!-- 底部中央：最长 -->
+    <path d="M 148 438 Q 256 460 372 434" stroke-width="11" opacity="0.5"/>
+    <!-- 左下角：短弧 -->
+    <path d="M 92 396 Q 120 412 142 402" stroke-width="6" opacity="0.5"/>
+    <!-- 右下角：短弧 -->
+    <path d="M 424 408 Q 446 422 464 410" stroke-width="5.5" opacity="0.5"/>
+    <!-- 中部连接弧：增强自然感 -->
+    <path d="M 300 398 Q 342 412 392 396" stroke-width="6" opacity="0.4"/>
+  </g>
+</svg>
