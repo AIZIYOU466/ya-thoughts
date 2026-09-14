@@ -1,0 +1,66 @@
+按 motion-web 规范修复 /root/workspace/notes-app/index.html 的三个动效问题。参考依据全部来自 motion-web 技能。
+
+═══════════════════════════════════════
+问题 1：主题切换圆形扩散太快、不柔和
+═══════════════════════════════════════
+
+motion-web 依据：motion-tokens.md Duration Scale 的 cinematic 档（1000–1400ms，"curtain wipe"），Easing 的 ease-in-out-quart（cubic-bezier(0.76, 0, 0.24, 1)，"Symmetrical smooth"）。
+
+修改：
+1. 扩散时长从 500ms 改为 1100ms。
+2. 缓动从 easeOutCubic 改为 easeInOutQuart：
+   · t < 0.5: 8 * t^4
+   · t >= 0.5: 1 - 8 * (t - 1)^4
+   · 等价 cubic-bezier(0.76, 0, 0.24, 1)
+3. 保持 requestAnimationFrame 逐帧更新 clip-path。
+4. 扩散层是一个固定定位的独立 overlay 元素，自己 clip，不要 clip body。
+5. overlay 只含纯色背景（var(--bg-page)），覆盖完成那一帧内完成"切主题 + 移除 overlay"。
+
+═══════════════════════════════════════
+问题 2：明暗切换只应改背景色，有闪帧
+═══════════════════════════════════════
+
+motion-web 依据：project-setup.md §2 "Dark mode is a level-2 remap only"；production-polish.md §5 "blocking inline script in <head> before first paint"；§9 #10 "Reload five times: no flash, no layout shift"。
+
+修改：
+1. 检查 <head> 里是否有阻塞内联脚本在首帧前把 data-theme 写到 <html> 上。如果没有，加上：
+   <script>
+   (function() {
+     var t = localStorage.getItem('ya-theme');
+     if (!t) t = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+     document.documentElement.setAttribute('data-theme', t);
+   })();
+   </script>
+   这段必须放在 <head> 内、任何样式表之前。
+2. 全局检查 CSS，确保所有颜色都通过 :root 的语义变量读取（--bg-page、--text-primary、--surface 等），组件样式不能直接读死色值。
+3. 主题切换只允许做一件事：修改 <html> 的 data-theme 属性。不允许重建 DOM，不允许逐个改元素 inline style。
+4. 如果现在的切换逻辑里包含"移除并重新插入某个容器"之类的操作，全部去掉。
+
+═══════════════════════════════════════
+问题 3：卡片删除缺少"逐渐缩小"递进感
+═══════════════════════════════════════
+
+motion-web 依据：motion-tokens.md Easing 的 ease-in-expo（cubic-bezier(0.7, 0, 0.84, 0)，"Slow start → hard exit. Use for exits only."）；handfeel.md Composition Rule。
+
+修改：
+1. 飞行时长从 700ms 改为 550ms（medium 档上限）。
+2. 缓动从 easeInOutCubic 改为 easeInExpo：
+   · t = 0 时，进度 = 0
+   · 公式：p = (t === 1) ? 1 : 1 - Math.pow(2, -10 * t)
+   · 这是"慢开头、硬退出"的曲线，前半段几乎不动，后半段快速收走
+3. scale 从 1 到 0.05，跟随同一 ease-in-expo 曲线。
+4. opacity 不要和 scale 同时结束。scale 到 0.4 之后才开始衰减：
+   · 若 scale > 0.4：opacity = 1
+   · 若 scale <= 0.4：opacity = scale / 0.4
+5. transform-origin 设为卡片右上角（指向垃圾桶方向），让缩放点朝向消失目标。
+6. 位置仍用二次贝塞尔曲线（控制点：中点 + (60, -80)），但位置进度也用 ease-in-expo。
+7. 只改 transform 和 opacity，不动 top/left/width/height。
+
+═══════════════════════════════════════
+严格约束
+═══════════════════════════════════════
+
+- 只改这三处，不动其他功能。
+- 纯原生 JS + CSS，无依赖，不引 Framer Motion 或 GSAP。
+- 保留现有 CSS 变量系统。
+- 改完告诉我文件大小、三处改动的关键代码位置、验证结果。
