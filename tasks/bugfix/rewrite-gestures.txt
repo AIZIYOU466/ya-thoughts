@@ -1,0 +1,112 @@
+请加载 systematic-debugging 技能和 ponytail 技能。
+
+任务：完全重写列表卡片的手势系统。不要修补旧代码，直接删除旧实现，用新方案重写。
+
+═══════════════════════════════════════
+第一步：诊断旧代码为什么失败
+═══════════════════════════════════════
+
+用 systematic-debugging 流程，回答以下问题（只回答，不改代码）：
+
+1. 搜索 index.html，找出所有使用了 PointerEvent 的地方（pointerdown / pointermove / pointerup / pointercancel / setPointerCapture）。
+2. 列出每处的行号，简述它的作用。
+3. 回答：卡片的 CSS touch-action 是什么？在什么时候被改成 none？改成 none 之后，滚动是怎么处理的？
+4. 回答：点击左滑按钮时，事件是否会冒泡到卡片容器？卡片容器在 pointerdown 时是否启动了"关闭 swipe"的逻辑？
+5. 用一句话总结：为什么这两个手势在浏览器里看似正常，但在 Android WebView 真机上完全失效？
+
+输出诊断报告后停止，不要改代码。
+
+═══════════════════════════════════════
+第二步：完全重写手势系统
+═══════════════════════════════════════
+
+确认诊断后，删除所有旧的手势代码（Pointer Events 相关），用 Touch Events 重新实现。
+
+【技术选型（硬性要求）】
+- 全部用 touchstart / touchmove / touchend / touchcancel，禁止使用 pointerdown / pointermove / pointerup / pointercancel / setPointerCapture
+- 长按判定用 setTimeout(500ms)，手指移动超过 10px 或抬手时 clearTimeout
+- touchmove 里调用 e.preventDefault() 阻止浏览器接管，监听器必须 { passive: false }
+
+【结构】
+每张卡片 DOM：
+<div class="note-item">
+  <div class="note-card-body">…卡片内容…</div>
+  <div class="note-swipe-actions">
+    <button class="swipe-btn pin">置顶</button>
+    <button class="swipe-btn copy">复制</button>
+    <button class="swipe-btn del">删除</button>
+  </div>
+</div>
+
+- .note-item: position: relative; overflow: hidden;
+- .note-card-body: transform 驱动左滑；touch-action: none 常驻
+- .note-swipe-actions: position: absolute; right: 0; top: 0; 高 100%；宽 120px（3 个 40px 按钮）
+
+【touchstart 处理（挂在 .note-item 上）】
+- 记录 startX, startY, startTime
+- 立即 clearTimeout（清掉上一次残留）
+- 启动长按定时器：setTimeout(500ms) → 进入拖拽模式
+- 不 preventDefault，让浏览器正常处理初始事件
+
+【touchmove 处理（挂在 window 上，touchstart 时注册，touchend 时移除）】
+- 计算 dx = clientX - startX，dy = clientY - startY
+- 如果长按定时器还没触发：
+  · 若 |dx| > 10 且 |dx| > |dy| * 1.5 → 判定为左滑：clearTimeout（取消长按），e.preventDefault()，移动 .note-card-body 的 transform
+  · 若 |dy| > 10 且 |dy| > |dx| * 1.5 → 判定为纵向滚动：clearTimeout，让浏览器滚动（不要 preventDefault）
+- 如果长按已触发（拖拽模式）：
+  · e.preventDefault()
+  · 卡片跟随 dy 移动：translate3d(0, dy, 0)
+  · 其他卡片让位：计算当前索引，用 transform 让相邻卡片上下位移
+
+【touchend / touchcancel 处理】
+- 清除长按定时器
+- 如果是左滑状态：
+  · 若位移 > 80px：吸附展开，卡片 translateX(-120px)
+  · 否则：弹回，卡片 translateX(0)
+- 如果是拖拽状态：
+  · 计算落点索引，写入 IndexedDB
+  · 清除所有 inline transform，落位
+- 重置所有状态变量
+
+【左滑按钮的点击（关键修复）】
+- 三个按钮各绑定一个 click 监听器，不绑定任何 touch 事件
+- 按钮的祖先 .note-swipe-actions 上不加任何 touch / pointer 监听
+- .note-item 上的 touchstart 处理器里，第一行判断：
+  if (e.target.closest('.note-swipe-actions')) return;
+  这样可以避免从按钮上开始的触摸触发卡片手势
+- 按钮点击后：立即执行动作，不做任何延迟
+  · 置顶 → pinNote(id) + toast
+  · 复制 → copyNote(id) + toast
+  · 删除 → confirmDialog() + 删除 + toast
+
+【手动滚动（因为 touch-action 从卡片上禁用了纵向滚动）】
+- 在 touchmove 里，如果判定为纵向滚动模式：
+  · listEl.scrollTop -= dy 的增量部分
+  · 逐帧更新，实现跟手滚动
+- 或者：让卡片本身 touch-action: pan-y，只在长按触发后改成 none
+  · 但 Android WebView 里 touch-action 是静态的，动态改可能无效
+  · 所以用 JS 手动滚动更可靠
+
+═══════════════════════════════════════
+第三步：加调试日志
+═══════════════════════════════════════
+
+在关键节点加 console.log，方便真机排查：
+- touchstart：console.log('[gesture] touchstart', { x, y, target: e.target.className })
+- 长按触发：console.log('[gesture] longpress fired')
+- touchmove 方向判定：console.log('[gesture] move', { dx, dy, mode })
+- 左滑吸附：console.log('[gesture] swipe snap', { offset })
+- 拖拽落位：console.log('[gesture] drag drop', { fromIndex, toIndex })
+- 按钮点击：console.log('[swipe] button click', { action })
+
+用户可以用 Chrome 远程调试看到这些日志，反馈给开发者。
+
+═══════════════════════════════════════
+严格约束
+═══════════════════════════════════════
+
+- 彻底删除旧的 Pointer Events 代码，不留任何残留
+- 不改其他功能（自动保存、图片、撤销/重做、多选、导出/导入、待办、搜索、置顶数据、字数、排序、分享、主题切换、摘要展开、曲线删除动画、toast、confirmDialog）
+- 纯原生 JS，无依赖
+- 所有动画只改 transform 和 opacity
+- 改完输出：删除了多少行旧代码、新增了多少行、每个函数的作用、关键日志位置
