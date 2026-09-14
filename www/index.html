@@ -370,8 +370,9 @@
     list-style: none;
     padding: 12px 20px calc(110px + env(safe-area-inset-bottom));
   }
-  /* 左滑操作菜单 + 拖拽排序（手势层）依赖的结构：
-     li.note-item 是手势容器（touch-action: pan-y，纵向滚动交浏览器、横向左滑交 JS），
+  /* 左滑操作菜单 + 拖拽排序（手势层，纯 Touch Events）依赖的结构：
+     li.note-item 是手势容器（touch-action: none 常驻，浏览器绝不接管任何手势，
+     纵向滚动也由 JS 手动驱动 listEl.scrollTop）；
      内部先放 .swipe-actions（右侧三个操作按钮），再放 .swipe-body（卡片本体）。
      位移动画只改 transform / opacity；平时放开 overflow 让阴影正常溢出，
      滑动/展开/拖拽期间裁剪左侧伸出部分 */
@@ -381,12 +382,11 @@
     border-radius: var(--radius-card);
     cursor: pointer;
     list-style: none;
-    touch-action: pan-y;
+    touch-action: none; /* 常驻禁用浏览器手势：滚动/左滑/拖拽全走 JS（passive:false + preventDefault） */
   }
   .note-item.swiping, .note-item.swipe-open { overflow: hidden; }
-  /* 手势候选/激活期：JS 在 pointerdown 时加 .gesturing，浏览器不再接管纵向手势，
-     拖拽才能收到 pointermove；松手移除后恢复上面的 pan-y，列表仍可滚动 */
-  .note-item.gesturing { touch-action: none !important; }
+  /* （旧 .gesturing { touch-action:none !important } 已随 Pointer Events 手势层一起删除：
+     .note-item 现在常驻 touch-action:none，无需动态切换） */
   /* 左滑操作区：置顶 / 复制 / 删除 三枚按钮，位于卡片本体之下右侧 */
   .note-item .swipe-actions {
     position: absolute;
@@ -438,7 +438,7 @@
   .note-item.swiping .swipe-body { transition: none; } /* 跟手时关过渡 */
   .note-item.swipe-open .swipe-body { transform: translate3d(-120px, 0, 0); }
   /* 拖拽排序：被拖卡片浮起（z-index 最高、跟随手指），其余卡片让位/落位动画 */
-  .note-item.dragging { z-index: 30; touch-action: none; transition: none; }
+  .note-item.dragging { z-index: 30; transition: none; }
   .note-item.dragging .swipe-body { box-shadow: 0 10px 28px rgba(0, 0, 0, 0.18); transition: none; }
   .note-item.drag-shift { transition: transform 0.2s var(--ease); }
   .note-item.drag-anim { transition: transform 0.22s var(--ease-swift), box-shadow 0.22s var(--ease); }
@@ -2042,8 +2042,8 @@
   }
 
   // 为超过 2 行的摘要创建右侧圆形 chevron-down 按钮（26px，图标 14px）。
-  // 点击：仅切换摘要容器 .expanded 并旋转箭头 180°；click 与 pointerdown 均
-  // stopPropagation，不触发卡片打开/多选/长按菜单，整块摘要区不绑任何点击事件。
+  // 点击：仅切换摘要容器 .expanded 并旋转箭头 180°；click 且 stopPropagation，
+  // 不触发卡片打开/多选/手势，整块摘要区不绑任何点击事件。
   function buildSummaryToggle(id, summary) {
     var wasOpen = !!expandedSummaries[id];
     if (wasOpen) summary.classList.add('expanded');
@@ -2065,7 +2065,6 @@
       b.setAttribute('aria-label', openNow ? '收起摘要' : '展开摘要');
       expandedSummaries[id] = openNow;
     });
-    b.addEventListener('pointerdown', function (e) { e.stopPropagation(); }); // 不触发长按菜单
     return b;
   }
   /* 搜索状态 */
@@ -2311,17 +2310,21 @@
     renderList();
   }
 
-  /* ---------- 左滑操作菜单 + 拖拽排序（手势层） ----------
+  /* ---------- 左滑操作菜单 + 拖拽排序（手势层，纯 Touch Events 重写版） ----------
      每张卡片 DOM：<li.note-item> 内先放 .swipe-actions（右侧置顶/复制/删除），
      再放 .swipe-body（卡片本体，随左滑 translate3d 位移；拖拽时 li 整体跟随手指）。
+     为什么重写：旧实现基于 Pointer Events + setPointerCapture + 动态 touch-action，
+     在 Android WebView 上会被浏览器原生滚动接管（pointercancel 后 move 流永久丢失），
+     左滑/拖拽/滚动在真机全部失效；Touch Events 的 touchmove + passive:false +
+     preventDefault() 是对浏览器手势的无条件否决，可靠得多。
      状态机（单一 gesture，同一时间只有一个手势进行中）：
-       pointerdown 起手势 → pointermove 判定方向：
-         横向左移 > 10px 且 > 纵向 1.5 倍 → 左滑；
-         纵向 > 10px 且 > 横向 1.5 倍 → 交浏览器滚动（touch-action: pan-y）；
-         否则保持 pending。
-       长按 500ms 且未移动超过 10px → 进入拖拽（sortBy='title' 时禁用）。
-       pointerup：左滑按 80px 阈值吸附展开(120px)/弹回；拖拽按落点落位并写库。
-     CSS 只改 transform 与 opacity 驱动动画。 */
+       touchstart 起手势（.note-item 上，首行排除 .swipe-actions）→ 500ms 长按定时器；
+       window touchmove（touchstart 注册 / touchend 移除，passive:false）判定方向：
+         横向左移 > 10px 且 > 纵向 1.5 倍 → 左滑（preventDefault）；
+         纵向 > 10px 且 > 横向 1.5 倍 → JS 手动滚动（listEl.scrollTop，preventDefault）；
+         长按定时器到点且未移动超 10px → 进入拖拽（sortBy='title' 时禁用）。
+       touchend/touchcancel：左滑按 80px 阈值吸附展开(120px)/弹回；拖拽按落点落位并写库。
+     CSS 只改 transform 与 opacity 驱动动画；.note-item touch-action:none 常驻。 */
   var SWIPE_REVEAL = 120;   // 展开时露出的操作区宽度(px)
   var SWIPE_SNAP = 80;      // 松手后判定吸附展开的滑动距离(px)
   var DRAG_HOLD = 500;      // 长按多少毫秒进入拖拽
@@ -2360,36 +2363,40 @@
     }
   }
 
-  /* ---------- window 级手势监听（passive:false） ----------
-     pointermove/up/cancel 挂在 window 上而不是卡片上：即使指针捕获丢失
-     （Android WebView 抢手势），事件仍会派发到 window，move 流不中断。
-     down 时注册、up/cancel 时移除；onMove 第一行 preventDefault，配合
-     .gesturing { touch-action:none !important } 双保险，浏览器绝不接管手势。 */
+  /* ---------- window 级手势监听（passive:false，纯 Touch Events） ----------
+     touchmove/touchend/touchcancel 挂在 window 上而不是卡片上：即使触摸点滑出卡片，
+     事件流也不会中断（触摸事件持续派发到 touchstart 时的目标链 + window 兜底）。
+     touchstart 时注册、touchend/touchcancel 时移除；touchmove 第一行 preventDefault()
+     （配合 .note-item 常驻 touch-action:none），浏览器绝不接管手势。 */
   var gestureListenersAttached = false;
 
+  // window touchmove：方向判定（左滑 / JS 手动滚动）与跟手驱动
   function onGestureMove(e) {
     var g = gesture;
-    if (!g || e.pointerId !== g.pointerId) return;
-    e.preventDefault(); // 第一行：配合 touch-action:none 确保页面不滚动
+    if (!g) return;
+    e.preventDefault(); // 第一行：touch-action:none + passive:false，确保页面不被浏览器滚动
+    var t = e.touches[0];
+    if (!t) return;
     var li = g.li;
-    var dx = e.clientX - g.startX;
-    var dy = e.clientY - g.startY;
+    var dx = t.clientX - g.startX;
+    var dy = t.clientY - g.startY;
     if (g.mode === 'pending') {
       var ax = Math.abs(dx), ay = Math.abs(dy);
       if (ax > DRAG_JITTER || ay > DRAG_JITTER) {
         if (g.longPressTimer) { clearTimeout(g.longPressTimer); g.longPressTimer = null; }
-        // 先判定方向：横向左移 > 10px 且 > 纵向 1.5 倍 → 左滑；纵向为主 → 手动滚动
+        // 先判定方向：横向左移 > 10px 且 > 纵向 1.5 倍 → 左滑；纵向为主 → JS 手动滚动
         if (dx < -DRAG_JITTER && ax > ay * 1.5) {
           g.mode = 'swipe';
           g.suppressClick = true;
           li.classList.add('swiping');
           g.viewX = dx;
           applySwipe(g);
-        } else {
-          // touch-action 已由 .gesturing 设为 none，浏览器不再代滚，
-          // 由 JS 把纵向位移 1:1 映射到列表 scrollTop
+          console.log('[gesture] move', { dx: dx, dy: dy, mode: g.mode });
+        } else if (ay > DRAG_JITTER && ay > ax * 1.5) {
+          // touch-action:none 常驻，浏览器不会代滚，由 JS 把纵向位移 1:1 映射到 scrollTop
           g.mode = 'scroll';
-          g.lastY = e.clientY;
+          g.lastY = t.clientY;
+          console.log('[gesture] move', { dx: dx, dy: dy, mode: g.mode });
         }
       }
       return;
@@ -2400,26 +2407,31 @@
       if (Math.abs(dx) > DRAG_JITTER) g.suppressClick = true;
       applySwipe(g); // 跟手
     } else if (g.mode === 'drag') {
-      g.dragShift = e.clientY - g.dragStartY;
+      g.dragShift = t.clientY - g.dragStartY;
       moveDrag(g);
     } else if (g.mode === 'scroll') {
-      var sy = e.clientY - g.lastY;
-      if (sy) listEl.scrollTop -= sy;
-      g.lastY = e.clientY;
+      var sy = t.clientY - g.lastY;
+      if (sy) listEl.scrollTop -= sy; // JS 手动滚动（浏览器已被 touch-action:none + preventDefault 禁言）
+      g.lastY = t.clientY;
       g.suppressClick = true;
     }
   }
 
-  function onGestureUp(e) {
+  // window touchend：左滑吸附/弹回、拖拽落位写库，并复位全部状态
+  function onGestureEnd(e) {
     var g = gesture;
-    if (!g || e.pointerId !== g.pointerId) return;
+    if (!g) return;
     detachGestureListeners();
     var li = g.li;
     if (g.mode === 'swipe') {
       var body = li.querySelector('.swipe-body');
       li.classList.remove('swiping'); // 先恢复过渡，再清除内联位移 → 平滑弹回/展开
-      if (g.viewX <= -SWIPE_SNAP) li.classList.add('swipe-open'); // 滑过 80px → 吸附展开
-      else closeOpenSwipe(li);                                      // 否则弹回
+      if (g.viewX <= -SWIPE_SNAP) {
+        li.classList.add('swipe-open'); // 滑过 80px → 吸附展开
+        console.log('[gesture] swipe snap', { offset: g.viewX });
+      } else {
+        closeOpenSwipe(li); // 否则弹回
+      }
       if (body) body.style.transform = '';
       if (g.suppressClick) gestureSuppressClick = true;
     } else if (g.mode === 'drag') {
@@ -2427,45 +2439,100 @@
       if (movedAmt) g.suppressClick = true;
       if (g.dragIndex === g.startIndex && !movedAmt) {
         // 长按期间手指未移动：取消拖拽，视为普通点击（打开便签）
-        g.li.classList.remove('dragging');
-        g.li.style.transform = '';
+        li.classList.remove('dragging');
+        li.style.transform = '';
         resetGesture(g);
         return;
       }
       if (g.suppressClick) gestureSuppressClick = true;
+      console.log('[gesture] drag drop', { fromIndex: g.startIndex, toIndex: g.dragIndex });
       finishDragReorder(g); // 落位 + 立即写 order
+    } else if (g.mode === 'scroll') {
+      // 已进入 JS 手动滚动：消费本次点按，不打开便签
+      gestureSuppressClick = true;
     } else {
-      // 未进入左滑/拖拽的简单点按：移动过才抑制 click
-      if (Math.abs(e.clientX - g.startX) > DRAG_JITTER ||
-          Math.abs(e.clientY - g.startY) > DRAG_JITTER) gestureSuppressClick = true;
+      // 未进入左滑/拖拽/滚动的简单点按：移动过才抑制 click
+      var t = e.changedTouches[0];
+      if (t && (Math.abs(t.clientX - g.startX) > DRAG_JITTER ||
+                Math.abs(t.clientY - g.startY) > DRAG_JITTER)) gestureSuppressClick = true;
     }
-    li.classList.remove('gesturing'); // 松手恢复 pan-y
+    if (li.isConnected) li.classList.remove('swiping', 'dragging');
     gesture = null;
   }
 
-  function onGestureCancel(e) {
+  // window touchcancel：系统中断（来电、通知、浏览器抢占），全部复位不落位
+  function onGestureCancel() {
     var g = gesture;
-    if (!g || e.pointerId !== g.pointerId) return;
-    detachGestureListeners();
+    if (!g) return;
+    console.log('[gesture] touchcancel', { mode: g.mode });
     resetGesture(g);
   }
 
-  // 手势开始时在 window 上注册 move/up/cancel（ passive:false，preventDefault 才有效）
+  // 手势开始时在 window 上注册 move/end/cancel（passive:false，preventDefault 才有效）
   function attachGestureListeners() {
     if (gestureListenersAttached) return;
     gestureListenersAttached = true;
-    window.addEventListener('pointermove', onGestureMove, { passive: false });
-    window.addEventListener('pointerup', onGestureUp, { passive: false });
-    window.addEventListener('pointercancel', onGestureCancel, { passive: false });
+    window.addEventListener('touchmove', onGestureMove, { passive: false });
+    window.addEventListener('touchend', onGestureEnd, { passive: false });
+    window.addEventListener('touchcancel', onGestureCancel, { passive: false });
   }
 
   // 手势结束时移除，平时 window 上零监听
   function detachGestureListeners() {
     if (!gestureListenersAttached) return;
     gestureListenersAttached = false;
-    window.removeEventListener('pointermove', onGestureMove);
-    window.removeEventListener('pointerup', onGestureUp);
-    window.removeEventListener('pointercancel', onGestureCancel);
+    window.removeEventListener('touchmove', onGestureMove);
+    window.removeEventListener('touchend', onGestureEnd);
+    window.removeEventListener('touchcancel', onGestureCancel);
+  }
+
+  // 手势启动（挂在每张 .note-item 的 touchstart 上，passive:true 不 preventDefault）：
+  // 记录起点、清掉上次残留定时器、启动 500ms 长按定时器、注册 window move/end/cancel。
+  // 不 preventDefault：click 合成不受影响，按钮点击、卡片打开都走原生 click。
+  function onGestureStart(e) {
+    var li = e.currentTarget;
+    if (!li || !li.classList || !li.classList.contains('note-item')) return;
+    // 关键修复：从左滑按钮上开始的触摸绝不触发卡片手势 → click 原样送达按钮
+    if (e.target && e.target.closest && e.target.closest('.swipe-actions')) return;
+    listPressFired = false;
+    gestureSuppressClick = false; // 新一轮按下：清掉上个手势可能残留的抑制位
+    if (gesture) {
+      if (!gesture.li || !gesture.li.isConnected) resetGesture(gesture); // 上个手势异常残留：自愈
+      if (gesture) return; // 已有手势进行中：不启动新手势
+    }
+    if (multiMode) return; // 多选模式不启动新手势
+    var t = e.changedTouches && e.changedTouches[0] ? e.changedTouches[0] : (e.touches && e.touches[0]);
+    if (!t) return;
+    if (li.classList.contains('swipe-open')) {
+      // 点已展开的卡片本体：收拢、不打开便签、不启动新手势
+      closeOpenSwipe();
+      gestureSuppressClick = true;
+      return;
+    }
+    closeOpenSwipe(li); // 点其他卡片时，展开中的卡片先弹回
+    console.log('[gesture] touchstart', { x: t.clientX, y: t.clientY, target: (e.target && e.target.className) || '' });
+    gesture = {
+      li: li,
+      id: li.dataset.id,
+      startX: t.clientX,
+      startY: t.clientY,
+      dragStartY: t.clientY,
+      lastY: t.clientY,
+      viewX: 0,
+      mode: 'pending',
+      suppressClick: false,
+      longPressTimer: null
+    };
+    attachGestureListeners(); // move/end/cancel 全挂 window（passive:false），end/cancel 时移除
+    // 长按 500ms 且未移动超过 10px → 进入拖拽；按标题排序时禁止拖拽（不设定时器）
+    if (sortBy !== 'title') {
+      gesture.longPressTimer = setTimeout(function () {
+        if (gesture && gesture.mode === 'pending') {
+          console.log('[gesture] longpress fired');
+          startDragReorder(gesture);
+        }
+      }, DRAG_HOLD);
+    }
   }
 
   // 手势结束清理：摘除 window 监听、取消长按定时器、恢复面容与让位状态
@@ -2475,7 +2542,7 @@
     if (g.longPressTimer) { clearTimeout(g.longPressTimer); g.longPressTimer = null; }
     var li = g.li;
     if (li && li.isConnected) {
-      li.classList.remove('swiping', 'dragging', 'gesturing');
+      li.classList.remove('swiping', 'dragging');
       var body = li.querySelector('.swipe-body');
       if (body) body.style.transform = '';
       li.style.transform = '';
@@ -2513,7 +2580,7 @@
     g.dragShift = 0;
     g.mode = 'drag';
     if (navigator.vibrate) { try { navigator.vibrate(20); } catch (err) {} }
-    // 指针已在 pointerdown 时第一时间捕获，这里无需（也不能）重复捕获
+    // touchstart 已第一时间在 window 注册 move/end/cancel，此处无需额外捕获
     g.li.classList.add('dragging');
     g.li.style.transform = 'translate3d(0px,0px,0) scale(1.02)'; // 放大+浮起（阴影由 CSS）
   }
@@ -2562,7 +2629,7 @@
       all = noteItemsInDom();
     }
     for (i = 0; i < all.length; i++) all[i].classList.add('drag-anim');
-    li.classList.remove('dragging', 'gesturing');
+    li.classList.remove('dragging');
     void listEl.offsetHeight; // 提交当前帧作为过渡起点
     for (i = 0; i < all.length; i++) {
       all[i].classList.remove('drag-shift');
@@ -2657,9 +2724,9 @@
   }
 
   // 构建一枚左滑操作按钮。单一事件路径：只绑一个 click，点击后立即执行动作，
-  // “关闭展开态 + 执行动作”同步完成，无两段式延迟；pointerdown 仅 stopPropagation
-  // 阻止卡片起手势（不 preventDefault，click 正常触发），并清掉手势层遗留的
-  // click 抑制位，保证第一次点击必然生效。按钮 pointer-events 恒为 auto（见 CSS）。
+  // “关闭展开态 + 执行动作”同步完成，无两段式延迟；不绑任何 touch/pointer 事件，
+  // 由 .swipe-actions 容器不挂监听 + 卡片 touchstart 首行排除 .swipe-actions
+  // 双重保证：按钮上的触摸永不触发卡片手势，click 必定生效。
   function makeSwipeBtn(act, svg, label) {
     var b = document.createElement('button');
     b.type = 'button';
@@ -2667,12 +2734,9 @@
     b.dataset.act = act;
     b.setAttribute('aria-label', label);
     b.innerHTML = '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + svg + '</svg><span>' + label + '</span>';
-    b.addEventListener('pointerdown', function (e) {
-      e.stopPropagation(); // 不触发卡片手势（不 preventDefault，保证 click 正常派发）
-      gestureSuppressClick = false; // 清掉上一手势遗留的抑制位：第一次点击绝不被吞
-    });
     b.addEventListener('click', function (e) {
       e.stopPropagation(); // 不触发卡片打开/多选
+      console.log('[swipe] button click', { action: act });
       var li = b.closest('.note-item');
       if (!li) return;
       var id = li.dataset.id;
@@ -2683,12 +2747,12 @@
     return b;
   }
 
-  // 空白处点按：收拢展开的卡片（换手势时由卡片自身 pointerdown 清掉旧抑制位）
-  document.addEventListener('pointerdown', function (e) {
+  // 空白处点按：收拢展开的卡片（Touch Events 版，监听卡片手势同款事件）
+  document.addEventListener('touchstart', function (e) {
     var t = e.target;
     if (t && t.closest && t.closest('.note-item')) return;
     closeOpenSwipe();
-  });
+  }, { passive: true });
 
   function renderList() {
     var sorted = sortedNotesFor(segFilter).filter(matchesSearch); // 分段与搜索"与"关系
@@ -2828,48 +2892,8 @@
 
       li.dataset.id = note.id; // 事件委托用：点击时从这里取 id
 
-      // 手势：左滑操作菜单 + 长按拖拽排序（见「手势层」小节）
-      li.addEventListener('pointerdown', function (e) {
-        listPressFired = false;
-        gestureSuppressClick = false; // 新一轮按下：清掉上个手势可能残留的抑制位
-        if (gesture && (!gesture.li || !gesture.li.isConnected)) resetGesture(gesture); // 上个手势异常残留：自愈
-        if (gesture || multiMode) return; // 已有手势/多选模式不启动新手势
-        if (e.button !== undefined && e.button !== 0) return; // 只响应主键/触摸
-        var t = e.target;
-        if (t && t.closest && (t.closest('.summary-toggle') || t.closest('.todo-chk') || t.closest('.swipe-btn'))) return;
-        if (li.classList.contains('swipe-open')) {
-          // 点已展开的卡片本体：收拢、不打开便签、不启动新手势
-          closeOpenSwipe();
-          gestureSuppressClick = true;
-          return;
-        }
-        closeOpenSwipe(li); // 点其他卡片时，展开中的卡片先弹回
-        // pointerdown 即捕获指针 + 接管 touch-action（.gesturing → none !important）：
-        // touch-action 在 pointerdown 时被浏览器缓存，拖拽开始才改已来不及
-        // （浏览器会按 pan-y 接管纵向手势并 pointercancel）；.summary-toggle /
-        // .todo-chk / .swipe-btn 等功能性子元素已在上面提前 return，不受捕获影响。
-        try { li.setPointerCapture(e.pointerId); } catch (err) {} // 第一时间捕获，丢捕获 = 丢 move 流
-        li.classList.add('gesturing');
-        gesture = {
-          li: li,
-          id: note.id,
-          pointerId: e.pointerId,
-          startX: e.clientX,
-          startY: e.clientY,
-          dragStartY: e.clientY,
-          lastY: e.clientY,
-          viewX: 0,
-          mode: 'pending',
-          suppressClick: false,
-          longPressTimer: null
-        };
-        attachGestureListeners(); // move/up/cancel 全挂 window（passive:false），up/cancel 时移除
-        // 按标题排序时禁止拖拽：不设长按定时器，长按不做任何事
-        if (sortBy !== 'title') {
-          gesture.longPressTimer = setTimeout(function () { startDragReorder(gesture); }, DRAG_HOLD);
-        }
-      });
-      // （pointermove/pointerup/pointercancel 已改为挂 window，见手势层 attachGestureListeners）
+      // 手势：左滑操作菜单 + 长按拖拽排序（见「手势层」小节，纯 Touch Events）
+      li.addEventListener('touchstart', onGestureStart, { passive: true }); // 不 preventDefault，click 合成不受影响
       // 长按/右键不再弹系统菜单（原长按操作菜单已移除）
       li.addEventListener('contextmenu', function (e) { e.preventDefault(); });
 
