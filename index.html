@@ -4,22 +4,6 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content"> <!-- interactive-widget：输入法弹出时压缩视口，列表不被键盘遮挡 -->
 <title>便签 · 极简备忘录</title>
-<script>
-/* 主题初始化：渲染前同步执行，避免首帧闪错主题（FOUC）。
-   优先读用户手动选择（localStorage），否则跟随系统。
-   结果写在 <html data-theme="light|dark"> 上，CSS 用属性选择器而不是 media query，
-   这样手动切换时无需系统配合也能生效。 */
-(function () {
-  try {
-    var saved = localStorage.getItem('notes-theme');
-    var dark = saved ? saved === 'dark'
-      : (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
-    document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
-  } catch (e) {
-    document.documentElement.setAttribute('data-theme', 'light');
-  }
-})();
-</script>
 <style>
   /* ============ 设计系统：颜色 / 圆角 / 阴影 / 缓动 ============ */
   :root {
@@ -44,7 +28,6 @@
     --icon-idle: #D8DCE3;
     --mask: rgba(0, 0, 0, 0.4);
     --shadow-card: 0 2px 6px rgba(0, 0, 0, 0.06);
-    --shadow-fab: 0 6px 20px rgba(46, 107, 230, 0.32);
     --card-border: 1px solid rgba(0, 0, 0, 0.04);
     --time-muted: #B0B4BB;
     --img-btn-bg: #EEF1F5;
@@ -68,10 +51,22 @@
     --ease: cubic-bezier(0.4, 0, 0.2, 1);
     --ease-out: cubic-bezier(0.32, 0.72, 0, 1);
     --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+    /* 液态玻璃 token（亮色）：半透明白 + 冷色渐变底 + 浅蓝阴影 */
+    --page-grad-a: #EAF2FB;
+    --page-grad-b: #D8E8F5;
+    --glass-blur: blur(24px) saturate(180%);
+    --glass-bg: rgba(255, 255, 255, 0.55);
+    --glass-bg-strong: rgba(255, 255, 255, 0.78);
+    --glass-border: rgba(255, 255, 255, 0.6);
+    --glass-shadow: 0 8px 32px rgba(31, 71, 136, 0.08);
+    --glass-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.7);
+    --glass-card-bg: rgba(255, 255, 255, 0.72); /* 卡片：不模糊，仅半透明白 + 边框 + 高光 */
+    --time-sub: #8A8F99;   /* 卡片时间小字（任务5） */
+    --todo-accent: #2BA88E; /* 待办青绿（任务4） */
   }
-  /* 深色变量：由 <html data-theme="dark"> 驱动（见 head 内的主题初始化脚本），
-     不再用 prefers-color-scheme 媒体查询 —— 否则用户手动切换会被系统主题盖住 */
-  [data-theme="dark"] {
+  /* 深色变量：由系统偏好驱动（已弃用手动切换，localStorage/data-theme 全部移除） */
+  @media (prefers-color-scheme: dark) {
+    :root {
       --bg-page: #0F1115;
       --bg-card: #1A1D21;
       --bg-toolbar: rgba(26, 29, 33, 0.92);
@@ -109,6 +104,18 @@
       --icon-btn-bg-active: #30363F;
       --mark-bg: rgba(255, 243, 176, 0.28);
       --pin-flag-color: #9AA0A6;
+      /* 液态玻璃 token（深色）：半透明深灰 + 更深蓝渐变底 + 淡蓝内高光 */
+      --page-grad-a: #14171F;
+      --page-grad-b: #1A2030;
+      --glass-bg: rgba(38, 42, 52, 0.6);
+      --glass-bg-strong: rgba(38, 42, 52, 0.82);
+      --glass-border: rgba(120, 160, 220, 0.15);
+      --glass-shadow: 0 8px 32px rgba(0, 0, 0, 0.45);
+      --glass-highlight: inset 0 1px 0 rgba(180, 200, 240, 0.12);
+      --glass-card-bg: rgba(34, 38, 48, 0.72);
+      --time-sub: #9AA0A6;
+      --todo-accent: #2BA88E;
+    }
   }
 
   /* ============ 基础 ============ */
@@ -117,7 +124,12 @@
   html, body { height: 100%; }
   body {
     font-family: -apple-system, "PingFang SC", "Helvetica Neue", sans-serif;
-    background: var(--bg-page);
+    /* 全局柔和渐变底 + 两团淡模糊光斑（radial-gradient 模拟，无外部图片） */
+    background:
+      radial-gradient(60% 40% at 18% 8%, rgba(255, 255, 255, 0.55), transparent 70%),
+      radial-gradient(50% 35% at 85% 92%, rgba(180, 214, 255, 0.35), transparent 72%),
+      linear-gradient(160deg, var(--page-grad-a), var(--page-grad-b));
+    background-attachment: fixed;
     color: var(--text-primary);
     -webkit-font-smoothing: antialiased;
     -webkit-tap-highlight-color: transparent;
@@ -133,21 +145,57 @@
     cursor: pointer;
     -webkit-tap-highlight-color: transparent;
   }
+  /* 极淡噪点纹理：内联 SVG feTurbulence 生成，无外部图片；fixed 只绘制一次 */
+  body::before {
+    content: '';
+    position: fixed; inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    opacity: 0.05;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  }
   img { -webkit-user-drag: none; }
 
   .view { display: none; height: 100dvh; }
   .view.active { display: flex; flex-direction: column; }
-  /* 编辑页盖在列表上层（不透明背景）；切换时列表直接显隐，不再做视差联动 */
-  #editor-view { position: relative; z-index: 2; background: var(--bg-page); }
-
-  /* 页面切换（简化版）：基线态就是到位态 —— #editor-view.active 即 translateX(0)。
-     进页：先加 .entering 摆到屏外 100%，强制重排后移除 → 一次性滑入到 0；
-     返回：加 .leaving → 滑回 100% 后隐藏复位。
-     transitionend（或 340ms 超时兜底）后移除临时 class；即使过渡事件全部丢失，
-     基线最终态也是 translateX(0)，页面任何情况下都能滑到位、不留空白 */
-  #editor-view.active { transform: translateX(0); transition: transform 0.28s var(--ease-swift); }
-  #editor-view.active.entering { transform: translateX(100%); }
-  #editor-view.active.leaving { transform: translateX(100%); }
+  /* 编辑页：透明底让全局渐变透过；始终 display:flex + visibility:hidden 保持渲染（不摘树），
+     返回时 DOM/动画不重播。约束2：.editor-panel 玻璃写作面板提供文字对比度。 */
+  #editor-view {
+    display: flex;
+    flex-direction: column;
+    position: relative;
+    z-index: 2;
+    background: transparent;
+    visibility: hidden;
+    pointer-events: none;
+    transform: translateX(100%);
+    opacity: 0;
+  }
+  /* 玻璃写作面板：标题 + 正文包在里面，提供文字对比度 */
+  .editor-panel {
+    flex: 1;
+    margin: 12px;
+    padding: 16px;
+    background: var(--glass-bg-strong);
+    -webkit-backdrop-filter: var(--glass-blur);
+    backdrop-filter: var(--glass-blur);
+    border: 1px solid var(--glass-border);
+    border-radius: 20px;
+    display: flex;
+    flex-direction: column;
+    min-height: 0; /* 允许 flex 子项收缩 */
+  }
+  /* 页面切换：260ms cubic-bezier(0.32,0.72,0,1) + opacity（约束3） */
+  #editor-view.active {
+    visibility: visible;
+    pointer-events: auto;
+    transform: translateX(0);
+    opacity: 1;
+    transition: transform 260ms cubic-bezier(0.32, 0.72, 0, 1),
+                opacity 260ms cubic-bezier(0.32, 0.72, 0, 1);
+  }
+  #editor-view.active.entering { transform: translateX(100%); opacity: 0; }
+  #editor-view.active.leaving  { transform: translateX(100%); opacity: 0; }
   @keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
   @keyframes fade-out { from { opacity: 1; } to { opacity: 0; } }
   @keyframes pop-in { from { opacity: 0; transform: scale(0.96); } to { opacity: 1; transform: scale(1); } }
@@ -169,18 +217,20 @@
     grid-template-columns: 1fr auto 1fr;
     align-items: center;
     padding: 0 10px 0 20px;
-    background: var(--bg-toolbar);
-    -webkit-backdrop-filter: blur(20px);
-    backdrop-filter: blur(20px);
-    border-bottom: 1px solid var(--divider);
+    background: var(--glass-bg);
+    -webkit-backdrop-filter: var(--glass-blur);
+    backdrop-filter: var(--glass-blur);
+    border-bottom: 1px solid var(--glass-border);
   }
+  /* 返回列表滑出时临时关闭顶栏模糊：避免与编辑页 transform 合成时的闪白（约束3） */
+  #list-header.freeze-blur { -webkit-backdrop-filter: none; backdrop-filter: none; }
   #list-header h1 { grid-column: 2; font-size: 17px; font-weight: 600; text-align: center; }
   #list-header .count { display: none; } /* 计数已移到列表第一行 #note-count-bar */
 
   /* 顶栏图标按钮：统一 44×44 点击区 / 20×20 图标居中 / 按钮间距 4px。
      未激活色 = 主文字色（浅色 #1A1D21 / 深色 #E8EAED），菜单展开 = 激活 = 主色 #2E6BE6。
      点击反馈：scale(0.92) + 底色，150ms ease，松开自动恢复。 */
-  #theme-btn, #sel-enter, #menu-btn {
+  #sel-enter, #menu-btn {
     width: 44px; height: 44px;
     padding: 10px;
     display: inline-flex; align-items: center; justify-content: center;
@@ -188,21 +238,15 @@
     color: var(--text-primary);
     transition: background 0.15s var(--ease), color 0.15s var(--ease), transform 0.15s var(--ease);
   }
-  #theme-btn:active, #sel-enter:active, #menu-btn:active {
+  #sel-enter:active, #menu-btn:active {
     background: rgba(0, 0, 0, 0.04); /* 浅色点击底色 */
     transform: scale(0.92);
   }
-  [data-theme="dark"] #theme-btn:active,
-  [data-theme="dark"] #sel-enter:active,
-  [data-theme="dark"] #menu-btn:active { background: rgba(255, 255, 255, 0.06); } /* 深色点击底色 */
+  @media (prefers-color-scheme: dark) {
+    #sel-enter:active,
+    #menu-btn:active { background: rgba(255, 255, 255, 0.06); } /* 深色点击底色 */
+  }
   #menu-btn.open { color: var(--primary); } /* 菜单展开 = 激活态 */
-
-  /* 主题图标初始态（JS 未跑时的首帧也正确）：浅色 = 新月，深色 = 太阳。
-     切换时 JS 写 inline style（内联样式优先级高于此处，可随时覆盖） */
-  #theme-sun { display: none; }
-  #theme-moon { display: block; }
-  [data-theme="dark"] #theme-sun { display: block; }
-  [data-theme="dark"] #theme-moon { display: none; }
 
   /* 删除飞行时落点脉冲（落点锚点是「选择」图标，300ms 内 1 → 1.2 → 1，一次性 animation） */
   #sel-enter.pulsing { animation: trash-pulse 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
@@ -293,33 +337,6 @@
   }
   #list-view.multi #note-count-bar { visibility: hidden; }
 
-  /* ============ 主题径向扩散过渡（View Transitions API 优先，clip-path 兜底） ============ */
-  ::view-transition-old(root), ::view-transition-new(root) { animation: none; mix-blend-mode: normal; }
-  ::view-transition-old(root) { z-index: 1; }
-  ::view-transition-new(root) { z-index: 2; } /* 新主题截图盖在旧主题上方，由 clip-path 揭开 */
-  #theme-ripple {
-    position: fixed; inset: 0;
-    /* Bug1（用户确认）：覆盖层保持最顶层 z-index 9999，盖住包括卡片在内的一切——
-       圆形扩散从按钮处"吞掉"整页（新主题底色），这是圆形扩散的正确视觉。
-       完成帧内原子翻转主题并同帧移除覆盖层，无闪帧；中途过渡由 .theme-switching 冻结 */
-    z-index: 9999;
-    display: none;
-    pointer-events: none; /* 过渡本身不吃事件，动画期间下层按钮照常可点 */
-  }
-  #theme-ripple.on { display: block; }
-  /* Bug2（方案B）：layer 写 data-theme = 新主题（[data-theme="dark"] 属性选择器对任意元素
-     生效），填新主题 var(--bg-page)；扩散时圆以新主题底色"吞掉"旧主题整页（卡片也在其下），
-     完成帧原子翻转整体切换；prefers-reduced-motion 时整层不会被用到 */
-  #theme-ripple > .ripple-layer { position: absolute; inset: 0; background: var(--bg-page); }
-  /* Bug3：主题翻转瞬间冻结全站过渡（卡片/顶栏/分段控件 background 0.18s 若在场，
-     翻转后会渐变 180ms，露出"旧色卡片漂在新背景"的中间帧 = 闪帧/重加载感）。
-     .theme-switching 仅在翻转那一帧挂载，下一 rAF 释放；新色已原子提交，释放后无过渡可触发 */
-  .theme-switching, .theme-switching * { transition: none !important; }
-  @media (prefers-reduced-motion: reduce) {
-    #theme-ripple, #theme-ripple.on { display: none !important; }
-    ::view-transition-old(root), ::view-transition-new(root) { animation: none !important; }
-  }
-
   /* 搜索框：顶栏下方、分段控件上方 */
   #search-wrap {
     flex: 0 0 auto;
@@ -329,8 +346,10 @@
     height: 40px;
     margin: 10px 20px 0;
     padding: 0 12px;
-    background: var(--input-bg);
-    border: 1px solid transparent;
+    background: var(--glass-bg);
+    -webkit-backdrop-filter: var(--glass-blur);
+    backdrop-filter: var(--glass-blur);
+    border: 1px solid var(--glass-border);
     border-radius: 10px;
     transition: background 0.15s var(--ease), border-color 0.15s var(--ease);
   }
@@ -460,11 +479,12 @@
   /* 卡片本体（白色卡面）：随左滑 translate3d 位移；拖拽时放大+阴影 */
   .note-item .swipe-body {
     position: relative;
-    background: var(--bg-card);
-    border: var(--card-border);
+    /* 玻璃卡片：半透明白 + 边框 + 阴影 + 内高光，但不用 backdrop-filter（约束1：滚动性能） */
+    background: var(--glass-card-bg);
+    border: 1px solid var(--glass-border);
     border-radius: var(--radius-card);
     padding: 18px 20px;
-    box-shadow: var(--shadow-card);
+    box-shadow: var(--shadow-card), var(--glass-highlight);
     transition: background 0.18s var(--ease), transform 0.25s var(--ease-swift), box-shadow 0.18s var(--ease);
     will-change: transform;
     z-index: 2; /* Bug2(B)：显式确立『卡片在上』；与 .swipe-clip 同为合成层，按 z-index 排序 */
@@ -482,8 +502,9 @@
     display: grid;
     grid-template-columns: 1fr auto;
     grid-template-areas:
-      "title time"
-      "excerpt excerpt";
+      "title title"
+      "excerpt excerpt"
+      "time time";
   }
   .note-item .title {
     grid-area: title;
@@ -522,7 +543,21 @@
   }
   .note-item .excerpt-wrap .summary { margin-top: 0; }
   .note-item .excerpt-wrap.has-toggle { padding-right: 28px; }
-  .note-item .time { grid-area: time; align-self: baseline; font-size: 12px; color: var(--time-muted); padding-left: 10px; }
+  .note-item .time {
+    grid-area: time;
+    align-self: flex-end;
+    font-size: 11px;
+    line-height: 1.3;
+    color: var(--time-sub);
+    text-align: right;
+    white-space: nowrap;
+    padding-left: 10px;
+  }
+  .note-item .time span {
+    display: block;
+    font-size: 10px;
+    line-height: 1.3;
+  }
 
   /* 摘要展开/收起按钮：仅当摘要超过 2 行时由 JS 创建。
      26px 圆形，贴在摘要区右侧（垂直居中），内含 14px chevron-down。
@@ -570,7 +605,10 @@
     width: max-content;
     margin: 10px 20px 4px;
     padding: 3px;
-    background: var(--chip-bg);
+    background: var(--glass-bg);
+    -webkit-backdrop-filter: var(--glass-blur);
+    backdrop-filter: var(--glass-blur);
+    border: 1px solid var(--glass-border);
     border-radius: var(--radius-pill);
     transition: background 0.18s var(--ease);
   }
@@ -583,8 +621,8 @@
     transition: color 0.18s var(--ease), background 0.18s var(--ease), box-shadow 0.18s var(--ease);
   }
   #seg-bar .seg-item.on {
-    background: var(--bg-card);
-    color: var(--text-primary);
+    background: var(--primary);
+    color: #fff;
     box-shadow: 0 1px 4px rgba(0, 0, 0, 0.12);
   }
   #list-view.multi #seg-bar { display: none; }
@@ -618,8 +656,6 @@
     border-radius: var(--radius-pill);
   }
   .note-item .due-badge.overdue { color: #fff; background: var(--danger); }
-  /* 倒计时角标占用标题行右侧位置：有角标时隐藏时间戳，避免重叠 */
-  .note-item.has-due .time { display: none; }
 
   /* 空状态 */
   #empty {
@@ -635,48 +671,6 @@
   #empty .empty-title { font-size: 15px; color: var(--text-secondary); margin-top: 24px; }
   #empty .empty-hint { font-size: 13px; color: var(--text-tertiary); margin-top: 6px; }
 
-  /* 新建选项 action sheet：底部滑入 */
-  #fab-sheet {
-    position: fixed; inset: 0;
-    z-index: 40;
-    display: none;
-    align-items: flex-end;
-    justify-content: center;
-    background: var(--mask);
-  }
-  #fab-sheet.open { display: flex; }
-  #fab-sheet .sheet-card {
-    width: calc(100% - 24px);
-    max-width: 400px;
-    margin: 0 12px calc(env(safe-area-inset-bottom) + 16px);
-    padding: 8px;
-    background: var(--bg-card);
-    border-radius: 16px;
-    box-shadow: var(--shadow-pop);
-    animation: sheet-in 0.28s var(--ease-swift);
-  }
-  #fab-sheet .sheet-opt,
-  #fab-sheet .sheet-cancel {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 100%;
-    min-height: 52px;
-    font-size: 16px;
-    color: var(--text-primary);
-    border-radius: 12px;
-    transition: background 0.15s var(--ease);
-  }
-  #fab-sheet .sheet-opt:active,
-  #fab-sheet .sheet-cancel:active { background: var(--bg-page); }
-  #fab-sheet .sheet-cancel {
-    margin-top: 6px;
-    color: var(--text-secondary);
-    border-top: 1px solid var(--divider);
-    border-radius: 0 0 12px 12px;
-  }
-  @keyframes sheet-in { from { opacity: 0; transform: translateY(48px); } to { opacity: 1; transform: none; } }
-
   /* 图片长按菜单（编辑页）：与单条操作菜单同风格 */
   #img-menu {
     position: fixed; inset: 0;
@@ -691,13 +685,15 @@
     width: 100%;
     max-width: 400px;
     padding: 8px 8px calc(8px + env(safe-area-inset-bottom));
-    background: rgba(255, 255, 255, 0.82);
-    -webkit-backdrop-filter: blur(20px) saturate(1.4);
-    backdrop-filter: blur(20px) saturate(1.4);
+    background: var(--glass-bg-strong);
+    -webkit-backdrop-filter: var(--glass-blur);
+    backdrop-filter: var(--glass-blur);
+    border-top: 1px solid var(--glass-border);
     border-radius: 16px 16px 0 0;
-    box-shadow: var(--shadow-pop);
+    box-shadow: var(--shadow-pop), var(--glass-highlight);
     animation: sheet-in 0.28s var(--ease-swift);
   }
+  @keyframes sheet-in { from { opacity: 0; transform: translateY(48px); } to { opacity: 1; transform: none; } }
   #img-menu .sheet-opt,
   #img-menu .sheet-cancel {
     display: flex;
@@ -795,16 +791,19 @@
   #due-clear:active { background: rgba(229, 72, 77, 0.1); }
 
   /* 操作反馈 toast（撤销/重做与置顶/复制/删除共用）：
-     底部安全区上方 80px，半透明黑底白字胶囊。
+     底部安全区上方 96px（避免与底部新建胶囊重叠），玻璃胶囊样式。
      入场 200ms 快入（motion-web ease-out 档），出场 150ms linear。 */
   #undo-toast {
     position: fixed;
-    bottom: calc(env(safe-area-inset-bottom) + 80px);
+    bottom: calc(env(safe-area-inset-bottom) + 96px); /* 抬高，避免与底部胶囊重叠 */
     left: 50%;
-    z-index: 9999; /* body 直下节点：必须盖过所有 view/顶栏/弹层 */
+    z-index: 9999;
     padding: 8px 16px;
-    background: rgba(0, 0, 0, 0.75);
-    color: #fff;
+    background: var(--glass-bg-strong);
+    color: var(--text-primary);
+    -webkit-backdrop-filter: var(--glass-blur);
+    backdrop-filter: var(--glass-blur);
+    border: 1px solid var(--glass-border);
     font-size: 13px;
     border-radius: var(--radius-pill);
     opacity: 0;
@@ -838,9 +837,12 @@
     width: 280px;
     max-width: calc(100vw - 48px);
     padding: 24px;
-    background: var(--bg-card);
+    background: var(--glass-bg-strong);
+    -webkit-backdrop-filter: var(--glass-blur);
+    backdrop-filter: var(--glass-blur);
+    border: 1px solid var(--glass-border);
     border-radius: 16px;
-    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.2);
+    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.2), var(--glass-highlight);
     transform: translateY(6px) scale(0.98);
     transition: transform 0.15s cubic-bezier(0, 0.55, 0.45, 1);
   }
@@ -868,34 +870,43 @@
     cursor: pointer;
     transition: filter 0.15s var(--ease), transform 0.1s var(--ease);
   }
-  #confirm-modal .confirm-cancel { background: #F0F2F5; color: #1A1D21; }
-  #confirm-modal .confirm-ok { background: #E5484D; color: #fff; }
+  #confirm-modal .confirm-cancel { background: var(--chip-bg); color: var(--text-primary); }
+  #confirm-modal .confirm-ok { background: var(--danger); color: #fff; }
   #confirm-modal .confirm-btns button:active { transform: scale(0.97); filter: brightness(0.96); }
-  [data-theme="dark"] #confirm-modal .confirm-card { background: #1A1D21; }
-  [data-theme="dark"] #confirm-modal .confirm-title { color: #E8EAED; }
-  [data-theme="dark"] #confirm-modal .confirm-msg { color: #9AA0A6; }
-  [data-theme="dark"] #confirm-modal .confirm-cancel { background: #23272E; color: #E8EAED; }
 
   /* 悬浮新建按钮 */
-  #add-btn {
+  /* 底部胶囊：新建笔记 / 新建待办（玻璃质感，固定在底部中央） */
+  #new-bar {
     position: fixed;
-    right: max(20px, env(safe-area-inset-right));
-    bottom: max(28px, calc(env(safe-area-inset-bottom) + 28px));
-    width: 56px; height: 56px;
-    border-radius: 50%;
-    background: var(--primary);
-    color: #fff;
-    display: flex; align-items: center; justify-content: center;
-    box-shadow: var(--shadow-fab);
+    left: 50%;
+    transform: translateX(-50%);
+    bottom: calc(24px + env(safe-area-inset-bottom));
+    display: flex;
+    gap: 12px;
     z-index: 10;
-    /* Bug3：删掉 animation: fab-pop —— @keyframes fab-pop 从未定义（死引用）；
-       且列表从 display:none 恢复时该动画会整体重播，加剧 + 按钮「闪一下」 */
-    transition: transform 0.3s var(--ease-spring), background 0.15s var(--ease), filter 0.15s var(--ease);
+    animation: newbar-in 0.2s var(--ease-swift) both; /* 入场：上滑 200ms + 淡入 */
   }
-  #list-view.sheet-open #add-btn { transform: scale(0.9); opacity: 0.7; }
-  #add-btn svg { animation: fab-breathe 1.5s var(--ease) 0.4s infinite; will-change: transform; }
-  #add-btn:active { transform: scale(0.94); filter: brightness(0.9); will-change: transform; }
-  @keyframes fab-breathe { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.02); } }
+  @keyframes newbar-in {
+    from { opacity: 0; transform: translate(-50%, 16px); }
+    to   { opacity: 1; transform: translate(-50%, 0); }
+  }
+  .new-cap {
+    height: 48px;
+    padding: 0 24px;
+    display: inline-flex; align-items: center; gap: 8px;
+    font-size: 15px; font-weight: 600;
+    border-radius: var(--radius-pill);
+    background: var(--glass-bg-strong);
+    -webkit-backdrop-filter: var(--glass-blur);
+    backdrop-filter: var(--glass-blur);
+    border: 1px solid var(--glass-border);
+    box-shadow: var(--glass-shadow), var(--glass-highlight);
+    transition: transform 0.15s ease-out, background 0.15s var(--ease);
+  }
+  .new-cap:active { transform: scale(0.96); } /* 点击：微缩回弹 */
+  .new-cap.note { color: var(--primary); }
+  .new-cap.todo { color: var(--todo-accent); }
+  .new-cap svg { flex: 0 0 auto; }
 
   /* ============ 编辑页 ============ */
   .editor-bar {
@@ -904,10 +915,10 @@
     grid-template-columns: 1fr auto 1fr;
     align-items: center;
     padding: 0 8px;
-    background: var(--bg-toolbar);
-    -webkit-backdrop-filter: blur(20px);
-    backdrop-filter: blur(20px);
-    border-bottom: 1px solid var(--divider);
+    background: var(--glass-bg-strong);
+    -webkit-backdrop-filter: var(--glass-blur);
+    backdrop-filter: var(--glass-blur);
+    border-bottom: 1px solid var(--glass-border);
   }
   .editor-bar-left { display: flex; justify-self: start; }
   #back-btn {
@@ -957,11 +968,14 @@
   }
   #share-mask.open { display: flex; animation: fade-in 0.2s var(--ease); }
   #share-card {
-    background: var(--bg-card);
+    background: var(--glass-bg-strong);
+    -webkit-backdrop-filter: var(--glass-blur);
+    backdrop-filter: var(--glass-blur);
+    border: 1px solid var(--glass-border);
     border-radius: 20px;
     padding: 20px;
     width: calc(100% - 48px); max-width: 360px;
-    box-shadow: var(--shadow-pop);
+    box-shadow: var(--shadow-pop), var(--glass-highlight);
     animation: pop-in 0.2s var(--ease);
   }
   #share-card h3 { font-size: 16px; font-weight: 600; margin-bottom: 12px; }
@@ -1004,7 +1018,7 @@
     font-size: 16px;
     line-height: 1.75;
     padding: 20px;
-    min-height: calc(100vh - 180px);
+    min-height: 0; /* 在 .editor-panel 内由 flex:1 填充，不再用 100vh 计算值（避免面板溢出） */
     white-space: pre-wrap;
     word-break: break-word;
     -webkit-user-select: text;
@@ -1124,10 +1138,10 @@
     justify-content: space-between;
     height: calc(60px + env(safe-area-inset-bottom));
     padding: 8px 12px env(safe-area-inset-bottom);
-    background: var(--bg-toolbar);
-    -webkit-backdrop-filter: blur(20px);
-    backdrop-filter: blur(20px);
-    border-top: 1px solid var(--divider);
+    background: var(--glass-bg-strong);
+    -webkit-backdrop-filter: var(--glass-blur);
+    backdrop-filter: var(--glass-blur);
+    border-top: 1px solid var(--glass-border);
   }
   #img-btn {
     display: inline-flex;
@@ -1188,10 +1202,12 @@
     display: none;
     min-width: 160px;
     padding: 6px;
-    background: var(--bg-card);
-    border: 1px solid var(--divider);
+    background: var(--glass-bg-strong);
+    -webkit-backdrop-filter: var(--glass-blur);
+    backdrop-filter: var(--glass-blur);
+    border: 1px solid var(--glass-border);
     border-radius: 14px;
-    box-shadow: var(--shadow-pop);
+    box-shadow: var(--shadow-pop), var(--glass-highlight);
     transform-origin: top right;
   }
   #menu-pop.open { display: block; animation: pop-in 0.18s var(--ease); }
@@ -1233,12 +1249,15 @@
   }
   #about-mask.open { display: flex; animation: fade-in 0.2s var(--ease); }
   #about-card {
-    background: var(--bg-card);
+    background: var(--glass-bg-strong);
+    -webkit-backdrop-filter: var(--glass-blur);
+    backdrop-filter: var(--glass-blur);
+    border: 1px solid var(--glass-border);
     border-radius: 20px;
     padding: 28px 24px;
     width: calc(100% - 48px); max-width: 320px;
     text-align: center;
-    box-shadow: var(--shadow-pop);
+    box-shadow: var(--shadow-pop), var(--glass-highlight);
     animation: pop-in 0.2s var(--ease);
   }
   #about-card h2 { font-size: 17px; font-weight: 600; margin-bottom: 8px; }
@@ -1340,17 +1359,6 @@
   <header id="list-header">
     <h1>便签</h1>
     <div class="hdr-actions">
-      <button id="theme-btn" title="切换深浅主题" aria-label="切换深浅主题" aria-pressed="false">
-        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-          <g id="theme-sun">
-            <circle cx="12" cy="12" r="4"/>
-            <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/>
-          </g>
-          <g id="theme-moon">
-            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
-          </g>
-        </svg>
-      </button>
       <button id="sel-enter" title="选择多条便签" aria-label="选择多条便签">
         <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <rect x="3" y="5" width="4" height="4" rx="1"/>
@@ -1407,18 +1415,28 @@
       <path d="M44 32l9 9-13 13-10 1 1-10z"/>
     </svg>
     <p class="empty-title">还没有便签</p>
-    <p class="empty-hint">点右下角 + 开始记录</p>
+    <p class="empty-hint">点下方「笔记」或「待办」开始记录</p>
   </div>
   <ul id="note-list"></ul>
-  <button id="add-btn" title="新建便签" aria-label="新建便签">
-    <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
-      <path d="M12 5v14M5 12h14"/>
-    </svg>
-  </button>
+  <!-- 底部胶囊：新建笔记 / 新建待办（玻璃质感，见 #new-bar CSS） -->
+  <div id="new-bar">
+    <button class="new-cap note" data-type="note">
+      <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/>
+      </svg>
+      <span>笔记</span>
+    </button>
+    <button class="new-cap todo" data-type="todo">
+      <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M20 6L9 17l-5-5"/>
+      </svg>
+      <span>待办</span>
+    </button>
+  </div>
 
   <div id="about-mask">
     <div id="about-card" role="dialog" aria-modal="true">
-      <h2>极简备忘录 v1.4.3</h2>
+      <h2>极简备忘录 v1.5.0</h2>
       <p>如果它帮到你，可以请我喝杯咖啡</p>
       <button id="about-close">关闭</button>
     </div>
@@ -1435,19 +1453,6 @@
     </div>
   </div>
   <input type="file" id="import-input" accept=".json,application/json" hidden>
-  <!-- 主题径向扩散过渡层：JS 临时加 .on，结束后移除 -->
-  <div id="theme-ripple" aria-hidden="true">
-    <div class="ripple-layer"></div>
-  </div>
-
-  <!-- 新建选项 action sheet：笔记 / 待办 -->
-  <div id="fab-sheet" role="dialog" aria-modal="true" aria-label="新建选项">
-    <div class="sheet-card">
-      <button class="sheet-opt" data-type="note">📝 新建笔记</button>
-      <button class="sheet-opt" data-type="todo">✓ 新建待办</button>
-      <button class="sheet-cancel">取消</button>
-    </div>
-  </div>
   <!-- 长按卡片操作菜单已移除：置顶/复制/删除改为左滑露出；长按负责拖拽排序 -->
 </section>
 
@@ -1500,6 +1505,8 @@
       </button>
     </div>
   </div>
+  <!-- 玻璃写作面板：标题/正文/图片都在面板内，提供文字对比度（约束2） -->
+  <div class="editor-panel">
   <div id="editor-todo-head">
     <div id="editor-todo-chk" role="checkbox" aria-checked="false" tabindex="0">✓</div>
     <span>已完成</span>
@@ -1507,6 +1514,7 @@
   </div>
   <div id="editor" contenteditable="true" data-placeholder="写点什么…&#10;第一行将作为标题"></div>
   <div id="image-strip" aria-label="便签图片"></div>
+  </div><!-- /.editor-panel -->
   <div class="editor-toolbar">
     <div class="tool-group">
       <button id="fmt-bold" type="button" title="加粗" aria-label="加粗" disabled>B</button>
@@ -1583,7 +1591,6 @@
   var headerEl   = $('list-header');
   var selCountEl = $('sel-count');
   var segBarEl   = $('seg-bar');      // 分段控件（全部/待办/已完成）
-  var fabSheetEl = $('fab-sheet');    // 新建选项 action sheet
   var editorTodoHead = $('editor-todo-head'); // 编辑页待办区
   var editorTodoChk  = $('editor-todo-chk');
   var dueBtn    = $('due-btn');
@@ -2030,28 +2037,36 @@
     return isNaN(ts) ? null : ts;
   }
 
-  function formatTime(ts) {
-    var d = new Date(ts);
-    var now = new Date();
+  // 相对时间（任务5）：刚刚 / X 分钟前 / X 小时前 / X 天前 / X 周前 / X 个月前 / X 年前
+  function relativeTime(ts) {
     var diff = Date.now() - ts;
     var oneMin = 60 * 1000;
     var oneHour = 60 * oneMin;
     var oneDay = 24 * oneHour;
-
     if (diff < oneMin) return '刚刚';
     if (diff < oneHour) return Math.floor(diff / oneMin) + ' 分钟前';
+    if (diff < oneDay) return Math.floor(diff / oneHour) + ' 小时前';
+    if (diff < 7 * oneDay) return Math.floor(diff / oneDay) + ' 天前';
+    if (diff < 30 * oneDay) return Math.floor(diff / (7 * oneDay)) + ' 周前';
+    if (diff < 365 * oneDay) return Math.floor(diff / (30 * oneDay)) + ' 个月前';
+    return Math.floor(diff / (365 * oneDay)) + ' 年前';
+  }
 
-    var sameDay = d.toDateString() === now.toDateString();
-    var hm = pad(d.getHours()) + ':' + pad(d.getMinutes());
-    if (sameDay) return '今天 ' + hm;
-
-    var yesterday = new Date(now.getTime() - oneDay);
-    if (d.toDateString() === yesterday.toDateString()) return '昨天 ' + hm;
-
-    if (d.getFullYear() === now.getFullYear()) {
-      return (d.getMonth() + 1) + '月' + d.getDate() + '日 ' + hm;
+  // 卡片时间区（任务5）：右下角两行「创建于 X / 编辑于 Y」。
+  // 容错：createdAt 缺失用 updatedAt 兜底；updatedAt < createdAt 时以 createdAt 为准（无负数）。
+  function renderNoteTime(el, note) {
+    var created = Number(note.createdAt) || Number(note.updatedAt) || Date.now();
+    var updated = Number(note.updatedAt) || created;
+    if (updated < created) updated = created; // 用户改过系统时钟，避免显示负数
+    el.textContent = '';
+    var line1 = document.createElement('span');
+    line1.textContent = '创建于 ' + relativeTime(created);
+    el.appendChild(line1);
+    if (updated - created >= 60 * 1000) { // 刚创建未编辑（<1 分钟）只显示一行
+      var line2 = document.createElement('span');
+      line2.textContent = '编辑于 ' + relativeTime(updated);
+      el.appendChild(line2);
     }
-    return d.getFullYear() + '年' + (d.getMonth() + 1) + '月' + d.getDate() + '日';
   }
 
   /* ---------- 列表渲染 ---------- */
@@ -2264,24 +2279,11 @@
     if (btn && btn.dataset.seg) setSeg(btn.dataset.seg);
   });
 
-  // 悬浮 + 按钮：改为弹出「新建笔记 / 新建待办」选项（action sheet）
-  $('add-btn').addEventListener('click', function () {
-    fabSheetEl.classList.add('open');
-    listView.classList.add('sheet-open');
-  });
-  function closeFabSheet() {
-    fabSheetEl.classList.remove('open');
-    listView.classList.remove('sheet-open');
-  }
-  fabSheetEl.addEventListener('click', function (e) {
-    if (e.target === fabSheetEl || e.target === fabSheetEl.querySelector('.sheet-cancel')) {
-      closeFabSheet();
-      return;
-    }
-    var opt = e.target.closest ? e.target.closest('.sheet-opt') : null;
-    if (!opt) return;
-    closeFabSheet();
-    createNote(opt.dataset.type === 'todo' ? 'todo' : 'note');
+  // 底部胶囊：直接新建笔记 / 待办（替代 + FAB 与 action sheet）
+  $('new-bar').addEventListener('click', function (e) {
+    var cap = e.target.closest ? e.target.closest('.new-cap') : null;
+    if (!cap) return;
+    createNote(cap.dataset.type === 'todo' ? 'todo' : 'note');
   });
 
   // 列表排序（含分段过滤）：
@@ -2863,13 +2865,13 @@
     if (emptyTitleEl && emptyHintEl) {
       if (segFilter === 'todo') {
         emptyTitleEl.textContent = '没有待办事项';
-        emptyHintEl.textContent = '点右下角 + 新建待办';
+        emptyHintEl.textContent = '点下方「待办」新建一个';
       } else if (segFilter === 'done') {
         emptyTitleEl.textContent = '还没有完成的待办';
         emptyHintEl.textContent = '去「待办」里完成一个试试';
       } else {
         emptyTitleEl.textContent = '还没有便签';
-        emptyHintEl.textContent = '点右下角 + 开始记录';
+        emptyHintEl.textContent = '点下方「笔记」或「待办」开始记录';
       }
     }
     countEl.textContent = hasNotes ? sorted.length + ' 条' : '';
@@ -2931,7 +2933,7 @@
 
       var time = document.createElement('div');
       time.className = 'time';
-      time.textContent = formatTime(note.updatedAt);
+      renderNoteTime(time, note);
 
       // 未完成待办且有截止时间：右上角显示倒计时，已过期标红
       if (isTodo(note) && !isDone(note) && note.dueAt) {
@@ -3309,7 +3311,10 @@
     if (editorAnimCleanup) { editorAnimCleanup(); editorAnimCleanup = null; }
     var wasLeaving = editorView.classList.contains('leaving');
     editorView.classList.remove('entering', 'leaving');
-    if (wasLeaving) editorView.classList.remove('active');
+    if (wasLeaving) {
+      editorView.classList.remove('active'); // 去掉 .active → visibility:hidden + pointer-events:none（约束3：不用 display:none）
+      headerEl.classList.remove('freeze-blur'); // 滑出结束，恢复顶栏模糊（约束3）
+    }
   }
 
   // 挂动画结束监听：transitionend（transform）或 340ms 超时兜底
@@ -3331,7 +3336,8 @@
   function hideEditorWithTransition() {
     if (!editorView.classList.contains('active')) return;
     if (editorAnimCleanup) { editorAnimCleanup(); editorAnimCleanup = null; } // 取消在途动画
-    editorView.classList.add('leaving'); // → translateX(100%)，从任何当前位置都能过渡
+    headerEl.classList.add('freeze-blur'); // 滑出期间临时关顶栏 blur，避免合成闪白（约束3）
+    editorView.classList.add('leaving'); // → translateX(100%) + opacity 0，从任何当前位置都能过渡
     watchEditorAnimEnd();
   }
 
@@ -3340,7 +3346,8 @@
     listView.classList.toggle('active', !toEditor); // 列表直接显隐，不做联动动画
     if (toEditor) {
       finishEditorAnim(); // 上一次滑出未结束也要先复位，保证本次一定能进入
-      editorView.classList.add('active');       // display:flex + 到位态基线 translateX(0)
+      headerEl.classList.remove('freeze-blur'); // 防御：确保进入编辑页时模糊恢复
+      editorView.classList.add('active');       // visibility:visible + translateX(0)
       editorView.classList.add('entering');     // 先摆到屏外起点 100%
       editorView.style.transition = 'none';     // 摆起点不参与过渡（含中途改道时避免来回弹）
       void editorView.offsetWidth;              // 强制重排，锁定起点
@@ -3451,9 +3458,9 @@
         // 更新标题（含搜索高亮）
         var tEl = li.querySelector('.title');
         if (tEl) tEl.innerHTML = searchQuery ? highlightText(titleOf(noteLeft), searchQuery) : titleOf(noteLeft);
-        // 更新时间
+        // 更新时间（创建于/编辑于两行）
         var tmEl = li.querySelector('.time');
-        if (tmEl) tmEl.textContent = formatTime(noteLeft.updatedAt);
+        if (tmEl) renderNoteTime(tmEl, noteLeft);
         // 更新摘要（含搜索高亮，恢复展开态）
         var sEl = li.querySelector('.summary');
         if (sEl) {
@@ -4708,150 +4715,6 @@
     setTimeout(function () { listEl.classList.remove('boot-in'); }, 600);
   });
   lo.observe(listEl, { childList: true });
-
-  /* --- 主题切换 + 径向扩散过渡 ---
-     统一走 DOM 覆盖层方案：真实页面保持旧主题不动，覆盖层以新主题底色为圆，
-     从按钮处向四周扩散盖住旧主题，圆盖满后立即翻转真实主题。
-     不用 CSS transition 驱动 clip-path（浏览器支持不稳定，会停顿/掉帧），
-     改用 requestAnimationFrame 逐帧手写 clip-path 圆半径：
-       每帧 r = maxRadius * easeInOutQuart(t / duration)，duration = 1100ms（cinematic 档），
-       覆盖到屏幕后立即结束，无额外等待。
-     prefers-reduced-motion 时直接切换，无动画。 */
-  var themeBtn = document.getElementById('theme-btn');
-  var rippleEl = document.getElementById('theme-ripple');
-  var THEME_KEY = 'notes-theme';
-  var root = document.documentElement;
-  var animating = false;
-
-  function currentTheme() { return root.getAttribute('data-theme') || 'light'; }
-
-  // 图标随主题互切：浅色显示标准新月、深色显示标准太阳（圆形 + 8 条光线）。
-  // 同一 SVG 内两个 <g> 用 display 属性互切（viewBox 0 0 24 24 与 path 坐标匹配，
-  // 彻底解决旧 path 坐标残缺导致的“半圆月亮”问题）
-  var themeSun = document.getElementById('theme-sun');
-  var themeMoon = document.getElementById('theme-moon');
-  function syncThemeBtn() {
-    var dark = currentTheme() === 'dark';
-    themeBtn.setAttribute('aria-pressed', dark ? 'true' : 'false');
-    themeBtn.setAttribute('aria-label', dark ? '切换到浅色主题' : '切换到深色主题');
-    if (themeSun) themeSun.style.display = dark ? 'block' : 'none';
-    if (themeMoon) themeMoon.style.display = dark ? 'none' : 'block';
-  }
-  syncThemeBtn();
-
-  function applyTheme(theme) {
-    root.setAttribute('data-theme', theme);
-    try { localStorage.setItem(THEME_KEY, theme); } catch (e) {}
-    syncThemeBtn();
-  }
-
-  // 按钮中心（视口坐标）：扩散起点。按钮未渲染时退化为屏幕中心
-  //（coverRadius 仍保证圆形覆盖到最远角落；不写死右上角，避免圆心落在固定位置）
-  function btnCenter() {
-    var r = themeBtn.getBoundingClientRect();
-    if (!r || (!r.width && !r.height)) {
-      return { x: (window.innerWidth || 0) / 2, y: (window.innerHeight || 0) / 2 };
-    }
-    return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
-  }
-
-  // 覆盖最远角落所需的圆半径
-  function coverRadius(cx, cy) {
-    var w = window.innerWidth || 0;
-    var h = window.innerHeight || 0;
-    return Math.ceil(Math.hypot(Math.max(cx, w - cx), Math.max(cy, h - cy))) + 8;
-  }
-
-  function reducedMotion() {
-    return window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-  }
-
-  function switchTheme(cx, cy) {
-    if (animating) return; // 动画期间禁用
-    var oldTheme = currentTheme();
-    var newTheme = oldTheme === 'dark' ? 'light' : 'dark';
-
-    if (reducedMotion()) { applyTheme(newTheme); return; } // 减少动态效果：无动画直接切
-
-    var radius = coverRadius(cx, cy);
-    animating = true;
-
-    // Bug2（方案B）：layer 写 data-theme = 新主题，填新主题 var(--bg-page)，
-    // 新主题底色"刷"旧主题页面，圆可见（方案A旧色填充圆不可见，按用户确认改回）。
-    // Bug1（用户确认）：覆盖层在最顶层(z 9999)，圆扩散盖住包括卡片在内的一切——
-    // 从按钮处"吞掉"整页，这是圆形扩散的正确视觉。
-    // 圆盖满后的同一帧内原子完成「冻结过渡→切主题→重排→移除覆盖层」，杜绝闪屏。
-    var layer = rippleEl.firstElementChild;
-    layer.setAttribute('data-theme', newTheme);
-    layer.style.clipPath = 'circle(0px at ' + cx + 'px ' + cy + 'px)';
-    rippleEl.classList.add('on');
-    void layer.offsetWidth; // 强制首帧定位生效，rAF 循环从此连续推进
-
-    var DUR = 1100;
-    var t0 = performance.now();
-    // easeInOutQuart：t<0.5 → 8t⁴；否则 1 - 8·(t-1)⁴，等价 cubic-bezier(0.76, 0, 0.24, 1)。
-    // 对称平滑：先缓慢起势、中段加速、再对称减速收尾 —— motion-tokens.md 的「有重量感铺开」
-    var easeInOutQuart = function (x) {
-      return x < 0.5 ? 8 * x * x * x * x : 1 - 8 * Math.pow(x - 1, 4);
-    };
-    var frame = function (now) {
-      var t = Math.min(1, (now - t0) / DUR);
-      var r = Math.ceil(radius * easeInOutQuart(t));
-      layer.style.clipPath = 'circle(' + r + 'px at ' + cx + 'px ' + cy + 'px)';
-      if (t < 1) { requestAnimationFrame(frame); return; }
-      // 覆盖完成的那一帧（Bug3修复：杜绝闪帧）：
-      // ① .theme-switching 冻结全站过渡（卡片/顶栏/分段 0.18s 若在场，
-      //    翻转后渐变会露出"旧色卡片漂在新背景"的中间帧 = 闪帧）；
-      // ② applyTheme 翻转 <html> data-theme（含持久化与图标同步）；
-      // ③ 强制重排，新主题颜色立即提交；
-      // ④ 同一回调内移除覆盖层——翻转与移除在同一绘制帧，页面不露旧主题；
-      // ⑤ 下一帧释放冻结类（此时颜色已提交，无过渡可触发）。
-      root.classList.add('theme-switching');
-      applyTheme(newTheme);
-      void document.documentElement.offsetHeight;
-      rippleEl.classList.remove('on');
-      layer.style.clipPath = '';
-      requestAnimationFrame(function () {
-        root.classList.remove('theme-switching');
-        animating = false;
-      });
-    };
-    requestAnimationFrame(frame);
-  }
-
-  // Bug1：真实触点坐标。click 的合成坐标在部分移动 WebView（幽灵点击/快速滑动松手）
-  // 里不可靠甚至为 0；先在捕获阶段用 pointerdown 记录真实触点（触摸/鼠标均带坐标），
-  // click 时优先用。键盘（Enter/Space）不产生 pointerdown，坐标保持 null 走按钮中心兜底。
-  var lastTap = null;
-  themeBtn.addEventListener('pointerdown', function (e) {
-    lastTap = { x: e.clientX, y: e.clientY };
-  });
-
-  // 统一走 click：真实坐标优先；键盘（Enter/Space）合成的 click 无坐标，
-  // 用按钮中心作扩散起点，也天然避免 keydown + 合成 click 双触发
-  themeBtn.addEventListener('click', function (e) {
-    if (animating) return;
-    var cc = null;
-    if (e.clientX || e.clientY) cc = { x: e.clientX, y: e.clientY }; // 常规 click 坐标可信
-    else if (lastTap) cc = lastTap;                                  // 合成/幽灵 click 坐标全 0：用最近真实触点
-    if (!cc) { var c = btnCenter(); cc = c; }                        // 键盘：按钮中心
-    lastTap = null; // 只消费一次
-    switchTheme(cc.x, cc.y);
-  });
-
-  // 跟随系统主题：仅在用户从未手动选择时生效
-  if (window.matchMedia) {
-    var mq = window.matchMedia('(prefers-color-scheme: dark)');
-    var onSysChange = function (e) {
-      var saved = null;
-      try { saved = localStorage.getItem(THEME_KEY); } catch (err) {}
-      if (saved) return; // 用户已手动选择，不跟随系统
-      var sys = e.matches ? 'dark' : 'light';
-      if (currentTheme() !== sys) applyTheme(sys);
-    };
-    if (mq.addEventListener) mq.addEventListener('change', onSysChange);
-    else if (mq.addListener) mq.addListener(onSysChange); // 旧版 Safari
-  }
 
   /* --- 触觉反馈：capture 阶段监听，不影响原处理逻辑 --- */
   document.addEventListener('click', function (e) {
