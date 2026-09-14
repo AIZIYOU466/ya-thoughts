@@ -50,6 +50,7 @@
     --img-btn-bg: #EEF1F5;
     --img-btn-text: #6B7280;
     --count-color: #A8ADB7;
+    --sel-count-color: #8A8F99;
     /* 组件级语义颜色：暗色模式 = 二级 token 重映射，组件不再单独写死色值 */
     --input-bg: #F0F2F5;
     --input-focus-bg: var(--bg-card);
@@ -95,6 +96,7 @@
       --img-btn-bg: #252932;
       --img-btn-text: #C8CDD5;
       --count-color: #6E747D;
+      --sel-count-color: #9AA0A6;
       /* 组件级语义颜色暗色分支（与 :root 同名 token 一一对应） */
       --input-bg: #252932;
       --input-focus-bg: #252932;
@@ -170,38 +172,35 @@
   #list-header h1 { grid-column: 2; font-size: 17px; font-weight: 600; text-align: center; }
   #list-header .count { display: none; } /* 计数已移到列表第一行 #note-count-bar */
 
-  .menu-btn {
-    justify-self: end;
+  /* 顶栏图标按钮：统一 44×44 点击区 / 20×20 图标居中 / 按钮间距 4px。
+     未激活色 = 主文字色（浅色 #1A1D21 / 深色 #E8EAED），菜单展开 = 激活 = 主色 #2E6BE6。
+     点击反馈：scale(0.92) + 底色，150ms ease，松开自动恢复。 */
+  #theme-btn, #sel-enter, #menu-btn {
     width: 44px; height: 44px;
+    padding: 10px;
     display: inline-flex; align-items: center; justify-content: center;
     border-radius: 50%;
-    color: var(--text-secondary);
-    transition: background 0.15s var(--ease), transform 0.1s var(--ease);
+    color: var(--text-primary);
+    transition: background 0.15s var(--ease), color 0.15s var(--ease), transform 0.15s var(--ease);
   }
-  .menu-btn:active { background: var(--chip-bg); transform: scale(0.94); will-change: transform; }
+  #theme-btn:active, #sel-enter:active, #menu-btn:active {
+    background: rgba(0, 0, 0, 0.04); /* 浅色点击底色 */
+    transform: scale(0.92);
+  }
+  [data-theme="dark"] #theme-btn:active,
+  [data-theme="dark"] #sel-enter:active,
+  [data-theme="dark"] #menu-btn:active { background: rgba(255, 255, 255, 0.06); } /* 深色点击底色 */
+  #menu-btn.open { color: var(--primary); } /* 菜单展开 = 激活态 */
 
-  /* 主题切换按钮：44×44 点击区，仅一个 SVG 图标（太阳/月亮由 JS 按主题互切）。
-     只保留颜色过渡，无任何动画/转圈层 */
-  #theme-btn {
-    width: 44px; height: 44px;
-    display: inline-flex; align-items: center; justify-content: center;
-    border-radius: 50%;
-    color: var(--text-secondary);
-    transition: background 0.15s var(--ease), color 0.15s var(--ease);
-  }
-  #theme-btn:active { background: var(--chip-bg); }
+  /* 主题图标初始态（JS 未跑时的首帧也正确）：浅色 = 新月，深色 = 太阳。
+     切换时 JS 写 inline style（内联样式优先级高于此处，可随时覆盖） */
+  #theme-sun { display: none; }
+  #theme-moon { display: block; }
+  [data-theme="dark"] #theme-sun { display: block; }
+  [data-theme="dark"] #theme-moon { display: none; }
 
-  /* 顶栏垃圾桶：列表页右上角的固定落点锚点，卡片删除动画飞向此处 */
-  #trash-btn {
-    width: 44px; height: 44px;
-    display: inline-flex; align-items: center; justify-content: center;
-    border-radius: 50%;
-    color: var(--text-secondary);
-    transition: background 0.15s var(--ease), transform 0.1s var(--ease);
-  }
-  #trash-btn:active { background: var(--chip-bg); transform: scale(0.94); will-change: transform; }
-  /* 删除飞行时垃圾桶脉冲：300ms 内 1 → 1.2 → 1（一次性 animation） */
-  #trash-btn.pulsing { animation: trash-pulse 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
+  /* 删除飞行时落点脉冲（落点锚点是「选择」图标，300ms 内 1 → 1.2 → 1，一次性 animation） */
+  #sel-enter.pulsing { animation: trash-pulse 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
   @keyframes trash-pulse {
     0% { transform: scale(1); }
     50% { transform: scale(1.2); }
@@ -215,7 +214,7 @@
     margin: 0;
     pointer-events: none;
     will-change: transform, opacity;
-    transform-origin: right top; /* 缩放点指向右上角垃圾桶（问题3） */
+    transform-origin: right top; /* 缩放点指向右上角「选择」图标（删除动画落点锚点） */
     border-radius: var(--radius-card);
     overflow: hidden;
     box-shadow: var(--shadow-card);
@@ -241,39 +240,43 @@
     transform: none !important;
   }
 
-  /* 顶栏右侧动作区：「选择」入口 + ⋮ 菜单（前面插入主题切换按钮） */
-  .hdr-actions { grid-column: 3; justify-self: end; display: inline-flex; align-items: center; }
-  #sel-enter {
-    min-height: 44px;
-    padding: 0 8px 0 12px;
-    font-size: 14px;
-    color: var(--primary);
-    border-radius: 10px;
-    transition: background 0.15s var(--ease), transform 0.1s var(--ease);
-  }
-  #sel-enter:active { background: var(--chip-bg); transform: scale(0.96); }
+  /* 顶栏右侧动作区：主题切换 | 选择 | ⋮ 菜单，间距统一 4px */
+  .hdr-actions { grid-column: 3; justify-self: end; display: inline-flex; align-items: center; gap: 4px; }
 
-  /* 多选模式顶栏：取消 / 已选 X 条 / 导出 */
+  /* 多选模式顶栏：取消 / 已选 X 条 /（全选·删除·导出） */
   #sel-bar { display: none; align-items: center; gap: 8px; grid-column: 1 / -1; justify-content: space-between; }
   #list-header.selecting h1,
   #list-header.selecting .count,
   #list-header.selecting .menu-btn,
   #list-header.selecting .hdr-actions { display: none; }
   #list-header.selecting #sel-bar { display: flex; }
-  #sel-bar button {
+  /* 左「取消」：文字按钮，主色 #2E6BE6，15px/500 */
+  #sel-bar #sel-cancel {
     min-height: 44px;
-    padding: 0 10px;
+    padding: 0 8px;
     font-size: 15px;
+    font-weight: 500;
     color: var(--primary);
     border-radius: 10px;
-    transition: background 0.15s var(--ease), transform 0.1s var(--ease);
+    transition: background 0.15s var(--ease), transform 0.15s var(--ease);
   }
-  #sel-cancel { font-weight: 500; }
-  #sel-delete { color: var(--danger); font-weight: 600; }
-  #sel-delete:active { background: rgba(229, 72, 77, 0.1); }
-  #sel-export { font-weight: 600; }
-  #sel-bar button:active { background: var(--chip-bg); transform: scale(0.96); }
-  #sel-count { font-size: 14px; color: var(--text-secondary); animation: fade-in 0.2s var(--ease); }
+  #sel-bar #sel-cancel:active { background: var(--chip-bg); transform: scale(0.94); }
+  /* 中「已选 X 条」：14px，浅色 #8A8F99 / 深色 #9AA0A6（--sel-count-color） */
+  #sel-count { font-size: 14px; color: var(--sel-count-color); animation: fade-in 0.2s var(--ease); }
+  /* 右「全选 / 删除 / 导出」：14px/500，flex gap 12px 右对齐 */
+  #sel-actions { display: inline-flex; align-items: center; gap: 12px; }
+  #sel-actions button {
+    min-height: 44px;
+    padding: 0 6px;
+    font-size: 14px;
+    font-weight: 500;
+    border-radius: 10px;
+    transition: background 0.15s var(--ease), transform 0.15s var(--ease);
+  }
+  #sel-actions button:active { background: var(--chip-bg); transform: scale(0.94); }
+  #sel-all { color: var(--text-secondary); } /* #6B7280 灰 */
+  #sel-delete { color: var(--danger); }      /* #E5484D 红（沿用批量删除主色） */
+  #sel-export { color: var(--primary); }     /* #2E6BE6 主色 */
 
   /* 列表页第一行：条数小字提示（#note-count 由原 JS 继续写入，位置从顶栏移到这里） */
   #note-count-bar {
@@ -1306,27 +1309,37 @@
     <div class="hdr-actions">
       <button id="theme-btn" title="切换深浅主题" aria-label="切换深浅主题" aria-pressed="false">
         <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-          <path id="theme-icon-path" d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 2 21 12.79z"/>
+          <g id="theme-sun">
+            <circle cx="12" cy="12" r="4"/>
+            <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/>
+          </g>
+          <g id="theme-moon">
+            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+          </g>
         </svg>
       </button>
-      <button id="sel-enter" title="选择多条便签">选择</button>
-      <button id="menu-btn" class="menu-btn" title="更多" aria-label="更多菜单">
+      <button id="sel-enter" title="选择多条便签" aria-label="选择多条便签">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <rect x="3" y="5" width="4" height="4" rx="1"/>
+          <path d="M10 7h11"/>
+          <rect x="3" y="15" width="4" height="4" rx="1"/>
+          <path d="M10 17h11"/>
+        </svg>
+      </button>
+      <button id="menu-btn" title="更多" aria-label="更多菜单">
         <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true">
           <circle cx="12" cy="5" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="12" cy="19" r="1.7"/>
-        </svg>
-      </button>
-      <button id="trash-btn" title="删除便签" aria-label="删除便签">
-        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-          <path d="M3 6h18M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/>
-          <path d="M10 11v6M14 11v6"/>
         </svg>
       </button>
     </div>
     <div id="sel-bar">
       <button id="sel-cancel">取消</button>
       <span id="sel-count">已选 0 条</span>
-      <button id="sel-delete">删除</button>
-      <button id="sel-export">导出</button>
+      <div id="sel-actions">
+        <button id="sel-all" aria-pressed="false">全选</button>
+        <button id="sel-delete">删除</button>
+        <button id="sel-export">导出</button>
+      </div>
     </div>
   </header>
   <div id="menu-pop">
@@ -1372,7 +1385,7 @@
 
   <div id="about-mask">
     <div id="about-card" role="dialog" aria-modal="true">
-      <h2>极简备忘录 v1.3.2</h2>
+      <h2>极简备忘录 v1.4.1</h2>
       <p>如果它帮到你，可以请我喝杯咖啡</p>
       <button id="about-close">关闭</button>
     </div>
@@ -2081,6 +2094,25 @@
     selCountEl.textContent = '已选 ' + Object.keys(selectedIds).length + ' 条';
   }
 
+  // 「全选」的目标范围：当前分段 + 当前搜索过滤后的所有可见便签（与 renderList 一致）
+  function visibleNoteIds() {
+    return sortedNotesFor(segFilter).filter(matchesSearch).map(function (n) { return n.id; });
+  }
+  function allVisibleSelected() {
+    var ids = visibleNoteIds();
+    if (!ids.length) return false;
+    for (var i = 0; i < ids.length; i++) if (!selectedIds[ids[i]]) return false;
+    return true;
+  }
+  // 全选按钮文案互切：全部可见已选中 → “取消全选”，否则 “全选”
+  function updateSelAllBtn() {
+    var btn = $('sel-all');
+    if (!btn) return;
+    var on = allVisibleSelected();
+    btn.textContent = on ? '取消全选' : '全选';
+    btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+  }
+
   /* ---------- 搜索 ---------- */
 
   // 把当前便签缓存转成小写纯文本索引；<100 条直接遍历，不建索引（避免过度优化）
@@ -2408,7 +2440,7 @@
       applySwipe(g); // 跟手
     } else if (g.mode === 'drag') {
       g.dragShift = t.clientY - g.dragStartY;
-      moveDrag(g);
+      scheduleDragMove(g); // rAF 节流：不每个 touchmove 都重排
     } else if (g.mode === 'scroll') {
       var sy = t.clientY - g.lastY;
       if (sy) listEl.scrollTop -= sy; // JS 手动滚动（浏览器已被 touch-action:none + preventDefault 禁言）
@@ -2435,8 +2467,9 @@
       if (body) body.style.transform = '';
       if (g.suppressClick) gestureSuppressClick = true;
     } else if (g.mode === 'drag') {
+      cancelScheduledDrag(); // 丢弃未执行的 rAF，随后同步补最后一次让位
       var movedAmt = Math.abs(g.dragShift) > DRAG_JITTER;
-      if (movedAmt) g.suppressClick = true;
+      if (movedAmt) { g.suppressClick = true; moveDrag(g); } // 同步应用最终 hover 位置
       if (g.dragIndex === g.startIndex && !movedAmt) {
         // 长按期间手指未移动：取消拖拽，视为普通点击（打开便签）
         li.classList.remove('dragging');
@@ -2535,10 +2568,11 @@
     }
   }
 
-  // 手势结束清理：摘除 window 监听、取消长按定时器、恢复面容与让位状态
+  // 手势结束清理：摘除 window 监听、取消长按定时器、取消未执行的拖拽 rAF、恢复面容与让位状态
   function resetGesture(g) {
     if (!g) return;
     detachGestureListeners();
+    cancelScheduledDrag(); // 丢弃残留拖拽帧，避免落位后再被 moveDrag 改写
     if (g.longPressTimer) { clearTimeout(g.longPressTimer); g.longPressTimer = null; }
     var li = g.li;
     if (li && li.isConnected) {
@@ -2599,54 +2633,77 @@
     }
   }
 
-  // 拖拽跟随：逐帧把卡片放到手指下方，越过相邻卡片中点时换位
+  /* 拖拽跟随（rAF 节流）：把卡片放到手指下方，实时按被拖卡片中心点 y 计算目标索引。
+     hoverIndex 判定用卡片「天然槽位中心线」±20px（offsetTop 是布局位，不受让位
+     translate 影响）—— 相邻卡片让位后边界不会跟着退让，拖 1 过 2、3 时依次灵敏让位；
+     快速跨多格时一次算到位。只有 hoverIndex 变化才重算让位，避免每帧重排。 */
+  var DRAG_SLOT_TOL = 20; // 中心点进入目标卡片中心线 ±20px 即触发让位
+  var dragRafId = 0;      // 拖拽 rAF 节流句柄（同一时间只挂一帧）
+
   function moveDrag(g) {
     if (Math.abs(g.dragShift) > DRAG_JITTER) g.suppressClick = true;
-    var items = g.items, d = g.dragIndex;
-    var rc = g.li.getBoundingClientRect();
-    var cy = rc.top + rc.height / 2;
-    if (g.dragShift > 0 && d < items.length - 1) {
-      var nb = items[d + 1].getBoundingClientRect();
-      if (cy > nb.top + nb.height / 2) { g.dragIndex = d + 1; applyDragShifts(g); }
-    } else if (g.dragShift < 0 && d > 0) {
-      var na = items[d - 1].getBoundingClientRect();
-      if (cy < na.top + na.height / 2) { g.dragIndex = d - 1; applyDragShifts(g); }
+    var items = g.items, li = g.li;
+    // 被拖卡渲染中心：布局位 offsetTop + 手指位移 + 半高（translate 不改 offsetTop）
+    var cy = li.offsetTop + g.dragShift + li.offsetHeight / 2;
+    var hover = g.dragIndex;
+    var best = DRAG_SLOT_TOL; // 只有进入某张卡中心线 ±20px 才换位
+    for (var j = 0; j < items.length; j++) {
+      var it = items[j];
+      if (it === li) continue;
+      var c = it.offsetTop + it.offsetHeight / 2; // 目标卡天然中心线
+      var dist = Math.abs(cy - c);
+      if (dist <= best) { best = dist; hover = j; }
     }
-    g.li.style.transform = 'translate3d(0px,' + g.dragShift + 'px,0) scale(1.02)';
+    if (hover !== g.dragIndex) { g.dragIndex = hover; applyDragShifts(g); } // 仅 hover 变化才重算
+    li.style.transform = 'translate3d(0px,' + g.dragShift + 'px,0) scale(1.02)';
   }
 
-  // 松手落位：把卡片移到目标下标（DOM 同步成最终顺序），全体加过渡后清空 transform，
-  // 卡片自动“落”到新位置、其余卡片顺势让位；松手立即写 order，240ms 后只做清理/切排序
+  // rAF 节流调度：touchmove 只更新 dragShift，让位/重排放到下一帧；已挂帧则跳过
+  function scheduleDragMove(g) {
+    if (dragRafId) return;
+    dragRafId = requestAnimationFrame(function () {
+      dragRafId = 0;
+      if (gesture === g && g.mode === 'drag' && g.li.isConnected) moveDrag(g);
+    });
+  }
+
+  // 取消尚未执行的拖拽帧（松手/取消时调用，防止残留位移）
+  function cancelScheduledDrag() {
+    if (dragRafId) { cancelAnimationFrame(dragRafId); dragRafId = 0; }
+  }
+
+  // 松手落位：“啪”地落位，不重播任何动画（完全跳过 FLIP）。
+  // 拖动期间其余卡片已让位到位；落手这一帧同时完成：切 DOM 顺序 + 清掉所有 translateY
+  // + 清掉被拖卡的 transform。全程不加过渡类、不强制重排，浏览器只画一帧 ——
+  // 卡片直接落在新位置，其他卡片已在正确位置，不闪、不重播。
   function finishDragReorder(g) {
+    var i;
     var moved = g.dragIndex !== g.startIndex;
     var all = noteItemsInDom();
     var li = g.li;
     if (moved) {
       var remaining = [];
-      for (var i = 0; i < all.length; i++) if (all[i] !== li) remaining.push(all[i]);
+      for (i = 0; i < all.length; i++) if (all[i] !== li) remaining.push(all[i]);
       if (g.dragIndex >= remaining.length) listEl.appendChild(li);
       else listEl.insertBefore(li, remaining[g.dragIndex]);
       all = noteItemsInDom();
     }
-    for (i = 0; i < all.length; i++) all[i].classList.add('drag-anim');
+    // 先清 transform（此时仍带 .dragging 的 transition:none，同一绘帧内生效不会补间），
+    // 再摘除 dragging 类与其余卡片的让位 class/位移；无强制重排 → 瞬移落位
+    li.style.transform = '';
     li.classList.remove('dragging');
-    void listEl.offsetHeight; // 提交当前帧作为过渡起点
     for (i = 0; i < all.length; i++) {
-      all[i].classList.remove('drag-shift');
+      all[i].classList.remove('drag-shift', 'drag-anim');
       all[i].style.transform = '';
     }
-    // 松手立即写入 IndexedDB 的 order（不等动画结束）；动画结束后只做清理，
-    // 以及“按时间排序拖拽 → 自动切到自定义排序”的收尾切换
+    // 松手立即写入 IndexedDB 的 order；若原本是时间排序，自动切到自定义排序
     if (moved) saveCustomOrder(noteItemsInDom());
-    setTimeout(function () {
-      for (i = 0; i < all.length; i++) all[i].classList.remove('drag-anim');
-      if (moved && (sortBy === 'updated' || sortBy === 'created')) {
-        sortBy = 'custom';
-        try { localStorage.setItem(SORT_KEY, sortBy); } catch (err) {}
-        updateSortMenu();
-        renderList();
-      }
-    }, 240);
+    if (moved && (sortBy === 'updated' || sortBy === 'created')) {
+      sortBy = 'custom';
+      try { localStorage.setItem(SORT_KEY, sortBy); } catch (err) {}
+      updateSortMenu();
+      renderList();
+    }
   }
 
   // 拖拽结果落库：非置顶便签按可见顺序写 order（0..n）；被过滤隐藏的追加到末尾
@@ -2786,6 +2843,7 @@
     listView.classList.toggle('multi', multiMode);
     headerEl.classList.toggle('selecting', multiMode);
     if (multiMode) updateSelCount();
+    if (multiMode) updateSelAllBtn();
     var lastPin = lastPinnedIndex(sorted); // 置顶区末尾下标，用于插分割线
 
     sorted.forEach(function (note, noteIdx) {
@@ -3103,17 +3161,18 @@
   }
 
   /* ---------- 弧形删除动画（curved card deletion） ----------
-     触发：卡片操作面板 / 长按菜单点「删除」→ deleteSingleNote。
-     克隆卡片固定定位到当前包围盒，逐帧沿二次贝塞尔曲线飞向顶栏垃圾桶，
+     触发：卡片操作面板 / 左滑菜单点「删除」→ deleteSingleNote。
+     克隆卡片固定定位到当前包围盒，逐帧沿二次贝塞尔曲线飞向右上角「选择」图标
+     （原垃圾桶按钮已移除，落点锚点改为 sel-enter 的中心），
      位置/缩放/旋转统一走 linear 均匀速率（p = t）：全程匀速推进、无头重脚轻
      （scale 1→0.05 均匀收缩、旋转 0→25° 匀速递进）；
      opacity 前 60% 保持 1、后 40% 线性衰减到 0；transform-origin
-     指向右上角垃圾桶。垃圾桶同步脉冲。同一时刻只允许一张卡片在飞。 */
-  var flyAnimating = false; // 是否有卡片正在飞向垃圾桶
+     指向右上角落点。落点同步脉冲。同一时刻只允许一张卡片在飞。 */
+  var flyAnimating = false; // 是否有卡片正在飞向落点
   var trashPulseTimer = null;
 
   function trashCenter() {
-    var r = $('trash-btn').getBoundingClientRect();
+    var r = $('sel-enter').getBoundingClientRect();
     return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
   }
 
@@ -3185,9 +3244,9 @@
     requestAnimationFrame(frame);
   }
 
-  // 垃圾桶脉冲：300ms 内 scale 1 → 1.2 → 1（CSS keyframes 一次性播放）
+  // 落点脉冲：300ms 内 scale 1 → 1.2 → 1（CSS keyframes 一次性播放，打在「选择」图标上）
   function pulseTrashBtn() {
-    var btn = $('trash-btn');
+    var btn = $('sel-enter');
     if (!btn || prefersReducedMotion()) return;
     btn.classList.remove('pulsing');
     void btn.offsetWidth; // 重置动画
@@ -3195,13 +3254,6 @@
     clearTimeout(trashPulseTimer);
     trashPulseTimer = setTimeout(function () { btn.classList.remove('pulsing'); }, 320);
   }
-
-  // 顶栏垃圾桶按钮：进入多选模式，由顶部「删除」统一走 confirmDialog 批量删除
-  // （原来是提示“左滑删除”的假入口，易被当成删除功能误点）
-  $('trash-btn').addEventListener('click', function () {
-    if (multiMode) return; // 多选模式顶栏被 #sel-bar 替换，此入口不可见，兑底忽略
-    enterMultiMode(null);
-  });
 
   /* ---------- 视图切换（简化版单向滑入/滑出，状态由 show() 全权管理） ---------- */
 
@@ -3701,7 +3753,11 @@
 
   /* ---------- 导出 / 导入 ---------- */
 
-  function closeMenu() { menuPop.classList.remove('open'); }
+  function closeMenu() {
+    menuPop.classList.remove('open');
+    var mb = document.getElementById('menu-btn');
+    if (mb) mb.classList.remove('open'); // 同步移除激活高亮
+  }
 
   // Blob → base64（不带 data: 前缀），用 FileReader
   function blobToBase64(blob) {
@@ -4105,6 +4161,7 @@
   $('menu-btn').addEventListener('click', function (e) {
     e.stopPropagation();
     menuPop.classList.toggle('open');
+    $('menu-btn').classList.toggle('open', menuPop.classList.contains('open')); // 激活色
   });
   document.addEventListener('click', function (e) {
     if (menuPop.classList.contains('open') && !menuPop.contains(e.target)) closeMenu();
@@ -4135,6 +4192,18 @@
 
   // 多选模式顶栏
   $('sel-cancel').addEventListener('click', exitMultiMode);
+
+  // 「全选」/「取消全选」：作用于当前分段 + 当前搜索过滤后的全部可见便签
+  $('sel-all').addEventListener('click', function () {
+    var ids = visibleNoteIds();
+    if (!ids.length) return;
+    if (allVisibleSelected()) {
+      for (var i = 0; i < ids.length; i++) delete selectedIds[ids[i]];
+    } else {
+      for (i = 0; i < ids.length; i++) selectedIds[ids[i]] = true;
+    }
+    renderList();
+  });
   $('sel-export').addEventListener('click', function () {
     var ids = Object.keys(selectedIds);
     if (!ids.length) { alert('请先选择要导出的便签'); return; }
@@ -4528,15 +4597,17 @@
 
   function currentTheme() { return root.getAttribute('data-theme') || 'light'; }
 
-  // 图标随主题互切：浅色显示月亮（点击进深色）、深色显示太阳（点击回浅色）
-  var SUN_D = 'M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8zM12 2v2m0 16v2M4.93 4.93l1.41 1.41m11.32 11.32l1.41 1.41M2 12h2m16 0h2M4.93 19.07l1.41-1.41m11.32-11.32l1.41-1.41';
-  var MOON_D = 'M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 2 21 12.79z';
-  var themeIconPath = document.getElementById('theme-icon-path');
+  // 图标随主题互切：浅色显示标准新月、深色显示标准太阳（圆形 + 8 条光线）。
+  // 同一 SVG 内两个 <g> 用 display 属性互切（viewBox 0 0 24 24 与 path 坐标匹配，
+  // 彻底解决旧 path 坐标残缺导致的“半圆月亮”问题）
+  var themeSun = document.getElementById('theme-sun');
+  var themeMoon = document.getElementById('theme-moon');
   function syncThemeBtn() {
     var dark = currentTheme() === 'dark';
     themeBtn.setAttribute('aria-pressed', dark ? 'true' : 'false');
     themeBtn.setAttribute('aria-label', dark ? '切换到浅色主题' : '切换到深色主题');
-    if (themeIconPath) themeIconPath.setAttribute('d', dark ? SUN_D : MOON_D);
+    if (themeSun) themeSun.style.display = dark ? 'block' : 'none';
+    if (themeMoon) themeMoon.style.display = dark ? 'none' : 'block';
   }
   syncThemeBtn();
 
