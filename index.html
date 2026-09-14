@@ -154,7 +154,12 @@
   @keyframes box-pop { from { transform: scale(0); } to { transform: scale(1); } }
 
   /* ============ 列表页：毛玻璃顶栏（悬浮，列表从其下滚过） ============ */
-  #list-view { position: relative; max-width: 640px; margin: 0 auto; width: 100%; }
+  /* Bug3：列表页改为 fixed 覆盖视口（脱离文档流，编辑页打开期间保持渲染，不摘树）。
+     display:none 会让子元素（右下角 + 按钮）的 CSS 动画在每次返回列表时整体重播，
+     表现为 + 按钮「闪一下/重加载感」；visibility 隐藏不打断动画计时，返回时无重播。
+     编辑页是不透明层，盖住即可。fixed + inset:0 与 .view 的 100dvh 等效，不撑高 body。 */
+  #list-view { position: fixed; inset: 0; max-width: 640px; margin: 0 auto; width: 100%; display: flex; flex-direction: column; visibility: hidden; }
+  #list-view.active { visibility: visible; }
   #list-header {
     position: absolute;
     top: 0; left: 0; right: 0;
@@ -390,6 +395,19 @@
   .note-item.swiping, .note-item.swipe-open { overflow: hidden; }
   /* （旧 .gesturing { touch-action:none !important } 已随 Pointer Events 手势层一起删除：
      .note-item 现在常驻 touch-action:none，无需动态切换） */
+  /* Bug2(B)：菜单的物理裁剪边界（overflow:hidden 裁掉右缘外待命的菜单），
+     z-index:1 在卡片(z-index:2)之下；无背景 → 跟手露出的列表底色，不是『待命面板』 */
+  .note-item .swipe-clip {
+    position: absolute;
+    top: 0; right: 0; bottom: 0;
+    width: 120px;
+    overflow: hidden;
+    border-radius: var(--radius-card);
+    z-index: 1;
+    will-change: transform;
+  }
+  .note-item.swipe-reveal .swipe-actions { transform: translateX(0); } /* 越过阈值：菜单从右侧滑入 */
+  .note-item.swipe-open .swipe-actions { transform: translateX(0); }   /* 吸附后：恒全露（兜底） */
   /* 左滑操作区：置顶 / 复制 / 删除 三枚按钮，位于卡片本体之下右侧 */
   .note-item .swipe-actions {
     position: absolute;
@@ -399,6 +417,11 @@
     overflow: hidden;
     border-radius: var(--radius-card);
     background: var(--chip-bg);
+    /* Bug2(B)：初始藏在裁剪容器右缘外（translateX(100%) 被 .swipe-clip 裁掉），
+       不再『一直待命被卡片揭开』；左滑越过阈值（swipe-reveal）或吸附（swipe-open）才滑入 */
+    transform: translateX(100%);
+    transition: transform 0.25s var(--ease-swift);
+    will-change: transform; /* 与卡片同为合成层，按 z-index 稳定排序 */
   }
   .note-item .swipe-btn {
     pointer-events: auto; /* 任何时刻可点，永不被父级/手势禁用 */
@@ -436,6 +459,7 @@
     box-shadow: var(--shadow-card);
     transition: background 0.18s var(--ease), transform 0.25s var(--ease-swift), box-shadow 0.18s var(--ease);
     will-change: transform;
+    z-index: 2; /* Bug2(B)：显式确立『卡片在上』；与 .swipe-clip 同为合成层，按 z-index 排序 */
   }
   .note-item .swipe-body:active { background: var(--tap-press); }
   .note-item.swiping .swipe-body { transition: none; } /* 跟手时关过渡 */
@@ -856,7 +880,8 @@
     display: flex; align-items: center; justify-content: center;
     box-shadow: var(--shadow-fab);
     z-index: 10;
-    animation: fab-pop 0.4s var(--ease-spring); /* 入场弹入（呼吸动画放在 svg 上，避免占用 transform 冲突） */
+    /* Bug3：删掉 animation: fab-pop —— @keyframes fab-pop 从未定义（死引用）；
+       且列表从 display:none 恢复时该动画会整体重播，加剧 + 按钮「闪一下」 */
     transition: transform 0.3s var(--ease-spring), background 0.15s var(--ease), filter 0.15s var(--ease);
   }
   #list-view.sheet-open #add-btn { transform: scale(0.9); opacity: 0.7; }
@@ -1385,7 +1410,7 @@
 
   <div id="about-mask">
     <div id="about-card" role="dialog" aria-modal="true">
-      <h2>极简备忘录 v1.4.1</h2>
+      <h2>极简备忘录 v1.4.2</h2>
       <p>如果它帮到你，可以请我喝杯咖啡</p>
       <button id="about-close">关闭</button>
     </div>
@@ -2359,6 +2384,7 @@
      CSS 只改 transform 与 opacity 驱动动画；.note-item touch-action:none 常驻。 */
   var SWIPE_REVEAL = 120;   // 展开时露出的操作区宽度(px)
   var SWIPE_SNAP = 80;      // 松手后判定吸附展开的滑动距离(px)
+  var SWIPE_REVEAL_TRIGGER = 40; // Bug2(B)：左滑越过该位移(px)后，菜单才从右侧滑入
   var DRAG_HOLD = 500;      // 长按多少毫秒进入拖拽
   var DRAG_JITTER = 10;     // 移动超过该值取消长按/不算点击
   var gesture = null;               // 当前进行中的手势（同时只有一个）
@@ -2382,7 +2408,7 @@
     var items = noteItemsInDom();
     for (var i = 0; i < items.length; i++) {
       if (items[i] === excludeLi) continue;
-      items[i].classList.remove('swipe-open', 'swiping');
+      items[i].classList.remove('swipe-open', 'swiping', 'swipe-reveal');
     }
   }
 
@@ -2576,7 +2602,7 @@
     if (g.longPressTimer) { clearTimeout(g.longPressTimer); g.longPressTimer = null; }
     var li = g.li;
     if (li && li.isConnected) {
-      li.classList.remove('swiping', 'dragging');
+      li.classList.remove('swiping', 'dragging', 'swipe-reveal');
       var body = li.querySelector('.swipe-body');
       if (body) body.style.transform = '';
       li.style.transform = '';
@@ -2592,6 +2618,12 @@
     if (off > 0) off = 0;
     var body = g.li.querySelector('.swipe-body');
     if (body) body.style.transform = 'translate3d(' + off + 'px,0,0)';
+    // Bug2(B)：位移越过阈值后才让菜单从右侧滑入（swipe-reveal）；回滑出阈值则滑回藏起。
+    // 菜单的滑入/滑出由 .swipe-actions 的 transition 完成，这里只负责开关 class。
+    var revealOn = x <= -SWIPE_REVEAL_TRIGGER;
+    if (revealOn !== g.li.classList.contains('swipe-reveal')) {
+      g.li.classList.toggle('swipe-reveal', revealOn);
+    }
   }
 
   // 拖拽开始：长按 500ms 且未移动超过 10px（标题排序下不触发）
@@ -2945,7 +2977,10 @@
       body.appendChild(time);
       face.appendChild(box);
       face.appendChild(body);
-      li.appendChild(actions);
+      var clip = document.createElement('div');
+      clip.className = 'swipe-clip'; // Bug2(B)：菜单裁剪容器（菜单藏在右缘外，左滑越过阈值才滑入）
+      clip.appendChild(actions);
+      li.appendChild(clip);
       li.appendChild(face);
 
       li.dataset.id = note.id; // 事件委托用：点击时从这里取 id
@@ -3397,10 +3432,8 @@
     clearTimeout(wordCountTimer); // 取消在途的字数统计，避免空引用
     renderList();
     show('list');
-    // 返回列表：+ 按钮跟随 #list-view（.active → display:flex）恢复显示；
-    // 这里再防御性清空 inline 显隐与残留 class，保证来回多次 + 按钮一直在
-    var fab = $('add-btn');
-    if (fab) { fab.style.display = ''; fab.classList.remove('hidden', 'fade-out'); }
+    // Bug3：+ 按钮由 #list-view 的 visibility 显隐控制（列表页保持渲染不摘树，
+    // 返回时只滑出编辑页、不重建不重播动画），此处不再做防御性 DOM 操作
   }
 
   function deleteCurrent() {
@@ -4617,12 +4650,12 @@
     syncThemeBtn();
   }
 
-  // 按钮中心（视口坐标）：扩散起点。按钮未渲染时退化为右上角
+  // 按钮中心（视口坐标）：扩散起点。按钮未渲染时退化为屏幕中心
+  //（coverRadius 仍保证圆形覆盖到最远角落；不写死右上角，避免圆心落在固定位置）
   function btnCenter() {
     var r = themeBtn.getBoundingClientRect();
     if (!r || (!r.width && !r.height)) {
-      var safeR = Math.max(20, (window.innerWidth || 0) - 40);
-      return { x: safeR, y: 34 };
+      return { x: (window.innerWidth || 0) / 2, y: (window.innerHeight || 0) / 2 };
     }
     return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
   }
@@ -4686,13 +4719,24 @@
     requestAnimationFrame(frame);
   }
 
-  // 统一走 click：触摸/鼠标自带坐标；键盘（Enter/Space）合成的 click 无坐标，
+  // Bug1：真实触点坐标。click 的合成坐标在部分移动 WebView（幽灵点击/快速滑动松手）
+  // 里不可靠甚至为 0；先在捕获阶段用 pointerdown 记录真实触点（触摸/鼠标均带坐标），
+  // click 时优先用。键盘（Enter/Space）不产生 pointerdown，坐标保持 null 走按钮中心兜底。
+  var lastTap = null;
+  themeBtn.addEventListener('pointerdown', function (e) {
+    lastTap = { x: e.clientX, y: e.clientY };
+  });
+
+  // 统一走 click：真实坐标优先；键盘（Enter/Space）合成的 click 无坐标，
   // 用按钮中心作扩散起点，也天然避免 keydown + 合成 click 双触发
   themeBtn.addEventListener('click', function (e) {
     if (animating) return;
-    var cx = e.clientX, cy = e.clientY;
-    if (!cx && !cy) { var c = btnCenter(); cx = c.x; cy = c.y; }
-    switchTheme(cx, cy);
+    var cc = null;
+    if (e.clientX || e.clientY) cc = { x: e.clientX, y: e.clientY }; // 常规 click 坐标可信
+    else if (lastTap) cc = lastTap;                                  // 合成/幽灵 click 坐标全 0：用最近真实触点
+    if (!cc) { var c = btnCenter(); cc = c; }                        // 键盘：按钮中心
+    lastTap = null; // 只消费一次
+    switchTheme(cc.x, cc.y);
   });
 
   // 跟随系统主题：仅在用户从未手动选择时生效

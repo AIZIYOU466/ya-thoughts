@@ -1,0 +1,84 @@
+请加载 systematic-debugging 技能和 ponytail 技能。
+
+修复三个 bug。先输出根因，再改代码。
+
+═══════════════════════════════════════
+Bug 1：主题切换的圆形扩散圆心不对
+═══════════════════════════════════════
+
+现象：点击主题切换按钮，圆形扩散是从屏幕某个固定位置（不是按钮位置）开始的。
+用户要的是：以用户真实点击/触摸的位置为圆心，圆半径覆盖到屏幕最远的角落。
+
+根因排查（systematic-debugging）：
+1. 找到主题切换按钮的 click 处理函数。
+2. 检查 clip-path 的圆心坐标计算：是用 e.clientX / e.clientY，还是用按钮的 boundingRect 中心，还是硬编码了屏幕中心？
+3. 检查覆盖层的 position 和坐标系：
+   - 如果覆盖层是 fixed 定位，圆心坐标应该直接用 e.clientX / e.clientY
+   - 如果覆盖层是 absolute 定位，圆心坐标需要减去覆盖层的 offsetLeft / offsetTop
+4. 检查覆盖层的尺寸是否等于视口尺寸。如果覆盖层只有按钮大小，clip-path 的圆心会错位。
+
+修复：
+- 圆心用 e.clientX 和 e.clientY 计算（相对于视口）。
+- 覆盖层 fixed 定位，left:0; top:0; width:100vw; height:100vh。
+- clip-path: circle(0px at ${cx}px ${cy}px) 起始。
+- 最大半径 = Math.hypot(Math.max(cx, vw-cx), Math.max(cy, vh-cy))，保证覆盖到最远角落。
+- 如果点击来自键盘（Enter/Space），没有坐标，用按钮的 boundingRect 中心。
+- 覆盖层内部的页面内容是固定的位置和尺寸，不做任何缩放。
+- 只裁切上层页面，不缩放内容。
+
+═══════════════════════════════════════
+Bug 2：左滑菜单是"贴图覆盖"，不是"滑动揭示"
+═══════════════════════════════════════
+
+现象：左滑时，卡片直接覆盖在下层已有菜单上，看起来像贴图。用户要的是"先有左滑动作，然后菜单从右侧滑出"的因果关系，而不是覆盖关系。
+
+根因排查：
+1. 检查卡片和菜单的 HTML 结构。当前是：
+   <div class="note-item">
+     <div class="swipe-body">卡片内容</div>
+     <div class="swipe-actions">菜单</div>
+   </div>
+   还是别的顺序？
+2. 检查 .swipe-actions 的定位：position 是 absolute 还是 fixed？z-index 是多少？
+3. 检查 .swipe-body 有没有不透明背景色（比如 var(--surface)）。如果没有背景色，卡片的背景是透明的，就会"看到"下面的菜单。
+
+正确做法：
+- HTML 结构保持：
+  <div class="note-item">
+    <div class="swipe-actions">菜单</div>       ← 菜单在下层
+    <div class="swipe-body">卡片内容</div>       ← 卡片在上层，带不透明背景
+  </div>
+- .swipe-actions: position: absolute; right: 0; top: 0; height: 100%; 宽度 120px; z-index: 1;
+- .swipe-body: position: relative; z-index: 2; background: var(--surface); width: 100%;
+- 卡片未滑动时，完全覆盖住菜单（因为卡片比菜单宽）。
+- 左滑时，卡片 translateX(-120px)，露出下方的菜单。
+- 关键：卡片必须有完全不透明的背景色，不能有任何透明度。
+
+如果当前 .swipe-body 背景是半透明或者是 var(--bg-page) 而不是 var(--surface)，改掉。
+
+═══════════════════════════════════════
+Bug 3：从编辑页返回列表页时，右下角 + 按钮闪动
+═══════════════════════════════════════
+
+现象：从便签编辑页返回列表页，右下角的 + 悬浮按钮有时会闪一下（重加载感）。
+
+根因排查：
+1. 检查 backToList 函数或返回列表的处理函数。
+2. 检查 + 按钮的显示控制逻辑：是否在返回时被 remove 后又 add 回去？
+3. 检查是否有任何代码在返回时重建了列表页的 DOM（比如 innerHTML = ''），导致 + 按钮被销毁重建。
+4. 检查编辑页的滑出动画结束时，是否重置了某个父容器的 display 或 visibility，触发了一次重排。
+
+修复：
+- 列表页的 DOM（包括 + 按钮）在编辑页打开期间保持存在，只是被编辑页盖住。
+- 返回时，编辑页滑出，列表页自然露出，不要重建。
+- + 按钮的元素不要在返回时被移除或隐藏。
+- 如果编辑页滑出动画用 transform: translateX(100%)，确保结束时只是设置 transform，不触发其他 DOM 操作。
+
+═══════════════════════════════════════
+严格约束
+═══════════════════════════════════════
+
+- 只改这三个 bug，不动其他功能。
+- 纯原生 JS + CSS。
+- 先输出三个 bug 的根因报告，我确认后再改。
+- 改完告诉我：文件大小、三处关键代码的行号、验证结果。
