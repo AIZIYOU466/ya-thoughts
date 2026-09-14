@@ -4,6 +4,22 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content"> <!-- interactive-widget：输入法弹出时压缩视口，列表不被键盘遮挡 -->
 <title>便签 · 极简备忘录</title>
+<script>
+/* 主题初始化：渲染前同步执行，避免首帧闪错主题（FOUC）。
+   优先读用户手动选择（localStorage），否则跟随系统。
+   结果写在 <html data-theme="light|dark"> 上，CSS 用属性选择器而不是 media query，
+   这样手动切换时无需系统配合也能生效。 */
+(function () {
+  try {
+    var saved = localStorage.getItem('notes-theme');
+    var dark = saved ? saved === 'dark'
+      : (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+    document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
+  } catch (e) {
+    document.documentElement.setAttribute('data-theme', 'light');
+  }
+})();
+</script>
 <style>
   /* ============ 设计系统：颜色 / 圆角 / 阴影 / 缓动 ============ */
   :root {
@@ -34,14 +50,27 @@
     --img-btn-bg: #EEF1F5;
     --img-btn-text: #6B7280;
     --count-color: #A8ADB7;
+    /* 组件级语义颜色：暗色模式 = 二级 token 重映射，组件不再单独写死色值 */
+    --input-bg: #F0F2F5;
+    --input-focus-bg: var(--bg-card);
+    --input-placeholder: #A8ADB7;
+    --input-clear-color: #A8ADB7;
+    --input-clear-bg: rgba(0, 0, 0, 0.06);
+    --input-clear-bg-active: rgba(0, 0, 0, 0.12);
+    --icon-btn-color: #A8ADB7;
+    --icon-btn-bg: #F0F2F5;
+    --icon-btn-bg-active: #E1E4EA;
+    --mark-bg: #FFF3B0;
+    --pin-flag-color: #A8ADB7;
     --ease-swift: cubic-bezier(0.32, 0.72, 0, 1);
     --shadow-pop: 0 8px 32px rgba(0, 0, 0, 0.12);
     --ease: cubic-bezier(0.4, 0, 0.2, 1);
     --ease-out: cubic-bezier(0.32, 0.72, 0, 1);
     --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
   }
-  @media (prefers-color-scheme: dark) {
-    :root {
+  /* 深色变量：由 <html data-theme="dark"> 驱动（见 head 内的主题初始化脚本），
+     不再用 prefers-color-scheme 媒体查询 —— 否则用户手动切换会被系统主题盖住 */
+  [data-theme="dark"] {
       --bg-page: #0F1115;
       --bg-card: #1A1D21;
       --bg-toolbar: rgba(26, 29, 33, 0.92);
@@ -66,7 +95,18 @@
       --img-btn-bg: #252932;
       --img-btn-text: #C8CDD5;
       --count-color: #6E747D;
-    }
+      /* 组件级语义颜色暗色分支（与 :root 同名 token 一一对应） */
+      --input-bg: #252932;
+      --input-focus-bg: #252932;
+      --input-placeholder: #6B7280;
+      --input-clear-color: #6B7280;
+      --input-clear-bg: rgba(255, 255, 255, 0.08);
+      --input-clear-bg-active: rgba(255, 255, 255, 0.08);
+      --icon-btn-color: #8A8F99;
+      --icon-btn-bg: #252932;
+      --icon-btn-bg-active: #30363F;
+      --mark-bg: rgba(255, 243, 176, 0.28);
+      --pin-flag-color: #9AA0A6;
   }
 
   /* ============ 基础 ============ */
@@ -140,7 +180,68 @@
   }
   .menu-btn:active { background: var(--chip-bg); transform: scale(0.94); will-change: transform; }
 
-  /* 顶栏右侧动作区：「选择」入口 + ⋮ 菜单 */
+  /* 主题切换按钮：44×44 点击区，仅一个 SVG 图标（太阳/月亮由 JS 按主题互切）。
+     只保留颜色过渡，无任何动画/转圈层 */
+  #theme-btn {
+    width: 44px; height: 44px;
+    display: inline-flex; align-items: center; justify-content: center;
+    border-radius: 50%;
+    color: var(--text-secondary);
+    transition: background 0.15s var(--ease), color 0.15s var(--ease);
+  }
+  #theme-btn:active { background: var(--chip-bg); }
+
+  /* 顶栏垃圾桶：列表页右上角的固定落点锚点，卡片删除动画飞向此处 */
+  #trash-btn {
+    width: 44px; height: 44px;
+    display: inline-flex; align-items: center; justify-content: center;
+    border-radius: 50%;
+    color: var(--text-secondary);
+    transition: background 0.15s var(--ease), transform 0.1s var(--ease);
+  }
+  #trash-btn:active { background: var(--chip-bg); transform: scale(0.94); will-change: transform; }
+  /* 删除飞行时垃圾桶脉冲：300ms 内 1 → 1.2 → 1（一次性 animation） */
+  #trash-btn.pulsing { animation: trash-pulse 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
+  @keyframes trash-pulse {
+    0% { transform: scale(1); }
+    50% { transform: scale(1.2); }
+    100% { transform: scale(1); }
+  }
+
+  /* 卡片删除飞行克隆体：fixed 定位、不拦截事件，JS 逐帧沿贝塞尔曲线飞向垃圾桶 */
+  .fly-clone {
+    position: fixed;
+    z-index: 9998; /* 高于列表/顶栏/弹层，低于主题扩散过渡层(9999) */
+    margin: 0;
+    pointer-events: none;
+    will-change: transform, opacity;
+    transform-origin: right top; /* 缩放点指向右上角垃圾桶（问题3） */
+    border-radius: var(--radius-card);
+    overflow: hidden;
+    box-shadow: var(--shadow-card);
+  }
+  .fly-clone .note-item {
+    position: absolute;
+    top: 0; left: 0; right: 0; bottom: 0;
+    width: 100%; height: 100%;
+    margin: 0;
+    display: block;
+    list-style: none;
+    box-shadow: none;
+    cursor: default;
+  }
+  /* 克隆体只显示卡片本体：隐藏左滑按钮，并强制本体回到原位（展开态也不带位移） */
+  .fly-clone .swipe-actions { display: none; }
+  .fly-clone .swipe-body {
+    position: absolute;
+    top: 0; left: 0; right: 0; bottom: 0;
+    width: 100%; height: 100%;
+    border-radius: var(--radius-card);
+    box-shadow: none;
+    transform: none !important;
+  }
+
+  /* 顶栏右侧动作区：「选择」入口 + ⋮ 菜单（前面插入主题切换按钮） */
   .hdr-actions { grid-column: 3; justify-self: end; display: inline-flex; align-items: center; }
   #sel-enter {
     min-height: 44px;
@@ -184,6 +285,25 @@
   }
   #list-view.multi #note-count-bar { visibility: hidden; }
 
+  /* ============ 主题径向扩散过渡（View Transitions API 优先，clip-path 兜底） ============ */
+  ::view-transition-old(root), ::view-transition-new(root) { animation: none; mix-blend-mode: normal; }
+  ::view-transition-old(root) { z-index: 1; }
+  ::view-transition-new(root) { z-index: 2; } /* 新主题截图盖在旧主题上方，由 clip-path 揭开 */
+  #theme-ripple {
+    position: fixed; inset: 0;
+    z-index: 9999; /* 高于 #img-viewer(100)，整个过渡在所有 UI 之上 */
+    display: none;
+    pointer-events: none; /* 老主题在下层照常可见可点，过渡本身不吃事件 */
+  }
+  #theme-ripple.on { display: block; }
+  /* 覆盖层底色由 JS 写入的 data-theme 决定（属性选择器对任意元素生效），
+     即新主题页面底色；View Transitions 可用时整层不会被用到 */
+  #theme-ripple > .ripple-layer { position: absolute; inset: 0; background: var(--bg-page); }
+  @media (prefers-reduced-motion: reduce) {
+    #theme-ripple, #theme-ripple.on { display: none !important; }
+    ::view-transition-old(root), ::view-transition-new(root) { animation: none !important; }
+  }
+
   /* 搜索框：顶栏下方、分段控件上方 */
   #search-wrap {
     flex: 0 0 auto;
@@ -193,12 +313,12 @@
     height: 40px;
     margin: 10px 20px 0;
     padding: 0 12px;
-    background: #F0F2F5;
+    background: var(--input-bg);
     border: 1px solid transparent;
     border-radius: 10px;
     transition: background 0.15s var(--ease), border-color 0.15s var(--ease);
   }
-  #search-wrap:focus-within { background: var(--bg-card); border-color: var(--primary); }
+  #search-wrap:focus-within { background: var(--input-focus-bg); border-color: var(--primary); }
   #search-icon { flex: 0 0 auto; color: #A8ADB7; }
   #search-input {
     flex: 1;
@@ -219,30 +339,19 @@
     display: none;
     align-items: center; justify-content: center;
     border-radius: 50%;
-    color: #A8ADB7;
-    background: rgba(0, 0, 0, 0.06);
+    color: var(--input-clear-color);
+    background: var(--input-clear-bg);
     transition: background 0.15s var(--ease);
   }
-  #search-clear:active { background: rgba(0, 0, 0, 0.12); }
+  #search-clear:active { background: var(--input-clear-bg-active); }
   #search-wrap.has-text #search-clear { display: inline-flex; }
-  @media (prefers-color-scheme: dark) {
-    #search-wrap { background: #252932; }
-    #search-wrap:focus-within { border-color: var(--primary); }
-    #search-input { color: #E8EAED; }
-    #search-input::placeholder { color: #6B7280; }
-    #search-clear { color: #6B7280; background: rgba(255, 255, 255, 0.08); }
-  }
   /* 关键词高亮 */
   .note-item .title mark,
-  .note-item .excerpt mark {
-    background: #FFF3B0;
+  .note-item .summary mark {
+    background: var(--mark-bg);
     color: inherit;
     border-radius: 2px;
     padding: 0 1px;
-  }
-  @media (prefers-color-scheme: dark) {
-    .note-item .title mark,
-    .note-item .excerpt mark { background: rgba(255, 243, 176, 0.28); color: #E8EAED; }
   }
   /* 搜索无结果提示 */
   #search-empty {
@@ -261,19 +370,74 @@
     list-style: none;
     padding: 12px 20px calc(110px + env(safe-area-inset-bottom));
   }
+  /* 左滑操作菜单 + 拖拽排序（手势层）依赖的结构：
+     li.note-item 是手势容器（touch-action: pan-y，纵向滚动交浏览器、横向左滑交 JS），
+     内部先放 .swipe-actions（右侧三个操作按钮），再放 .swipe-body（卡片本体）。
+     位移动画只改 transform / opacity；平时放开 overflow 让阴影正常溢出，
+     滑动/展开/拖拽期间裁剪左侧伸出部分 */
   .note-item {
+    position: relative;
+    margin-bottom: 10px;
+    border-radius: var(--radius-card);
+    cursor: pointer;
+    list-style: none;
+    touch-action: pan-y;
+  }
+  .note-item.swiping, .note-item.swipe-open { overflow: hidden; }
+  /* 左滑操作区：置顶 / 复制 / 删除 三枚按钮，位于卡片本体之下右侧 */
+  .note-item .swipe-actions {
+    position: absolute;
+    top: 0; right: 0; bottom: 0;
+    width: 120px; /* 3 × 40px，与展开位移 -120px 完全对齐 */
+    display: flex;
+    overflow: hidden;
+    border-radius: var(--radius-card);
+    background: var(--chip-bg);
+  }
+  .note-item .swipe-btn {
+    flex: 1 0 0;
+    min-width: 0;
+    display: inline-flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    padding: 0;
+    font-size: 10px;
+    line-height: 1.1;
+    color: var(--text-secondary);
+    background: var(--chip-bg);
+    border-radius: 0;
+    transition: background 0.15s var(--ease), opacity 0.15s var(--ease);
+  }
+  .note-item .swipe-btn + .swipe-btn { border-left: 1px solid rgba(0, 0, 0, 0.05); }
+  .note-item .swipe-btn:active { opacity: 0.72; }
+  .note-item .swipe-btn:last-child {
+    border-top-right-radius: var(--radius-card);
+    border-bottom-right-radius: var(--radius-card);
+  }
+  .note-item .swipe-btn.danger { background: var(--danger); color: #fff; }
+  .note-item .swipe-btn.danger + .swipe-btn,
+  .note-item .swipe-btn + .swipe-btn.danger { border-left: none; }
+  /* 卡片本体（白色卡面）：随左滑 translate3d 位移；拖拽时放大+阴影 */
+  .note-item .swipe-body {
     position: relative;
     background: var(--bg-card);
     border: var(--card-border);
     border-radius: var(--radius-card);
     padding: 18px 20px;
-    margin-bottom: 10px;
-    cursor: pointer;
     box-shadow: var(--shadow-card);
-    transition: background 0.18s var(--ease), transform 0.1s var(--ease), box-shadow 0.18s var(--ease);
+    transition: background 0.18s var(--ease), transform 0.25s var(--ease-swift), box-shadow 0.18s var(--ease);
+    will-change: transform;
   }
-  .note-item:active { background: var(--tap-press); transform: scale(0.98); will-change: transform; }
-  .note-item.lp-press { background: rgba(0, 0, 0, 0.03); } /* 长按反馈：轻微变暗 */
+  .note-item .swipe-body:active { background: var(--tap-press); }
+  .note-item.swiping .swipe-body { transition: none; } /* 跟手时关过渡 */
+  .note-item.swipe-open .swipe-body { transform: translate3d(-120px, 0, 0); }
+  /* 拖拽排序：被拖卡片浮起（z-index 最高、跟随手指），其余卡片让位/落位动画 */
+  .note-item.dragging { z-index: 30; touch-action: none; transition: none; }
+  .note-item.dragging .swipe-body { box-shadow: 0 10px 28px rgba(0, 0, 0, 0.18); transition: none; }
+  .note-item.drag-shift { transition: transform 0.2s var(--ease); }
+  .note-item.drag-anim { transition: transform 0.22s var(--ease-swift), box-shadow 0.22s var(--ease); }
   .note-item .note-body {
     flex: 1; min-width: 0;
     display: grid;
@@ -287,17 +451,61 @@
     font-size: 16px; font-weight: 600; line-height: 1.4;
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   }
-  .note-item .excerpt {
-    grid-area: excerpt;
+  .note-item .summary {
     font-size: 14px; line-height: 1.5; color: var(--text-secondary);
-    margin-top: 8px;
     display: -webkit-box;
     -webkit-box-orient: vertical;
     -webkit-line-clamp: 2;
     line-clamp: 2;
     overflow: hidden;
   }
+  /* 摘要展开态：展示全文（仅由 .summary-toggle 按钮切换） */
+  .note-item .summary.expanded {
+    -webkit-line-clamp: unset;
+    line-clamp: unset;
+    display: block;
+    overflow: visible;
+  }
+  /* 测量态：临时解除钳制量出自然高，量完立即移除（不产生闪烁） */
+  .summary-measure {
+    -webkit-line-clamp: unset !important;
+    line-clamp: unset !important;
+    display: block !important;
+    overflow: visible !important;
+    height: auto !important;
+  }
+  /* 摘要包裹层：展开按钮的定位锚点；有按钮时给右侧留出按钮位 */
+  .note-item .excerpt-wrap {
+    position: relative;
+    grid-area: excerpt;
+    margin-top: 8px;
+    min-height: 0;
+  }
+  .note-item .excerpt-wrap .summary { margin-top: 0; }
+  .note-item .excerpt-wrap.has-toggle { padding-right: 28px; }
   .note-item .time { grid-area: time; align-self: baseline; font-size: 12px; color: var(--time-muted); padding-left: 10px; }
+
+  /* 摘要展开/收起按钮：仅当摘要超过 2 行时由 JS 创建。
+     26px 圆形，贴在摘要区右侧（垂直居中），内含 14px chevron-down。
+     点击只切换本条摘要的 .expanded，不触发卡片打开/长按，不影响页面滚动 */
+  .summary-toggle {
+    position: absolute;
+    right: 0;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 26px; height: 26px;
+    display: inline-flex; align-items: center; justify-content: center;
+    border-radius: 50%;
+    color: var(--icon-btn-color);
+    background: var(--icon-btn-bg);
+    border: none; padding: 0; margin: 0;
+    cursor: pointer;
+    transition: background 0.15s var(--ease);
+    z-index: 2;
+  }
+  .summary-toggle:active { background: var(--icon-btn-bg-active); }
+  .summary-toggle svg { transition: transform 0.22s var(--ease); will-change: transform; }
+  .summary-toggle.open svg { transform: rotate(180deg); }
 
   /* 多选模式：圆形复选框 + 选中态 */
   .note-item .sel-box {
@@ -311,7 +519,7 @@
     font-size: 13px; line-height: 1;
     color: transparent;
   }
-  #list-view.multi .note-item { display: flex; gap: 12px; padding-left: 28px; }
+  #list-view.multi .note-item .swipe-body { display: flex; gap: 12px; padding-left: 28px; }
   #list-view.multi .sel-box { display: inline-flex; animation: box-pop 0.2s var(--ease-spring); }
   .note-item .sel-box.on { background: var(--primary); border-color: var(--primary); color: #fff; }
   .note-item:has(.sel-box.on) { background: var(--sel-card); }
@@ -429,53 +637,6 @@
     border-radius: 0 0 12px 12px;
   }
   @keyframes sheet-in { from { opacity: 0; transform: translateY(48px); } to { opacity: 1; transform: none; } }
-
-  /* 单条操作 action sheet：长按卡片弹出，底部滑入、贴屏、半透明毛玻璃 */
-  #note-sheet {
-    position: fixed; inset: 0;
-    z-index: 41;
-    display: none;
-    align-items: flex-end;
-    justify-content: center;
-    background: var(--mask);
-  }
-  #note-sheet.open { display: flex; }
-  #note-sheet .sheet-card {
-    width: 100%;
-    max-width: 400px;
-    padding: 8px 8px calc(8px + env(safe-area-inset-bottom));
-    background: rgba(255, 255, 255, 0.82);
-    -webkit-backdrop-filter: blur(20px) saturate(1.4);
-    backdrop-filter: blur(20px) saturate(1.4);
-    border-radius: 16px 16px 0 0;
-    box-shadow: var(--shadow-pop);
-    animation: sheet-in 0.28s var(--ease-swift);
-  }
-  #note-sheet .sheet-opt,
-  #note-sheet .sheet-cancel {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    width: 100%;
-    min-height: 52px;
-    font-size: 16px;
-    color: var(--text-primary);
-    border-radius: 12px;
-    transition: background 0.15s var(--ease);
-  }
-  #note-sheet .sheet-opt:active,
-  #note-sheet .sheet-cancel:active { background: rgba(0, 0, 0, 0.05); }
-  #note-sheet .sheet-opt svg { flex: 0 0 auto; color: var(--text-secondary); }
-  #note-sheet .sheet-opt.danger,
-  #note-sheet .sheet-opt.danger svg { color: var(--danger); }
-  #note-sheet .sheet-cancel {
-    justify-content: center;
-    min-height: 48px;
-    margin-top: 6px;
-    color: var(--text-secondary);
-    border-top: 1px solid var(--divider);
-    border-radius: 0 0 12px 12px;
-  }
 
   /* 图片长按菜单（编辑页）：与单条操作菜单同风格 */
   #img-menu {
@@ -824,7 +985,7 @@
   .note-item.has-star.has-due .star-flag { right: 76px; } /* 有倒计时角标时往左让位 */
 
   /* 置顶卡片：左侧 3px 主色竖条（60% 高、垂直居中）+ 右上角小图钉；多选模式下隐藏 */
-  #list-view:not(.multi) .note-item.is-pinned::before {
+  #list-view:not(.multi) .note-item.is-pinned .swipe-body::before {
     content: '';
     position: absolute;
     left: 0; top: 20%;
@@ -836,13 +997,10 @@
     display: none;
     position: absolute;
     top: 12px; right: 12px;
-    color: #A8ADB7;
+    color: var(--pin-flag-color);
     line-height: 1;
   }
   #list-view:not(.multi) .note-item.is-pinned .pin-flag { display: block; }
-  @media (prefers-color-scheme: dark) {
-    .note-item .pin-flag { color: #9AA0A6; }
-  }
   .note-item.has-pin .time { padding-right: 22px; } /* 给图钉让位 */
   .note-item.has-pin.has-due .pin-flag { right: 76px; } /* 有倒计时角标时往左让位 */
   .note-item.has-pin .star-flag { right: 34px; } /* 星标与图钉并存时错开 */
@@ -1078,10 +1236,21 @@
   <header id="list-header">
     <h1>便签</h1>
     <div class="hdr-actions">
+      <button id="theme-btn" title="切换深浅主题" aria-label="切换深浅主题" aria-pressed="false">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path id="theme-icon-path" d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 2 21 12.79z"/>
+        </svg>
+      </button>
       <button id="sel-enter" title="选择多条便签">选择</button>
       <button id="menu-btn" class="menu-btn" title="更多" aria-label="更多菜单">
         <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true">
           <circle cx="12" cy="5" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="12" cy="19" r="1.7"/>
+        </svg>
+      </button>
+      <button id="trash-btn" title="删除便签" aria-label="删除便签">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M3 6h18M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/>
+          <path d="M10 11v6M14 11v6"/>
         </svg>
       </button>
     </div>
@@ -1115,6 +1284,7 @@
     <button class="menu-sort" data-sort="updated"><span class="menu-sort-check"></span><span>按修改时间</span></button>
     <button class="menu-sort" data-sort="created"><span class="menu-sort-check"></span><span>按创建时间</span></button>
     <button class="menu-sort" data-sort="title"><span class="menu-sort-check"></span><span>按标题（A-Z）</span></button>
+    <button class="menu-sort" data-sort="custom"><span class="menu-sort-check"></span><span>自定义排序</span></button>
   </div>
   <div id="empty">
     <svg class="empty-icon" viewBox="0 0 64 64" width="64" height="64" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -1134,7 +1304,7 @@
 
   <div id="about-mask">
     <div id="about-card" role="dialog" aria-modal="true">
-      <h2>极简备忘录 v0.1.0</h2>
+      <h2>极简备忘录 v1.3.0</h2>
       <p>如果它帮到你，可以请我喝杯咖啡</p>
       <button id="about-close">关闭</button>
     </div>
@@ -1151,6 +1321,11 @@
     </div>
   </div>
   <input type="file" id="import-input" accept=".json,application/json" hidden>
+  <!-- 主题径向扩散过渡层：JS 临时加 .on，结束后移除 -->
+  <div id="theme-ripple" aria-hidden="true">
+    <div class="ripple-layer"></div>
+  </div>
+
   <!-- 新建选项 action sheet：笔记 / 待办 -->
   <div id="fab-sheet" role="dialog" aria-modal="true" aria-label="新建选项">
     <div class="sheet-card">
@@ -1159,30 +1334,7 @@
       <button class="sheet-cancel">取消</button>
     </div>
   </div>
-  <!-- 单条操作 action sheet：长按卡片弹出（复制 / 删除） -->
-  <div id="note-sheet" role="dialog" aria-modal="true" aria-label="便签操作">
-    <div class="sheet-card">
-    <button class="sheet-opt" id="ns-pin">
-      <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-        <path d="M12 17v5"/><path d="M9 3h6l1 7 3 3H5l3-3z"/>
-      </svg>
-      <span id="ns-pin-label">置顶</span>
-    </button>
-    <button class="sheet-opt" id="ns-copy">
-      <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-        <rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
-      </svg>
-      <span>复制</span>
-    </button>
-      <button class="sheet-opt danger" id="ns-delete">
-        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-          <path d="M3 6h18"/><path d="M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>
-        </svg>
-        <span>删除</span>
-      </button>
-      <button class="sheet-cancel">取消</button>
-    </div>
-  </div>
+  <!-- 长按卡片操作菜单已移除：置顶/复制/删除改为左滑露出；长按负责拖拽排序 -->
 </section>
 
 <!-- 图片长按菜单（编辑页）：标记/取消重点 + 删除 -->
@@ -1324,7 +1476,7 @@
   var SEG_LABELS = { all: '全部', todo: '待办', done: '已完成' };
   /* 排序方式：localStorage 持久化（ya-sort-by），置顶优先级始终最高 */
   var SORT_KEY = 'ya-sort-by';
-  var SORT_VALUES = ['updated', 'created', 'title'];
+  var SORT_VALUES = ['updated', 'created', 'title', 'custom']; /* custom：拖拽排序后写入 note.order */
   var sortBy = 'updated';
   try {
     var savedSort = localStorage.getItem(SORT_KEY);
@@ -1340,6 +1492,7 @@
     if (n.pinnedAt === undefined) n.pinnedAt = null;   // 预留
     if (n.color === undefined) n.color = null;         // 预留
     if (n.starred === undefined) n.starred = false;    // 预留
+    if (n.order === undefined) n.order = null;         // 拖拽排序字段：null 时按 createdAt 兜底
     return n;
   }
 
@@ -1721,17 +1874,19 @@
     return firstLine(plainTextOf(note.content)) || '无标题';
   }
 
-  // 摘要 = 第二个非空行
+  // 摘要 = 标题行之后的所有正文（展开可看全文；不超过 2 行时无展开按钮）
   function excerptOf(note) {
     var seen = 0;
     var lines = plainTextOf(note.content).split('\n');
+    var rest = [];
     for (var i = 0; i < lines.length; i++) {
       var t = lines[i].trim();
-      if (!t) continue;
+      if (!t) { if (seen) rest.push(''); continue; } // 保留标题下方的空行
       seen++;
-      if (seen === 2) return t;
+      if (seen > 1) rest.push(t);
     }
-    return '没有更多内容';
+    var out = rest.join('\n').replace(/^\n+|\n+$/g, '');
+    return out || '没有更多内容';
   }
 
   function pad(n) { return n < 10 ? '0' + n : '' + n; }
@@ -1776,10 +1931,61 @@
   /* 多选模式状态 */
   var multiMode = false;
   var selectedIds = {};
-  var selLpTimer = null, selLpId = null, selLpX = 0, selLpY = 0;
-  var listPressFired = false; // 长按弹出操作菜单后，抑制随后的 click
-  var noteSheetEl = $('note-sheet');   // 单条操作 action sheet（复制 / 删除）
-  var noteSheetId = null;              // 当前菜单对应的便签 id
+  var listPressFired = false; // 摘要/待办按钮点击守卫（左滑与拖拽不再置位它，click 抑制走 gestureSuppressClick）
+
+  /* ---------- 摘要展开/收起 ----------
+     摘要默认 -webkit-line-clamp 2 行；内容超过 2 行时创建右侧圆形按钮，
+     点击切换 .expanded 类直接展示全文（无高度动画，最直接可靠）。
+     展开状态按 note.id 记在内存里（不进存储，刷新即收起），
+     renderList 重建卡片后自动恢复展开态。 */
+  var expandedSummaries = {}; // id → true
+
+  function prefersReducedMotion() {
+    return window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  }
+
+  // 摘要是否超过 2 行：临时加 .summary-measure（-webkit-line-clamp: unset）量出自然高，
+  // 与「行高 × 2」比较；量完立即移除测量类（不产生闪烁）。
+  // 关键：不能在“带 2 行钳制”的状态下读 scrollHeight —— 部分 WebView 会返回钳制后的
+  // 高度，导致永远测不出溢出 → 按钮不出现。解除钳制后元素自身就是全文高度，
+  // clientHeight / scrollHeight 均为真实自然高。
+  function summaryOverflows(summary) {
+    summary.classList.add('summary-measure');
+    var natural = summary.scrollHeight;
+    var cs = getComputedStyle(summary);
+    var lineH = parseFloat(cs.lineHeight);
+    summary.classList.remove('summary-measure');
+    if (!lineH) lineH = Math.ceil(parseFloat(cs.fontSize) * 1.5) || 21;
+    return natural > Math.ceil(lineH * 2) + 2;
+  }
+
+  // 为超过 2 行的摘要创建右侧圆形 chevron-down 按钮（26px，图标 14px）。
+  // 点击：仅切换摘要容器 .expanded 并旋转箭头 180°；click 与 pointerdown 均
+  // stopPropagation，不触发卡片打开/多选/长按菜单，整块摘要区不绑任何点击事件。
+  function buildSummaryToggle(id, summary) {
+    var wasOpen = !!expandedSummaries[id];
+    if (wasOpen) summary.classList.add('expanded');
+    if (!summaryOverflows(summary)) return null; // ≤2 行：无展开按钮
+
+    var b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'summary-toggle' + (wasOpen ? ' open' : '');
+    b.setAttribute('aria-label', wasOpen ? '收起摘要' : '展开摘要');
+    b.setAttribute('aria-expanded', wasOpen ? 'true' : 'false');
+    b.innerHTML = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>';
+    b.addEventListener('click', function (e) {
+      e.stopPropagation(); // 不触发卡片打开/多选
+      if (listPressFired) { listPressFired = false; return; }
+      var openNow = !summary.classList.contains('expanded');
+      summary.classList.toggle('expanded', openNow);
+      b.classList.toggle('open', openNow);
+      b.setAttribute('aria-expanded', openNow ? 'true' : 'false');
+      b.setAttribute('aria-label', openNow ? '收起摘要' : '展开摘要');
+      expandedSummaries[id] = openNow;
+    });
+    b.addEventListener('pointerdown', function (e) { e.stopPropagation(); }); // 不触发长按菜单
+    return b;
+  }
   /* 搜索状态 */
   var searchWrapEl  = $('search-wrap');
   var searchInput   = $('search-input');
@@ -1888,11 +2094,7 @@
     renderList(); // 重建列表刷新选中态
   }
 
-  function cancelListPress() {
-    if (selLpTimer) { clearTimeout(selLpTimer); selLpTimer = null; }
-    var pressed = listEl.querySelectorAll('.note-item.lp-press'); // 清除长按变暗反馈
-    for (var i = 0; i < pressed.length; i++) pressed[i].classList.remove('lp-press');
-  }
+  // 长按菜单已移除；原 cancelListPress（清除 lp-press 变暗）由手势层的 resetGesture 取代
 
   // 列表点击用事件委托：容器上只绑一次，点击时按 dataset.id 取当前渲染的 id，
   // 避免重渲染后旧监听器拿到过期笔记对象
@@ -1904,6 +2106,7 @@
     if (!id) return;
     if (t.closest('.todo-chk')) return; // 复选框有自己的处理，已 stopPropagation 兜底
     if (t.closest('#sel-enter') || t.closest('#menu-btn')) return; // 顶栏按钮不在列表容器内，兜底防误开
+    if (gestureSuppressClick) { gestureSuppressClick = false; return; } // 左滑/拖拽消费过的点击：不打开便签
     if (listPressFired) { listPressFired = false; return; }
     if (multiMode) { toggleSelect(id); return; }
     openNote(id);
@@ -1958,14 +2161,40 @@
     return last;
   }
 
-  // 排序比较器：按当前 sortBy（更新时间/创建时间倒序，标题 localeCompare 中文拼音）
+  // 排序比较器：按当前 sortBy（更新时间/创建时间倒序，标题 localeCompare 中文拼音，
+  // custom 按 order 升序；置顶永远在前由 sortedNotesFor 处理）
   function compareNotesBySort(a, b) {
     if (sortBy === 'created') return b.createdAt - a.createdAt;
     if (sortBy === 'title') {
       var t = titleOf(a).localeCompare(titleOf(b), 'zh-CN');
       return t !== 0 ? t : b.updatedAt - a.updatedAt; // 标题相同按更新时间兜底，保证顺序稳定
     }
+    if (sortBy === 'custom') {
+      var oa = (a.order == null ? a.createdAt : a.order); // 未写入 order 的便签按创建时间兜底
+      var ob = (b.order == null ? b.createdAt : b.order);
+      return oa - ob || b.createdAt - a.createdAt; // 相同值用创建时间保持稳定顺序
+    }
     return b.updatedAt - a.updatedAt;
+  }
+
+  // 自定义排序的 order 兜底：缺失 order 的便签按 createdAt 升序补写（初始顺序按创建时间），
+  // 新值排在已有 order 之后，避免与旧值冲突
+  function backfillOrder() {
+    var maxO = -1;
+    for (var i = 0; i < notes.length; i++) {
+      var v = notes[i].order;
+      if (typeof v === 'number' && v > maxO) maxO = v;
+    }
+    var missing = [];
+    for (i = 0; i < notes.length; i++) {
+      if (notes[i].order == null) missing.push(notes[i]);
+    }
+    if (!missing.length) return;
+    missing.sort(function (a, b) { return a.createdAt - b.createdAt; });
+    missing.forEach(function (n, idx) {
+      n.order = maxO + 1 + idx;
+      dbPut(n).catch(function () { /* 存储失败静默 */ });
+    });
   }
 
   function sortedNotesFor(filter) {
@@ -1999,6 +2228,228 @@
     }
     renderList();
   }
+
+  /* ---------- 左滑操作菜单 + 拖拽排序（手势层） ----------
+     每张卡片 DOM：<li.note-item> 内先放 .swipe-actions（右侧置顶/复制/删除），
+     再放 .swipe-body（卡片本体，随左滑 translate3d 位移；拖拽时 li 整体跟随手指）。
+     状态机（单一 gesture，同一时间只有一个手势进行中）：
+       pointerdown 起手势 → pointermove 判定方向：
+         横向左移 > 10px 且 > 纵向 1.5 倍 → 左滑；
+         纵向 > 10px 且 > 横向 1.5 倍 → 交浏览器滚动（touch-action: pan-y）；
+         否则保持 pending。
+       长按 500ms 且未移动超过 10px → 进入拖拽（sortBy='title' 时禁用）。
+       pointerup：左滑按 80px 阈值吸附展开(120px)/弹回；拖拽按落点落位并写库。
+     CSS 只改 transform 与 opacity 驱动动画。 */
+  var SWIPE_REVEAL = 120;   // 展开时露出的操作区宽度(px)
+  var SWIPE_SNAP = 80;      // 松手后判定吸附展开的滑动距离(px)
+  var DRAG_HOLD = 500;      // 长按多少毫秒进入拖拽
+  var DRAG_JITTER = 10;     // 移动超过该值取消长按/不算点击
+  var gesture = null;               // 当前进行中的手势（同时只有一个）
+  var gestureSuppressClick = false; // 手势消费了本次点按 → 抑制随后的 click（防误开便签）
+  var SWIPE_PIN_SVG = '<path d="M12 17v5"/><path d="M9 3h6l1 7 3 3H5l3-3z"/>';
+  var SWIPE_COPY_SVG = '<rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>';
+  var SWIPE_DEL_SVG = '<path d="M3 6h18"/><path d="M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>';
+
+  // 当前 DOM 中所有卡片（排除 pin-divider 等非卡片节点）
+  function noteItemsInDom() {
+    var out = [];
+    var kids = listEl.children;
+    for (var i = 0; i < kids.length; i++) {
+      if (kids[i].classList && kids[i].classList.contains('note-item')) out.push(kids[i]);
+    }
+    return out;
+  }
+
+  // 收拢所有展开的卡片（可选保留 excludeLi）
+  function closeOpenSwipe(excludeLi) {
+    var items = noteItemsInDom();
+    for (var i = 0; i < items.length; i++) {
+      if (items[i] === excludeLi) continue;
+      items[i].classList.remove('swipe-open', 'swiping');
+    }
+  }
+
+  // 清除全部卡片上的拖拽让位 transform 与过渡类
+  function clearDragShifts() {
+    var items = noteItemsInDom();
+    for (var i = 0; i < items.length; i++) {
+      items[i].classList.remove('drag-shift', 'drag-anim');
+      items[i].style.transform = '';
+    }
+  }
+
+  // 手势结束清理：取消长按定时器、恢复面容与让位状态
+  function resetGesture(g) {
+    if (!g) return;
+    if (g.longPressTimer) { clearTimeout(g.longPressTimer); g.longPressTimer = null; }
+    var li = g.li;
+    if (li && li.isConnected) {
+      li.classList.remove('swiping', 'dragging');
+      var body = li.querySelector('.swipe-body');
+      if (body) body.style.transform = '';
+      li.style.transform = '';
+    }
+    clearDragShifts();
+    if (gesture === g) gesture = null;
+  }
+
+  // 左滑跟手：只改 transform，超展开宽度带阻尼
+  function applySwipe(g) {
+    var x = g.viewX;
+    var off = x < -SWIPE_REVEAL ? -SWIPE_REVEAL - (x + SWIPE_REVEAL) * 0.35 : x;
+    if (off > 0) off = 0;
+    var body = g.li.querySelector('.swipe-body');
+    if (body) body.style.transform = 'translate3d(' + off + 'px,0,0)';
+  }
+
+  // 拖拽开始：长按 500ms 且未移动超过 10px（标题排序下不触发）
+  function startDragReorder(g) {
+    if (gesture !== g || !g.li || !g.li.isConnected) return;
+    if (multiMode || sortBy === 'title') return;
+    var items = noteItemsInDom();
+    var idx = -1;
+    for (var i = 0; i < items.length; i++) {
+      if (items[i] === g.li) { idx = i; break; }
+    }
+    if (idx === -1) { resetGesture(g); return; }
+    g.startIndex = g.dragIndex = idx;
+    g.items = items;
+    g.slots = [];
+    for (i = 0; i < items.length; i++) {
+      g.slots.push(items[i].offsetHeight + (parseFloat(getComputedStyle(items[i]).marginBottom) || 0));
+    }
+    g.dragStartY = g.startY;
+    g.dragShift = 0;
+    g.mode = 'drag';
+    if (navigator.vibrate) { try { navigator.vibrate(20); } catch (err) {} }
+    try { g.li.setPointerCapture(g.pointerId); } catch (err) {}
+    g.li.classList.add('dragging');
+    g.li.style.transform = 'translate3d(0px,0px,0) scale(1.02)'; // 放大+浮起（阴影由 CSS）
+  }
+
+  // 其余卡片让位：拖到 d 位时，(o, d] 区间依次上移自己的前一格，(d, o) 区间下移自己一格
+  function applyDragShifts(g) {
+    var o = g.startIndex, d = g.dragIndex, slots = g.slots;
+    for (var j = 0; j < g.items.length; j++) {
+      var it = g.items[j];
+      if (it === g.li) continue;
+      var y = 0;
+      if (d > o && j > o && j <= d) y = -(slots[j - 1]);
+      else if (d < o && j >= d && j < o) y = slots[j];
+      if (y) { it.classList.add('drag-shift'); it.style.transform = 'translate3d(0px,' + y + 'px,0)'; }
+      else { it.classList.remove('drag-shift'); it.style.transform = ''; }
+    }
+  }
+
+  // 拖拽跟随：逐帧把卡片放到手指下方，越过相邻卡片中点时换位
+  function moveDrag(g) {
+    if (Math.abs(g.dragShift) > DRAG_JITTER) g.suppressClick = true;
+    var items = g.items, d = g.dragIndex;
+    var rc = g.li.getBoundingClientRect();
+    var cy = rc.top + rc.height / 2;
+    if (g.dragShift > 0 && d < items.length - 1) {
+      var nb = items[d + 1].getBoundingClientRect();
+      if (cy > nb.top + nb.height / 2) { g.dragIndex = d + 1; applyDragShifts(g); }
+    } else if (g.dragShift < 0 && d > 0) {
+      var na = items[d - 1].getBoundingClientRect();
+      if (cy < na.top + na.height / 2) { g.dragIndex = d - 1; applyDragShifts(g); }
+    }
+    g.li.style.transform = 'translate3d(0px,' + g.dragShift + 'px,0) scale(1.02)';
+  }
+
+  // 松手落位：把卡片移到目标下标（DOM 同步成最终顺序），全体加过渡后清空 transform，
+  // 卡片自动“落”到新位置、其余卡片顺势让位；240ms 后写 order 并（必要时）切自定义排序
+  function finishDragReorder(g) {
+    var moved = g.dragIndex !== g.startIndex;
+    var all = noteItemsInDom();
+    var li = g.li;
+    if (moved) {
+      var remaining = [];
+      for (var i = 0; i < all.length; i++) if (all[i] !== li) remaining.push(all[i]);
+      if (g.dragIndex >= remaining.length) listEl.appendChild(li);
+      else listEl.insertBefore(li, remaining[g.dragIndex]);
+      all = noteItemsInDom();
+    }
+    for (i = 0; i < all.length; i++) all[i].classList.add('drag-anim');
+    li.classList.remove('dragging');
+    void listEl.offsetHeight; // 提交当前帧作为过渡起点
+    for (i = 0; i < all.length; i++) {
+      all[i].classList.remove('drag-shift');
+      all[i].style.transform = '';
+    }
+    setTimeout(function () {
+      for (i = 0; i < all.length; i++) all[i].classList.remove('drag-anim');
+      if (moved) {
+        saveCustomOrder(noteItemsInDom());
+        // 按修改/创建时间排序时拖拽 → 自动切换到自定义排序并保存
+        if (sortBy === 'updated' || sortBy === 'created') {
+          sortBy = 'custom';
+          try { localStorage.setItem(SORT_KEY, sortBy); } catch (err) {}
+          updateSortMenu();
+          renderList();
+        }
+      }
+    }, 240);
+  }
+
+  // 拖拽结果落库：非置顶便签按可见顺序写 order（0..n）；被过滤隐藏的追加到末尾
+  //（保持相对顺序）；置顶仍按 pinnedAt 排，不参与 order
+  function saveCustomOrder(domItems) {
+    var seen = {};
+    var seq = [];
+    for (var i = 0; i < domItems.length; i++) {
+      var id = domItems[i].dataset.id;
+      if (id) seen[id] = true;
+      var n = id ? noteById(id) : null;
+      if (n && !isPinned(n)) seq.push(n);
+    }
+    var hidden = notes.filter(function (x) { return !isPinned(x) && !seen[x.id]; })
+      .sort(function (a, b) {
+        var oa = (a.order == null ? a.createdAt : a.order);
+        var ob = (b.order == null ? b.createdAt : b.order);
+        return oa - ob || a.createdAt - b.createdAt;
+      });
+    var all = seq.concat(hidden);
+    var jobs = [];
+    for (i = 0; i < all.length; i++) { all[i].order = i; jobs.push(dbPut(all[i])); }
+    Promise.all(jobs).catch(function () { /* 存储失败静默 */ });
+  }
+
+  // 左滑按钮动作：置顶 / 复制 / 删除（复用现有逻辑）
+  function runSwipeAction(act, id) {
+    if (!act || !id) return;
+    if (act === 'pin') togglePin(id);
+    else if (act === 'copy') copyNoteText(id);
+    else if (act === 'delete') deleteSingleNote(id);
+  }
+
+  // 构建一枚左滑操作按钮；点击时先收拢卡片（弹回原位）再执行动作
+  function makeSwipeBtn(act, svg, label) {
+    var b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'swipe-btn' + (act === 'delete' ? ' danger' : '');
+    b.dataset.act = act;
+    b.setAttribute('aria-label', label);
+    b.innerHTML = '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + svg + '</svg><span>' + label + '</span>';
+    b.addEventListener('pointerdown', function (e) { e.stopPropagation(); }); // 不触发卡片手势
+    b.addEventListener('pointermove', function (e) { e.stopPropagation(); });
+    b.addEventListener('click', function (e) {
+      e.stopPropagation(); // 不触发卡片打开
+      var li = b.closest('.note-item');
+      if (!li) return;
+      closeOpenSwipe(); // 卡片先弹回原位
+      var id = li.dataset.id;
+      setTimeout(function () { runSwipeAction(act, id); }, 240); // 等弹回动画结束再执行
+    });
+    return b;
+  }
+
+  // 空白处点按：收拢展开的卡片（换手势时由卡片自身 pointerdown 清掉旧抑制位）
+  document.addEventListener('pointerdown', function (e) {
+    var t = e.target;
+    if (t && t.closest && t.closest('.note-item')) return;
+    closeOpenSwipe();
+  });
 
   function renderList() {
     var sorted = sortedNotesFor(segFilter).filter(matchesSearch); // 分段与搜索"与"关系
@@ -2040,6 +2491,15 @@
       if (isTodo(note)) li.classList.add('is-todo');
       if (isTodo(note) && isDone(note)) li.classList.add('is-done');
 
+      // 左滑操作区（置顶/复制/删除）+ 卡片本体集合：本体盖在按钮之上并随左滑位移
+      var actions = document.createElement('div');
+      actions.className = 'swipe-actions';
+      actions.appendChild(makeSwipeBtn('pin', SWIPE_PIN_SVG, '置顶'));
+      actions.appendChild(makeSwipeBtn('copy', SWIPE_COPY_SVG, '复制'));
+      actions.appendChild(makeSwipeBtn('delete', SWIPE_DEL_SVG, '删除'));
+      var face = document.createElement('div');
+      face.className = 'swipe-body';
+
       var box = document.createElement('div');
       box.className = 'sel-box' + (selectedIds[note.id] ? ' on' : '');
       box.textContent = '✓';
@@ -2054,7 +2514,7 @@
           if (listPressFired) { listPressFired = false; return; }
           toggleTodoDone(note.id);
         });
-        li.appendChild(chk);
+        face.appendChild(chk);
       }
 
       var body = document.createElement('div');
@@ -2080,7 +2540,7 @@
         due.className = 'due-badge' + (txt === '已过期' ? ' overdue' : '');
         due.textContent = txt;
         due.dataset.id = note.id; // 事件委托刷新倒计时文案
-        li.appendChild(due);
+        face.appendChild(due);
       }
 
       // 该便签含重点图片 → 右上角小星标提示（异步查库，带缓存）
@@ -2089,7 +2549,7 @@
         starFlag.className = 'star-flag';
         starFlag.textContent = '⭐';
         starFlag.style.display = 'none';
-        li.appendChild(starFlag);
+        face.appendChild(starFlag);
         noteHasStarredImage(note.id).then(function (has) {
           if (!has) return;
           li.classList.add('has-star');
@@ -2103,59 +2563,147 @@
         var pinFlag = document.createElement('div');
         pinFlag.className = 'pin-flag';
         pinFlag.innerHTML = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 17v5"/><path d="M9 3h6l1 7 3 3H5l3-3z"/></svg>';
-        li.appendChild(pinFlag);
+        face.appendChild(pinFlag);
       }
 
-      var excerpt = document.createElement('div');
-      excerpt.className = 'excerpt';
+      // 摘要：默认 -webkit-line-clamp 2 行省略号；展开态由 expandedSummaries 恢复
+      var wrap = document.createElement('div');
+      wrap.className = 'excerpt-wrap';
+      var summary = document.createElement('div');
+      summary.className = 'summary';
+      if (expandedSummaries[note.id]) summary.classList.add('expanded');
       if (searchQuery) {
-        excerpt.innerHTML = highlightText(excerptOf(note), searchQuery);
+        summary.innerHTML = highlightText(excerptOf(note), searchQuery);
       } else {
-        excerpt.textContent = excerptOf(note);
+        summary.textContent = excerptOf(note);
       }
+      wrap.appendChild(summary);
 
       body.appendChild(title);
-      body.appendChild(excerpt);
+      body.appendChild(wrap);
       body.appendChild(time);
-      li.appendChild(box);
-      li.appendChild(body);
+      face.appendChild(box);
+      face.appendChild(body);
+      li.appendChild(actions);
+      li.appendChild(face);
 
       li.dataset.id = note.id; // 事件委托用：点击时从这里取 id
 
-      // 长按 500ms 弹出单条操作菜单（复制 / 删除）；多选模式下点击即切换，无需长按
+      // 手势：左滑操作菜单 + 长按拖拽排序（见「手势层」小节）
       li.addEventListener('pointerdown', function (e) {
         listPressFired = false;
-        if (multiMode) return;
-        if (e.button !== undefined && e.button !== 0) return;
-        selLpId = note.id;
-        selLpX = e.clientX; selLpY = e.clientY;
-        li.classList.add('lp-press'); // 长按期间卡片轻微变暗，给视觉反馈
-        selLpTimer = setTimeout(function () {
-          selLpTimer = null;
-          listPressFired = true;
-          li.classList.remove('lp-press');
-          if (navigator.vibrate) { try { navigator.vibrate(20); } catch (err) {} }
-          openNoteSheet(selLpId);
-        }, 500);
+        gestureSuppressClick = false; // 新一轮按下：清掉上个手势可能残留的抑制位
+        if (gesture || multiMode) return; // 已有手势/多选模式不启动新手势
+        if (e.button !== undefined && e.button !== 0) return; // 只响应主键/触摸
+        var t = e.target;
+        if (t && t.closest && (t.closest('.summary-toggle') || t.closest('.todo-chk') || t.closest('.swipe-btn'))) return;
+        if (li.classList.contains('swipe-open')) {
+          // 点已展开的卡片本体：收拢、不打开便签、不启动新手势
+          closeOpenSwipe();
+          gestureSuppressClick = true;
+          return;
+        }
+        closeOpenSwipe(li); // 点其他卡片时，展开中的卡片先弹回
+        gesture = {
+          li: li,
+          id: note.id,
+          pointerId: e.pointerId,
+          startX: e.clientX,
+          startY: e.clientY,
+          dragStartY: e.clientY,
+          viewX: 0,
+          mode: 'pending',
+          suppressClick: false,
+          longPressTimer: null
+        };
+        // 按标题排序时禁止拖拽：不设长按定时器，长按不做任何事
+        if (sortBy !== 'title') {
+          gesture.longPressTimer = setTimeout(function () { startDragReorder(gesture); }, DRAG_HOLD);
+        }
       });
       li.addEventListener('pointermove', function (e) {
-        if (selLpTimer && (Math.abs(e.clientX - selLpX) > 10 || Math.abs(e.clientY - selLpY) > 10)) {
-          cancelListPress(); // 手指移动视为滚动
+        var g = gesture;
+        if (!g || g.li !== li || e.pointerId !== g.pointerId) return;
+        var dx = e.clientX - g.startX;
+        var dy = e.clientY - g.startY;
+        if (g.mode === 'pending') {
+          var ax = Math.abs(dx), ay = Math.abs(dy);
+          if (ax > DRAG_JITTER || ay > DRAG_JITTER) {
+            if (g.longPressTimer) { clearTimeout(g.longPressTimer); g.longPressTimer = null; }
+            // 先判定方向：横向左移 > 10px 且 > 纵向 1.5 倍 → 左滑；纵向为主 → 交滚动
+            if (dx < -DRAG_JITTER && ax > ay * 1.5) {
+              g.mode = 'swipe';
+              g.suppressClick = true;
+              try { li.setPointerCapture(e.pointerId); } catch (err) {}
+              li.classList.add('swiping');
+              g.viewX = dx;
+              applySwipe(g);
+            } else {
+              g.mode = 'scroll'; // 纵向为主的移动：交给浏览器滚动
+            }
+          }
+          return;
+        }
+        if (g.mode === 'swipe') {
+          g.viewX = dx;
+          if (Math.abs(dx) > DRAG_JITTER) g.suppressClick = true;
+          applySwipe(g); // 跟手
+        } else if (g.mode === 'drag') {
+          g.dragShift = e.clientY - g.dragStartY;
+          moveDrag(g);
         }
       });
-      li.addEventListener('pointerup', cancelListPress);
-      li.addEventListener('pointercancel', cancelListPress);
-      // 触屏长按可能先触发 contextmenu：改为立即弹菜单，避免双触发
-      li.addEventListener('contextmenu', function (e) {
-        if (selLpTimer) {
-          e.preventDefault();
-          cancelListPress();
-          listPressFired = true;
-          openNoteSheet(note.id);
+      li.addEventListener('pointerup', function (e) {
+        var g = gesture;
+        if (!g || g.li !== li || e.pointerId !== g.pointerId) return;
+        if (g.mode === 'swipe') {
+          var body = li.querySelector('.swipe-body');
+          li.classList.remove('swiping'); // 先恢复过渡，再清除内联位移 → 平滑弹回/展开
+          if (g.viewX <= -SWIPE_SNAP) li.classList.add('swipe-open'); // 滑过 80px → 吸附展开
+          else closeOpenSwipe(li);                                      // 否则弹回
+          if (body) body.style.transform = '';
+          if (g.suppressClick) gestureSuppressClick = true;
+        } else if (g.mode === 'drag') {
+          var movedAmt = Math.abs(g.dragShift) > DRAG_JITTER;
+          if (movedAmt) g.suppressClick = true;
+          if (g.dragIndex === g.startIndex && !movedAmt) {
+            // 长按期间手指未移动：取消拖拽，视为普通点击（打开便签）
+            g.li.classList.remove('dragging');
+            g.li.style.transform = '';
+            resetGesture(g);
+            return;
+          }
+          if (g.suppressClick) gestureSuppressClick = true;
+          finishDragReorder(g); // 落位 + 落库
+        } else {
+          // 未进入左滑/拖拽的简单点按：移动过才抑制 click
+          if (Math.abs(e.clientX - g.startX) > DRAG_JITTER ||
+              Math.abs(e.clientY - g.startY) > DRAG_JITTER) gestureSuppressClick = true;
         }
+        gesture = null;
       });
+      li.addEventListener('pointercancel', function (e) {
+        var g = gesture;
+        if (!g || g.li !== li) return;
+        resetGesture(g);
+      });
+      // 长按/右键不再弹系统菜单（原长按操作菜单已移除）
+      li.addEventListener('contextmenu', function (e) { e.preventDefault(); });
 
       listEl.appendChild(li);
+
+      // 溢出检测 → 超过 2 行才创建展开按钮。
+      // li 已挂到 DOM；列表可见时立即量；不可见时（backToList 先 renderList 再
+      // show('list')，此刻列表 display:none）自旋等到 .active 出现，量出的
+      // scrollHeight 才是真实值。≤2 行 → 按钮完全不创建
+      (function (li, wrap, summary) {
+        var measure = function () {
+          if (!listView.classList.contains('active')) { requestAnimationFrame(measure); return; }
+          var btn = buildSummaryToggle(note.id, summary);
+          if (btn) { wrap.classList.add('has-toggle'); wrap.appendChild(btn); }
+        };
+        measure();
+      })(li, wrap, summary);
 
       // 置顶区与普通区之间插一条极浅分割线（无置顶或置顶排到最后时不显示）
       if (noteIdx === lastPin && lastPin < sorted.length - 1) {
@@ -2166,38 +2714,7 @@
     });
   }
 
-  /* ---------- 单条操作菜单（长按卡片弹出）：复制 / 删除 ---------- */
-
-  function openNoteSheet(id) {
-    var note = noteById(id);
-    if (!note) return;
-    noteSheetId = id;
-    $('ns-pin-label').textContent = isPinned(note) ? '取消置顶' : '置顶'; // 按当前状态切换文案
-    noteSheetEl.classList.add('open'); // 已打开时再次长按其他卡片：直接换成新菜单
-  }
-
-  function closeNoteSheet() {
-    noteSheetEl.classList.remove('open');
-    noteSheetId = null;
-  }
-
-  // 点遮罩或「取消」关闭；点条目则执行对应操作
-  noteSheetEl.addEventListener('click', function (e) {
-    if (e.target === noteSheetEl || e.target.closest('.sheet-cancel')) {
-      closeNoteSheet();
-      return;
-    }
-    var opt = e.target.closest ? e.target.closest('.sheet-opt') : null;
-    if (!opt || !noteSheetId) return;
-    var id = noteSheetId;
-    closeNoteSheet();
-    if (opt.id === 'ns-pin') togglePin(id);
-    else if (opt.id === 'ns-copy') copyNoteText(id);
-    else if (opt.id === 'ns-delete') deleteSingleNote(id);
-  });
-  document.addEventListener('keydown', function (e) {
-    if (e.key === 'Escape' && noteSheetEl.classList.contains('open')) closeNoteSheet();
-  });
+  /* ---------- 单条操作菜单已移除：置顶/复制/删除改为左滑露出，长按负责拖拽排序 ---------- */
 
   // 复制标题+正文纯文本；优先 navigator.clipboard，失败（非安全上下文等）退回 execCommand
   function copyNoteText(id) {
@@ -2226,11 +2743,48 @@
     }
   }
 
-  // 删除单条便签及其图片（复用批量删除的事务，删后刷新列表）
+  // 删除单条便签及其图片（复用批量删除的事务）。
+  // 普通模式与长按菜单「删除」都走「弧形飞入垃圾桶」动画：克隆卡片沿二次贝塞尔
+  // 曲线以 linear 均匀速率飞向顶栏垃圾桶（550ms，rAF 手动驱动），动画结束回调里
+  // 才真正删 IndexedDB + DOM，其余卡片 200ms 折叠补位；
+  // 动画被节流打断/抛异常时由幂等兑底强删一次，保证数据一致；
+  // prefers-reduced-motion 下不播放动画，直接删除。
+  // 多选批量删除（#sel-delete）保持原有瞬时行为，不走此动画。
   function deleteSingleNote(id) {
     var note = noteById(id);
     if (!note) return;
     if (!confirm('删除便签「' + titleOf(note) + '」？此操作不可恢复。')) return;
+    var li = liForNoteId(id);
+    // 卡片不在列表（分段/搜索过滤）/ 减少动态效果：跳过动画直接删
+    if (prefersReducedMotion() || !li || !li.isConnected) { removeNoteNow(id); return; }
+    var deleted = false; // 幂等兑底：动画完成/中断/异常都只执行一次数据删除
+    var doDelete = function () {
+      if (deleted) return;
+      deleted = true;
+      removeNoteNow(id);
+    };
+    try {
+      // 复用曲线删除动画（内部按卡片当前 boundingRect 克隆，飞向右上角垃圾桶）；
+      // 真实数据删除（IndexedDB note + images 清理）放进动画结束回调执行
+      animateCardToTrash(id, li, doDelete);
+    } catch (err) {
+      flyAnimating = false; // 动画启动异常：复位飞行锁
+      doDelete();           // 并强制删除一次，避免数据不一致
+    }
+  }
+
+  // 找出当前列表中 id 对应的卡片 DOM（分段/搜索过滤下可能不在 → null）
+  function liForNoteId(id) {
+    var kids = listEl.children;
+    for (var i = 0; i < kids.length; i++) {
+      var el = kids[i];
+      if (el.classList && el.classList.contains('note-item') && String(el.dataset.id) === String(id)) return el;
+    }
+    return null;
+  }
+
+  // 即删：IndexedDB（连带图片）→ 内存缓存 → DOM 折叠补位（200ms）→ 计数/空态
+  function removeNoteNow(id) {
     dbDeleteNotesWithImages([id]).then(function (imgIds) {
       imgIds.forEach(function (imgId) {
         if (imgUrlCache[imgId]) {
@@ -2239,20 +2793,178 @@
         }
       });
       notes = notes.filter(function (n) { return n.id !== id; }); // 更新内存缓存
-      renderList();
+      collapseListItem(liForNoteId(id), function () {
+        var remain = sortedNotesFor(segFilter).filter(matchesSearch).length;
+        if (remain === 0) renderList(); // 空态 / 计数由 renderList 统一处理
+        else countEl.textContent = remain + ' 条';
+      });
     }).catch(function () {
       alert('删除失败，请重试'); // 事务失败则什么都没删，数据保持原样
     });
   }
 
+  // 剩余卡片补位动画：把被删卡片的高度/内边距/外边距折叠到 0（200ms），
+  // 下方卡片随之平滑上移填满缺口；结束后移除卡片 DOM 与相邻分割线。
+  function collapseListItem(li, done) {
+    if (!li || !li.isConnected) { done(); return; }
+    var h = li.getBoundingClientRect().height;
+    if (prefersReducedMotion() || !h) { removeLiAndDivider(li); done(); return; }
+    var body = li.querySelector('.swipe-body'); // 卡片本体：与 li 同步折叠内边距
+    li.style.boxSizing = 'border-box';
+    li.style.overflow = 'hidden';
+    li.style.height = h + 'px';
+    li.style.transition = [
+      'height 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
+      'padding-top 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
+      'padding-bottom 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
+      'margin-bottom 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
+      'opacity 0.2s cubic-bezier(0.4, 0, 0.2, 1)'
+    ].join(', ');
+    if (body) {
+      body.style.transition = 'padding-top 0.2s cubic-bezier(0.4, 0, 0.2, 1), padding-bottom 0.2s cubic-bezier(0.4, 0, 0.2, 1)';
+    }
+    void li.offsetHeight; // 强制回流锁定起点
+    li.style.height = '0px';
+    li.style.paddingTop = '0px';
+    li.style.paddingBottom = '0px';
+    li.style.marginBottom = '0px';
+    li.style.opacity = '0';
+    if (body) { body.style.paddingTop = '0px'; body.style.paddingBottom = '0px'; }
+    var settled = false;
+    var finish = function () {
+      if (settled) return;
+      settled = true;
+      li.removeEventListener('transitionend', onEnd);
+      clearTimeout(fallback);
+      removeLiAndDivider(li);
+      done();
+    };
+    var onEnd = function (e) {
+      if (e.target === li && (e.propertyName === 'height' || e.propertyName === 'margin-bottom')) finish();
+    };
+    var fallback = setTimeout(finish, 250); // transitionend 丢失兜底
+    li.addEventListener('transitionend', onEnd);
+  }
+
+  // 移除卡片及其后的置顶分割线（分割线不参与补位动画，随卡片一并消失）
+  function removeLiAndDivider(li) {
+    var after = li.nextElementSibling;
+    if (after && after.classList && after.classList.contains('pin-divider')) after.remove();
+    li.remove();
+  }
+
+  /* ---------- 弧形删除动画（curved card deletion） ----------
+     触发：卡片操作面板 / 长按菜单点「删除」→ deleteSingleNote。
+     克隆卡片固定定位到当前包围盒，逐帧沿二次贝塞尔曲线飞向顶栏垃圾桶，
+     位置/缩放/旋转统一走 linear 均匀速率（p = t）：全程匀速推进、无头重脚轻
+     （scale 1→0.05 均匀收缩、旋转 0→25° 匀速递进）；
+     opacity 前 60% 保持 1、后 40% 线性衰减到 0；transform-origin
+     指向右上角垃圾桶。垃圾桶同步脉冲。同一时刻只允许一张卡片在飞。 */
+  var flyAnimating = false; // 是否有卡片正在飞向垃圾桶
+  var trashPulseTimer = null;
+
+  function trashCenter() {
+    var r = $('trash-btn').getBoundingClientRect();
+    return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+  }
+
+  function animateCardToTrash(id, li, done) {
+    if (flyAnimating) { done(); return; } // 已有卡片在飞：本次直接删除，不排队
+    flyAnimating = true;
+
+    var s = li.getBoundingClientRect();
+    var from = { x: s.left + s.width / 2, y: s.top + s.height / 2 }; // 卡片中心
+    var end = trashCenter();                                          // 垃圾桶中心
+    // 控制点：起点→终点连线的中点，再向右上偏移 (60, -80)，画一条明显上扬的弧线
+    var midX = (from.x + end.x) / 2, midY = (from.y + end.y) / 2;
+    var ctrl = { x: midX + 60, y: midY - 80 };
+
+    var clone = document.createElement('div');
+    clone.className = 'fly-clone';
+    clone.setAttribute('aria-hidden', 'true');
+    clone.style.left = s.left + 'px';
+    clone.style.top = s.top + 'px';
+    clone.style.width = s.width + 'px';
+    clone.style.height = s.height + 'px';
+    clone.style.willChange = 'transform, opacity'; // 提示合成器：只动画 transform/opacity
+    clone.appendChild(li.cloneNode(true));
+    document.body.appendChild(clone);
+    void clone.offsetHeight; // 确保首帧定位生效后再起动画
+
+    pulseTrashBtn(); // 垃圾桶同步脉冲（300ms）
+    var t0 = performance.now();
+    var DUR = 550;
+    var finished = false;
+    var finish = function () {
+      if (finished) return;
+      finished = true;
+      clearTimeout(stall);
+      clone.style.willChange = ''; // 动画结束移除合成提示
+      clone.remove(); // 飞行结束：清理克隆体
+      flyAnimating = false;
+      if (done) done();
+    };
+    var stall = setTimeout(finish, DUR + 60); // rAF 被节流（切后台等）时兜底收尾
+    // linear 均匀速率：p = t，位置/缩放/旋转全程匀速推进，无「头重脚轻」的慢开头快收尾。
+    // opacity 前 60% 保持 1、后 40% 线性衰减到 0（不同时结束，飞入后期才淡出）。
+    // 只改 transform（translate3d + scale + rotate）与 opacity，
+    // 触发 GPU 合成加速；不动 top/left/width/height，避免多次布局抖动造成掉帧
+    var frame = function (now) {
+      try {
+        var p = Math.min(1, (now - t0) / DUR);
+        var e = p; // linear：均匀速率，p = t
+        // 二次贝塞尔采样：p(t) = (1-t)²·P0 + 2(1-t)t·C + t²·P1（弧线形状不变，速度变均匀）
+        var u = 1 - e;
+        var cx = u * u * from.x + 2 * u * e * ctrl.x + e * e * end.x;
+        var cy = u * u * from.y + 2 * u * e * ctrl.y + e * e * end.y;
+        // scale 从 1 到 0.05 线性变化：sc = 1 - 0.95·p；
+        // opacity：p < 0.6 保持 1，p ≥ 0.6 后按 (1 - (p-0.6)/0.4) 线性衰减到 0；
+        // 旋转 0 → 25° 随同一线性进度递进
+        var sc = 1 - 0.95 * e;
+        var opacity = p < 0.6 ? 1 : 1 - (p - 0.6) / 0.4;
+        clone.style.transform =
+          'translate3d(' + (cx - from.x) + 'px,' + (cy - from.y) + 'px,0)' +
+          ' scale(' + sc + ')' +
+          ' rotate(' + (25 * e) + 'deg)';
+        clone.style.opacity = String(opacity);
+        if (p < 1) { requestAnimationFrame(frame); return; }
+        finish();
+      } catch (err) {
+        finish(); // 动画异常兜底：清理克隆体并执行删除回调，保证数据一致
+      }
+    };
+    requestAnimationFrame(frame);
+  }
+
+  // 垃圾桶脉冲：300ms 内 scale 1 → 1.2 → 1（CSS keyframes 一次性播放）
+  function pulseTrashBtn() {
+    var btn = $('trash-btn');
+    if (!btn || prefersReducedMotion()) return;
+    btn.classList.remove('pulsing');
+    void btn.offsetWidth; // 重置动画
+    btn.classList.add('pulsing');
+    clearTimeout(trashPulseTimer);
+    trashPulseTimer = setTimeout(function () { btn.classList.remove('pulsing'); }, 320);
+  }
+
+  // 顶栏垃圾桶按钮：无卡片在飞时点按 → 提示左滑删除
+  $('trash-btn').addEventListener('click', function () {
+    if (flyAnimating) return; // 有卡片正在飞入：忽略本次点击
+    showUndoToast('Swipe a card left to delete it');
+  });
+
   /* ---------- 视图切换（简化版单向滑入/滑出，状态由 show() 全权管理） ---------- */
 
   var editorAnimCleanup = null; // 滑入/滑出过程的清理函数（transitionend + 超时兜底）
 
-  // 动画结束：移除一次性临时 class，编辑页回到基线到位态 translateX(0)
+  // 动画结束：移除一次性临时 class，编辑页回到基线到位态 translateX(0)。
+  // 滑出（返回列表）结束时必须把编辑页彻底隐藏（去掉 .active → display:none），
+  // 否则它会按基线 transform 滑回来盖住列表页，右下角 + 按钮也被挡住
   function finishEditorAnim() {
     if (editorAnimCleanup) { editorAnimCleanup(); editorAnimCleanup = null; }
+    var wasLeaving = editorView.classList.contains('leaving');
     editorView.classList.remove('entering', 'leaving');
+    if (wasLeaving) editorView.classList.remove('active');
   }
 
   // 挂动画结束监听：transitionend（transform）或 340ms 超时兜底
@@ -2383,6 +3095,10 @@
     clearTimeout(wordCountTimer); // 取消在途的字数统计，避免空引用
     renderList();
     show('list');
+    // 返回列表：+ 按钮跟随 #list-view（.active → display:flex）恢复显示；
+    // 这里再防御性清空 inline 显隐与残留 class，保证来回多次 + 按钮一直在
+    var fab = $('add-btn');
+    if (fab) { fab.style.display = ''; fab.classList.remove('hidden', 'fade-out'); }
   }
 
   function deleteCurrent() {
@@ -2787,7 +3503,8 @@
             return {
               id: n.id, content: n.content, createdAt: n.createdAt, updatedAt: n.updatedAt,
               type: n.type, dueAt: n.dueAt, doneAt: n.doneAt,
-              pinnedAt: n.pinnedAt, color: n.color, starred: n.starred
+              pinnedAt: n.pinnedAt, color: n.color, starred: n.starred,
+              order: n.order // 拖拽排序字段
             };
           }),
           images: imgs
@@ -2848,7 +3565,8 @@
           doneAt: done,
           pinnedAt: (payload.version >= 2 && 'pinnedAt' in n && n.pinnedAt !== undefined) ? n.pinnedAt : null,
           color: (payload.version >= 2 && 'color' in n && n.color !== undefined) ? n.color : null,
-          starred: (payload.version >= 2 && n.starred === true)
+          starred: (payload.version >= 2 && n.starred === true),
+          order: typeof n.order === 'number' ? n.order : null // 拖拽排序字段（旧备份无则回退按创建时间）
         });
       });
       var imgRecs = (payload.images || []).filter(function (g) {
@@ -2878,6 +3596,7 @@
       }).then(function () {
         return dbGetAll().then(function (arr) {
           notes = arr;
+          backfillOrder(); // 导入后补齐缺失的 order（旧备份/无 order 字段的记录）
           renderList();
           alert('导入了 ' + noteRecs.length + ' 条笔记，' + imgRecs.length + ' 张图片');
         });
@@ -3463,6 +4182,7 @@
     .then(dbGetAll)
     .then(function (arr) {
       notes = arr;
+      backfillOrder(); // 无 order 字段的旧便签按 createdAt 升序补齐（初始顺序按创建时间）
       updateSortMenu(); // 应用持久化的排序方式后再首次渲染
       renderList();
       checkDueReminders();
@@ -3516,6 +4236,132 @@
     setTimeout(function () { listEl.classList.remove('boot-in'); }, 600);
   });
   lo.observe(listEl, { childList: true });
+
+  /* --- 主题切换 + 径向扩散过渡 ---
+     统一走 DOM 覆盖层方案：真实页面保持旧主题不动，覆盖层以新主题底色为圆，
+     从按钮处向四周扩散盖住旧主题，圆盖满后立即翻转真实主题。
+     不用 CSS transition 驱动 clip-path（浏览器支持不稳定，会停顿/掉帧），
+     改用 requestAnimationFrame 逐帧手写 clip-path 圆半径：
+       每帧 r = maxRadius * easeInOutQuart(t / duration)，duration = 1100ms（cinematic 档），
+       覆盖到屏幕后立即结束，无额外等待。
+     prefers-reduced-motion 时直接切换，无动画。 */
+  var themeBtn = document.getElementById('theme-btn');
+  var rippleEl = document.getElementById('theme-ripple');
+  var THEME_KEY = 'notes-theme';
+  var root = document.documentElement;
+  var animating = false;
+
+  function currentTheme() { return root.getAttribute('data-theme') || 'light'; }
+
+  // 图标随主题互切：浅色显示月亮（点击进深色）、深色显示太阳（点击回浅色）
+  var SUN_D = 'M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8zM12 2v2m0 16v2M4.93 4.93l1.41 1.41m11.32 11.32l1.41 1.41M2 12h2m16 0h2M4.93 19.07l1.41-1.41m11.32-11.32l1.41-1.41';
+  var MOON_D = 'M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 2 21 12.79z';
+  var themeIconPath = document.getElementById('theme-icon-path');
+  function syncThemeBtn() {
+    var dark = currentTheme() === 'dark';
+    themeBtn.setAttribute('aria-pressed', dark ? 'true' : 'false');
+    themeBtn.setAttribute('aria-label', dark ? '切换到浅色主题' : '切换到深色主题');
+    if (themeIconPath) themeIconPath.setAttribute('d', dark ? SUN_D : MOON_D);
+  }
+  syncThemeBtn();
+
+  function applyTheme(theme) {
+    root.setAttribute('data-theme', theme);
+    try { localStorage.setItem(THEME_KEY, theme); } catch (e) {}
+    syncThemeBtn();
+  }
+
+  // 按钮中心（视口坐标）：扩散起点。按钮未渲染时退化为右上角
+  function btnCenter() {
+    var r = themeBtn.getBoundingClientRect();
+    if (!r || (!r.width && !r.height)) {
+      var safeR = Math.max(20, (window.innerWidth || 0) - 40);
+      return { x: safeR, y: 34 };
+    }
+    return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+  }
+
+  // 覆盖最远角落所需的圆半径
+  function coverRadius(cx, cy) {
+    var w = window.innerWidth || 0;
+    var h = window.innerHeight || 0;
+    return Math.ceil(Math.hypot(Math.max(cx, w - cx), Math.max(cy, h - cy))) + 8;
+  }
+
+  function reducedMotion() {
+    return window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  }
+
+  function switchTheme(cx, cy) {
+    if (animating) return; // 动画期间禁用
+    var oldTheme = currentTheme();
+    var newTheme = oldTheme === 'dark' ? 'light' : 'dark';
+
+    if (reducedMotion()) { applyTheme(newTheme); return; } // 减少动态效果：无动画直接切
+
+    var radius = coverRadius(cx, cy);
+    animating = true;
+
+    // 覆盖层只含纯背景色（新主题底色），从按钮处扩散盖住旧主题；
+    // 圆盖满后的那一帧内同时完成「切主题 + 移除覆盖层」，不留中间帧，杜绝闪屏
+    var layer = rippleEl.firstElementChild;
+    layer.setAttribute('data-theme', newTheme);
+    layer.style.clipPath = 'circle(0px at ' + cx + 'px ' + cy + 'px)';
+    rippleEl.classList.add('on');
+    void layer.offsetWidth; // 强制首帧定位生效，rAF 循环从此连续推进
+
+    var DUR = 1100;
+    var t0 = performance.now();
+    // easeInOutQuart：t<0.5 → 8t⁴；否则 1 - 8·(t-1)⁴，等价 cubic-bezier(0.76, 0, 0.24, 1)。
+    // 对称平滑：先缓慢起势、中段加速、再对称减速收尾 —— motion-tokens.md 的「有重量感铺开」
+    var easeInOutQuart = function (x) {
+      return x < 0.5 ? 8 * x * x * x * x : 1 - 8 * Math.pow(x - 1, 4);
+    };
+    var frame = function (now) {
+      var t = Math.min(1, (now - t0) / DUR);
+      var r = Math.ceil(radius * easeInOutQuart(t));
+      layer.style.clipPath = 'circle(' + r + 'px at ' + cx + 'px ' + cy + 'px)';
+      if (t < 1) { requestAnimationFrame(frame); return; }
+      // 覆盖完成的那一帧（问题1修复：杜绝闪帧）：
+      // ① 先给 <html> 设置 data-theme = 新主题（applyTheme 内 setAttribute，含持久化与图标同步）；
+      // ② 强制重排一次（读取 offsetHeight），让浏览器立即按新主题重算样式；
+      // ③ 在下一帧的 requestAnimationFrame 回调里才移除覆盖层——
+      //    主题生效与覆盖层消失不在同一绘制帧，页面永远不会“露出旧主题”，无闪屏。
+      //    移除是瞬时 display:none（无 transition），覆盖层纯色 var(--bg-page) 与页面一致。
+      applyTheme(newTheme);
+      void document.documentElement.offsetHeight;
+      requestAnimationFrame(function () {
+        rippleEl.classList.remove('on');
+        layer.style.clipPath = '';
+        layer.removeAttribute('data-theme');
+        animating = false;
+      });
+    };
+    requestAnimationFrame(frame);
+  }
+
+  // 统一走 click：触摸/鼠标自带坐标；键盘（Enter/Space）合成的 click 无坐标，
+  // 用按钮中心作扩散起点，也天然避免 keydown + 合成 click 双触发
+  themeBtn.addEventListener('click', function (e) {
+    if (animating) return;
+    var cx = e.clientX, cy = e.clientY;
+    if (!cx && !cy) { var c = btnCenter(); cx = c.x; cy = c.y; }
+    switchTheme(cx, cy);
+  });
+
+  // 跟随系统主题：仅在用户从未手动选择时生效
+  if (window.matchMedia) {
+    var mq = window.matchMedia('(prefers-color-scheme: dark)');
+    var onSysChange = function (e) {
+      var saved = null;
+      try { saved = localStorage.getItem(THEME_KEY); } catch (err) {}
+      if (saved) return; // 用户已手动选择，不跟随系统
+      var sys = e.matches ? 'dark' : 'light';
+      if (currentTheme() !== sys) applyTheme(sys);
+    };
+    if (mq.addEventListener) mq.addEventListener('change', onSysChange);
+    else if (mq.addListener) mq.addListener(onSysChange); // 旧版 Safari
+  }
 
   /* --- 触觉反馈：capture 阶段监听，不影响原处理逻辑 --- */
   document.addEventListener('click', function (e) {
