@@ -384,6 +384,9 @@
     touch-action: pan-y;
   }
   .note-item.swiping, .note-item.swipe-open { overflow: hidden; }
+  /* 手势候选/激活期：JS 在 pointerdown 时加 .gesturing，浏览器不再接管纵向手势，
+     拖拽才能收到 pointermove；松手移除后恢复上面的 pan-y，列表仍可滚动 */
+  .note-item.gesturing { touch-action: none; }
   /* 左滑操作区：置顶 / 复制 / 删除 三枚按钮，位于卡片本体之下右侧 */
   .note-item .swipe-actions {
     position: absolute;
@@ -755,12 +758,13 @@
   }
   #due-clear:active { background: rgba(229, 72, 77, 0.1); }
 
-  /* 撤销/重做状态提示 toast：底部安全区上方，不遮挡工具栏 */
+  /* 操作反馈 toast（撤销/重做与置顶/复制/删除共用）：
+     底部安全区上方 80px，半透明黑底白字胶囊。
+     入场 200ms 快入（motion-web ease-out 档），出场 150ms linear。 */
   #undo-toast {
     position: fixed;
-    bottom: calc(env(safe-area-inset-bottom) + 76px);
+    bottom: calc(env(safe-area-inset-bottom) + 80px);
     left: 50%;
-    transform: translateX(-50%);
     z-index: 60;
     padding: 8px 16px;
     background: rgba(0, 0, 0, 0.75);
@@ -768,10 +772,73 @@
     font-size: 13px;
     border-radius: var(--radius-pill);
     opacity: 0;
+    transform: translate(-50%, 8px);
     pointer-events: none;
-    transition: opacity 0.2s var(--ease);
+    transition: opacity 0.15s linear, transform 0.15s linear; /* 出场 150ms linear */
   }
-  #undo-toast.show { opacity: 1; }
+  #undo-toast.show {
+    opacity: 1;
+    transform: translate(-50%, 0);
+    transition: opacity 0.2s cubic-bezier(0, 0.55, 0.45, 1), /* 入场 200ms 快入 */
+                transform 0.2s cubic-bezier(0, 0.55, 0.45, 1);
+  }
+
+  /* 确认对话框（替代原生 confirm，按钮文字固定为“是/否”）：
+     遮罩 rgba(0,0,0,0.4) 淡入 150ms；白卡 280px / 圆角 16px / padding 24px */
+  #confirm-modal {
+    position: fixed;
+    inset: 0;
+    z-index: 120;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--mask);
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.15s linear, visibility 0.15s linear;
+  }
+  #confirm-modal.show { opacity: 1; visibility: visible; }
+  #confirm-modal .confirm-card {
+    width: 280px;
+    max-width: calc(100vw - 48px);
+    padding: 24px;
+    background: var(--bg-card);
+    border-radius: 16px;
+    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.2);
+    transform: translateY(6px) scale(0.98);
+    transition: transform 0.15s cubic-bezier(0, 0.55, 0.45, 1);
+  }
+  #confirm-modal.show .confirm-card { transform: none; }
+  #confirm-modal .confirm-title {
+    margin: 0 0 8px;
+    font-size: 17px;
+    font-weight: 600;
+    color: var(--text-primary);
+  }
+  #confirm-modal .confirm-msg {
+    margin: 0 0 20px;
+    font-size: 14px;
+    line-height: 1.55;
+    color: var(--text-secondary);
+  }
+  #confirm-modal .confirm-btns { display: flex; gap: 12px; }
+  #confirm-modal .confirm-btns button {
+    flex: 1;
+    height: 44px;
+    border: none;
+    border-radius: 10px;
+    font-size: 15px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: filter 0.15s var(--ease), transform 0.1s var(--ease);
+  }
+  #confirm-modal .confirm-cancel { background: #F0F2F5; color: #1A1D21; }
+  #confirm-modal .confirm-ok { background: #E5484D; color: #fff; }
+  #confirm-modal .confirm-btns button:active { transform: scale(0.97); filter: brightness(0.96); }
+  [data-theme="dark"] #confirm-modal .confirm-card { background: #1A1D21; }
+  [data-theme="dark"] #confirm-modal .confirm-title { color: #E8EAED; }
+  [data-theme="dark"] #confirm-modal .confirm-msg { color: #9AA0A6; }
+  [data-theme="dark"] #confirm-modal .confirm-cancel { background: #23272E; color: #E8EAED; }
 
   /* 悬浮新建按钮 */
   #add-btn {
@@ -1304,7 +1371,7 @@
 
   <div id="about-mask">
     <div id="about-card" role="dialog" aria-modal="true">
-      <h2>极简备忘录 v1.3.0</h2>
+      <h2>极简备忘录 v1.3.1</h2>
       <p>如果它帮到你，可以请我喝杯咖啡</p>
       <button id="about-close">关闭</button>
     </div>
@@ -1418,6 +1485,18 @@
   <div id="undo-toast" role="status"></div>
   <input type="file" id="img-input" accept="image/*" multiple hidden>
 </section>
+
+<!-- 自定义删除确认框：按钮文字固定“是/否”，不受浏览器语言影响 -->
+<div id="confirm-modal" role="dialog" aria-modal="true" aria-label="确认删除">
+  <div class="confirm-card" role="document">
+    <h3 class="confirm-title"></h3>
+    <p class="confirm-msg"></p>
+    <div class="confirm-btns">
+      <button type="button" class="confirm-cancel"></button>
+      <button type="button" class="confirm-ok"></button>
+    </div>
+  </div>
+</div>
 
 <!-- 图片全屏查看器（编辑页与列表页共用） -->
 <div id="img-viewer" role="dialog" aria-modal="true" aria-label="图片查看">
@@ -2284,7 +2363,7 @@
     if (g.longPressTimer) { clearTimeout(g.longPressTimer); g.longPressTimer = null; }
     var li = g.li;
     if (li && li.isConnected) {
-      li.classList.remove('swiping', 'dragging');
+      li.classList.remove('swiping', 'dragging', 'gesturing');
       var body = li.querySelector('.swipe-body');
       if (body) body.style.transform = '';
       li.style.transform = '';
@@ -2371,7 +2450,7 @@
       all = noteItemsInDom();
     }
     for (i = 0; i < all.length; i++) all[i].classList.add('drag-anim');
-    li.classList.remove('dragging');
+    li.classList.remove('dragging', 'gesturing');
     void listEl.offsetHeight; // 提交当前帧作为过渡起点
     for (i = 0; i < all.length; i++) {
       all[i].classList.remove('drag-shift');
@@ -2415,15 +2494,60 @@
     Promise.all(jobs).catch(function () { /* 存储失败静默 */ });
   }
 
-  // 左滑按钮动作：置顶 / 复制 / 删除（复用现有逻辑）
+  // 左滑按钮动作：置顶 / 复制 / 删除（点击后直接执行，不先弹回卡片）
   function runSwipeAction(act, id) {
     if (!act || !id) return;
-    if (act === 'pin') togglePin(id);
-    else if (act === 'copy') copyNoteText(id);
-    else if (act === 'delete') deleteSingleNote(id);
+    if (act === 'pin') {
+      var wasPinned = isPinned(noteById(id));
+      pinWithFlip(id); // 立即切换 pinnedAt，卡片带过渡移到新位置
+      showUndoToast(wasPinned ? '已取消置顶' : '已置顶');
+    } else if (act === 'copy') {
+      copyNoteText(id); // 立即复制，成功/失败自带 toast
+    } else if (act === 'delete') {
+      deleteSingleNote(id); // 先弹自定义确认框，确认后立即走曲线删除动画
+    }
   }
 
-  // 构建一枚左滑操作按钮；点击时先收拢卡片（弹回原位）再执行动作
+  // 置顶/取消置顶的位移过渡（FLIP）：先记录所有卡片旧位置 → togglePin 触发重渲染
+  // → 再把每张卡片从旧位置用 transform 过渡到新位置，避免“瞬间跳位”。
+  // renderList 会重建 DOM，因此按 id 匹配新旧节点；减少动态效果时直接切换。
+  function pinWithFlip(id) {
+    if (prefersReducedMotion()) { togglePin(id); return; }
+    var before = {};
+    var oldItems = noteItemsInDom();
+    for (var i = 0; i < oldItems.length; i++) {
+      var oid = oldItems[i].dataset.id;
+      if (oid) before[oid] = oldItems[i].getBoundingClientRect();
+    }
+    togglePin(id); // 内部 renderList() 重建列表
+    var newItems = noteItemsInDom();
+    var moving = [];
+    for (i = 0; i < newItems.length; i++) {
+      var el = newItems[i];
+      var old = before[el.dataset.id];
+      if (!old) continue;
+      var dy = old.top - el.getBoundingClientRect().top;
+      if (Math.abs(dy) < 1) continue;
+      el.style.transition = 'none';
+      el.style.transform = 'translate3d(0,' + dy + 'px,0)';
+      moving.push(el);
+    }
+    if (!moving.length) return;
+    void listEl.offsetHeight; // 提交起点帧
+    for (i = 0; i < moving.length; i++) {
+      moving[i].style.transition = 'transform 0.28s var(--ease-swift)';
+      moving[i].style.transform = '';
+    }
+    setTimeout(function () {
+      for (var k = 0; k < moving.length; k++) {
+        if (moving[k].isConnected) { moving[k].style.transition = ''; moving[k].style.transform = ''; }
+      }
+    }, 320);
+  }
+
+  // 构建一枚左滑操作按钮。单一事件路径：只绑一个 click，点击后直接执行动作，
+  // 不再“先弹回、再等 240ms 执行”（两段式会让第一次点击被弹回动画/状态吃掉）。
+  // pointerdown 仅 stopPropagation 阻止卡片起手势，不 preventDefault，保证 click 正常触发。
   function makeSwipeBtn(act, svg, label) {
     var b = document.createElement('button');
     b.type = 'button';
@@ -2431,15 +2555,14 @@
     b.dataset.act = act;
     b.setAttribute('aria-label', label);
     b.innerHTML = '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + svg + '</svg><span>' + label + '</span>';
-    b.addEventListener('pointerdown', function (e) { e.stopPropagation(); }); // 不触发卡片手势
-    b.addEventListener('pointermove', function (e) { e.stopPropagation(); });
+    b.addEventListener('pointerdown', function (e) { e.stopPropagation(); }); // 不触发卡片手势（不 preventDefault）
     b.addEventListener('click', function (e) {
-      e.stopPropagation(); // 不触发卡片打开
+      e.stopPropagation(); // 不触发卡片打开/多选
       var li = b.closest('.note-item');
       if (!li) return;
-      closeOpenSwipe(); // 卡片先弹回原位
       var id = li.dataset.id;
-      setTimeout(function () { runSwipeAction(act, id); }, 240); // 等弹回动画结束再执行
+      if (!id) return;
+      runSwipeAction(act, id); // 立即执行；置顶重渲染、删除走曲线动画
     });
     return b;
   }
@@ -2604,6 +2727,11 @@
           return;
         }
         closeOpenSwipe(li); // 点其他卡片时，展开中的卡片先弹回
+        // 手势候选期就接管 touch-action 并捕获指针：
+        // touch-action 在 pointerdown 时被浏览器缓存，等到长按 500ms 才加 .dragging 已来不及
+        // （浏览器会按 pan-y 接管纵向手势并 pointercancel）；提前设 none 后由 JS 自己滚动。
+        try { li.setPointerCapture(e.pointerId); } catch (err) {}
+        li.classList.add('gesturing');
         gesture = {
           li: li,
           id: note.id,
@@ -2611,6 +2739,7 @@
           startX: e.clientX,
           startY: e.clientY,
           dragStartY: e.clientY,
+          lastY: e.clientY,
           viewX: 0,
           mode: 'pending',
           suppressClick: false,
@@ -2630,16 +2759,18 @@
           var ax = Math.abs(dx), ay = Math.abs(dy);
           if (ax > DRAG_JITTER || ay > DRAG_JITTER) {
             if (g.longPressTimer) { clearTimeout(g.longPressTimer); g.longPressTimer = null; }
-            // 先判定方向：横向左移 > 10px 且 > 纵向 1.5 倍 → 左滑；纵向为主 → 交滚动
+            // 先判定方向：横向左移 > 10px 且 > 纵向 1.5 倍 → 左滑；纵向为主 → 手动滚动
             if (dx < -DRAG_JITTER && ax > ay * 1.5) {
               g.mode = 'swipe';
               g.suppressClick = true;
-              try { li.setPointerCapture(e.pointerId); } catch (err) {}
               li.classList.add('swiping');
               g.viewX = dx;
               applySwipe(g);
             } else {
-              g.mode = 'scroll'; // 纵向为主的移动：交给浏览器滚动
+              // touch-action 已由 .gesturing 设为 none，浏览器不再代滚，
+              // 由 JS 把纵向位移 1:1 映射到列表 scrollTop
+              g.mode = 'scroll';
+              g.lastY = e.clientY;
             }
           }
           return;
@@ -2647,10 +2778,18 @@
         if (g.mode === 'swipe') {
           g.viewX = dx;
           if (Math.abs(dx) > DRAG_JITTER) g.suppressClick = true;
+          if (e.cancelable) e.preventDefault();
           applySwipe(g); // 跟手
         } else if (g.mode === 'drag') {
+          if (e.cancelable) e.preventDefault();
           g.dragShift = e.clientY - g.dragStartY;
           moveDrag(g);
+        } else if (g.mode === 'scroll') {
+          var sy = e.clientY - g.lastY;
+          if (sy) listEl.scrollTop -= sy;
+          g.lastY = e.clientY;
+          g.suppressClick = true;
+          if (e.cancelable) e.preventDefault();
         }
       });
       li.addEventListener('pointerup', function (e) {
@@ -2680,6 +2819,7 @@
           if (Math.abs(e.clientX - g.startX) > DRAG_JITTER ||
               Math.abs(e.clientY - g.startY) > DRAG_JITTER) gestureSuppressClick = true;
         }
+        li.classList.remove('gesturing'); // 松手恢复 pan-y
         gesture = null;
       });
       li.addEventListener('pointercancel', function (e) {
@@ -2753,24 +2893,66 @@
   function deleteSingleNote(id) {
     var note = noteById(id);
     if (!note) return;
-    if (!confirm('删除便签「' + titleOf(note) + '」？此操作不可恢复。')) return;
-    var li = liForNoteId(id);
-    // 卡片不在列表（分段/搜索过滤）/ 减少动态效果：跳过动画直接删
-    if (prefersReducedMotion() || !li || !li.isConnected) { removeNoteNow(id); return; }
-    var deleted = false; // 幂等兑底：动画完成/中断/异常都只执行一次数据删除
-    var doDelete = function () {
-      if (deleted) return;
-      deleted = true;
-      removeNoteNow(id);
-    };
-    try {
-      // 复用曲线删除动画（内部按卡片当前 boundingRect 克隆，飞向右上角垃圾桶）；
-      // 真实数据删除（IndexedDB note + images 清理）放进动画结束回调执行
-      animateCardToTrash(id, li, doDelete);
-    } catch (err) {
-      flyAnimating = false; // 动画启动异常：复位飞行锁
-      doDelete();           // 并强制删除一次，避免数据不一致
-    }
+    // 弃用原生 confirm（按钮文字随浏览器语言变），改用可复用自定义确认框；
+    // 点击“是” → 立即走曲线删除动画；点“否”/遮罩 → 什么都不做
+    confirmDialog({
+      title: '确认删除',
+      message: '删除后无法恢复，确定删除这条便签吗？',
+      confirmText: '是',
+      cancelText: '否'
+    }).then(function (ok) {
+      if (!ok) return;
+      showUndoToast('已删除');
+      var li = liForNoteId(id);
+      // 卡片不在列表（分段/搜索过滤）/ 减少动态效果：跳过动画直接删
+      if (prefersReducedMotion() || !li || !li.isConnected) { removeNoteNow(id); return; }
+      var deleted = false; // 幂等兑底：动画完成/中断/异常都只执行一次数据删除
+      var doDelete = function () {
+        if (deleted) return;
+        deleted = true;
+        removeNoteNow(id);
+      };
+      try {
+        // 复用曲线删除动画（内部按卡片当前 boundingRect 克隆，飞向右上角垃圾桶）；
+        // 真实数据删除（IndexedDB note + images 清理）放进动画结束回调执行
+        animateCardToTrash(id, li, doDelete);
+      } catch (err) {
+        flyAnimating = false; // 动画启动异常：复位飞行锁
+        doDelete();           // 并强制删除一次，避免数据不一致
+      }
+    });
+  }
+
+  // 可复用的确认对话框：confirmDialog({title,message,confirmText,cancelText}) → Promise<boolean>
+  // 遮罩淡入 150ms；点“是”resolve(true)，点“否”或遮罩 resolve(false)。
+  // 同一时刻只允许一个对话；重复调用时后者立即拿到 false（防双开）。
+  var confirmModalEl = null;
+  var confirmOpen = false;
+  function confirmDialog(opts) {
+    opts = opts || {};
+    if (!confirmModalEl) confirmModalEl = document.getElementById('confirm-modal');
+    return new Promise(function (resolve) {
+      if (!confirmModalEl || confirmOpen) { resolve(false); return; }
+      confirmOpen = true;
+      confirmModalEl.querySelector('.confirm-title').textContent = opts.title || '确认删除';
+      confirmModalEl.querySelector('.confirm-msg').textContent = opts.message || '';
+      var cancelBtn = confirmModalEl.querySelector('.confirm-cancel');
+      var okBtn = confirmModalEl.querySelector('.confirm-ok');
+      cancelBtn.textContent = opts.cancelText || '否';
+      okBtn.textContent = opts.confirmText || '是';
+      var settled = false;
+      function finish(val) {
+        if (settled) return;
+        settled = true;
+        confirmModalEl.classList.remove('show');
+        setTimeout(function () { confirmOpen = false; }, 160); // 等淡出结束再允许下一次
+        resolve(val);
+      }
+      cancelBtn.onclick = function () { finish(false); };
+      okBtn.onclick = function () { finish(true); };
+      confirmModalEl.onclick = function (e) { if (e.target === confirmModalEl) finish(false); }; // 点遮罩
+      confirmModalEl.classList.add('show');
+    });
   }
 
   // 找出当前列表中 id 对应的卡片 DOM（分段/搜索过滤下可能不在 → null）
