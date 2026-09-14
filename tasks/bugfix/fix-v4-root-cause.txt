@@ -1,0 +1,115 @@
+请加载 systematic-debugging 技能和 ponytail 技能。
+
+前一次修复无效。这次禁止直接改代码，必须先完成根因分析，输出报告后再动手。
+
+═══════════════════════════════════════
+现象 1：左滑按钮第一次点击无效
+═══════════════════════════════════════
+
+在真机 APK 上：
+- 左滑卡片露出三个按钮
+- 第一次点任一按钮 → 无反应
+- 第二次点同一个按钮 → 才执行操作
+- toast 只在编辑页可见，主列表页看不到
+
+要求：按 systematic-debugging 的"复现→隔离→根因"流程：
+1. 读 index.html，定位 makeSwipeBtn 和 runSwipeAction 函数，逐行解释当前点击事件的完整路径。
+2. 明确回答：从"用户触摸按钮"到"执行动作"之间，到底有几次状态变化？每次状态变化是否涉及 pointer-events / display / animation。
+3. 用一句话说清：第一次点击为什么会被吞掉。
+4. 然后才提出修复。
+
+修复要求：
+- 按钮只有一个 click 监听器
+- 按钮的 pointer-events 永远是 auto，任何时刻都不被禁用
+- 点击后立即执行动作，不要任何"先弹回、后执行"的延迟
+- 如果需要先关闭已展开的卡片，就同时执行"关闭 + 动作"，不要两段式
+
+═══════════════════════════════════════
+现象 2：长按拖拽完全不跟手
+═══════════════════════════════════════
+
+在真机 APK 上：
+- 长按 500ms，卡片有放大和阴影（说明进入拖拽状态了）
+- 但手指上下移动，卡片纹丝不动
+- 松手后卡片回到原位
+
+要求：按 systematic-debugging 流程：
+1. 读 index.html，定位手势入口的 pointerdown、pointermove、pointerup 处理函数。
+2. 明确回答：
+   a. pointermove 监听是挂在卡片元素上，还是挂在 window/document 上？
+   b. pointerdown 时是否调用了 setPointerCapture？如果没有，为什么？
+   c. .note-item 当前的 CSS touch-action 是什么值？
+   d. 进入拖拽状态时，touch-action 是否被动态改成 none？
+   e. pointermove 里是否调用了 e.preventDefault()？监听器是否 passive: false？
+3. 用一句话说清：为什么移动时卡片不跟手。
+4. 然后才提出修复。
+
+修复要求（必须全部做到）：
+- pointerdown 第一行就调用 el.setPointerCapture(e.pointerId)
+- pointerdown 时同时给卡片加 .gesturing 类；CSS 里 .gesturing { touch-action: none !important; }
+- pointermove 监听注册在 window 上：pointerdown 时 addEventListener('pointermove', onMove, { passive: false })，pointerup 时 removeEventListener
+- onMove 第一行 e.preventDefault()
+- 位移计算：dy = e.clientY - startY（不要用 e.movementY）
+- 卡片位置：transform: translate3d(0, dy, 0)
+- 其他卡片让位：按当前 dy 计算应插入的索引，用 translate3d 让它们上下移动
+- pointerup：判断最终索引，写入 IndexedDB 的 order 字段，清除 .gesturing 和 inline transform
+
+═══════════════════════════════════════
+现象 3：toast 在主界面不可见
+═══════════════════════════════════════
+
+在编辑页能看到 toast，回到列表页看不到。
+
+要求：
+1. 找到 toast 容器的 HTML 元素（可能 id 是 #undo-toast 或类似）。
+2. 检查它的父元素是不是 #editor-view。如果是，把它移到 <body> 直接子节点下。
+3. CSS 用 position: fixed; left: 50%; transform: translateX(-50%); bottom: 80px; z-index: 9999。
+4. 让 toast 的显示不依赖任何父容器的 visibility 或 display。
+
+═══════════════════════════════════════
+现象 4：四个删除入口的提示不统一
+═══════════════════════════════════════
+
+需要统一到同一个 confirmDialog 函数，全部用中文"是/否"。
+
+四个入口：
+1. 左滑菜单的删除按钮
+2. 列表页右上角垃圾桶图标
+3. 编辑页右上角删除按钮
+4. 多选模式顶部的删除按钮
+
+要求：
+1. 检查每个入口当前调用的是 window.confirm() 还是自定义 confirmDialog()。
+2. 把用 window.confirm() 的全部换成 confirmDialog()。
+3. 文案统一：
+   - 单条：title="删除便签"，message="删除后无法恢复，确定删除这条便签吗？"
+   - 多条：title="删除便签"，message="删除后无法恢复，确定删除这 X 条便签吗？"
+   - confirmText="是"，cancelText="否"
+4. 删除成功后统一 toast "已删除"。
+
+═══════════════════════════════════════
+验证要求
+═══════════════════════════════════════
+
+改完后：
+1. 用 node --check 检查两段 script 语法。
+2. 用简单的字符串 grep 确认：
+   - 已无 window.confirm()
+   - 已无 setTimeout 包裹的 runSwipeAction
+   - 存在 setPointerCapture 调用
+   - 存在 .gesturing 类定义
+   - toast 容器在 <body> 直系子节点
+3. 输出报告：
+   - 每个现象的一句话根因
+   - 每个现象的具体修复代码位置（行号）
+   - 未做真实 DOM 渲染测试，需要用户在真机验证
+
+═══════════════════════════════════════
+严格约束
+═══════════════════════════════════════
+
+- 不改其他功能。
+- 纯原生 JS。
+- 用 Pointer Events。
+- 动画只改 transform 和 opacity。
+- 不要写"已修复"三个字，除非 node 验证通过。

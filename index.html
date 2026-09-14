@@ -386,7 +386,7 @@
   .note-item.swiping, .note-item.swipe-open { overflow: hidden; }
   /* 手势候选/激活期：JS 在 pointerdown 时加 .gesturing，浏览器不再接管纵向手势，
      拖拽才能收到 pointermove；松手移除后恢复上面的 pan-y，列表仍可滚动 */
-  .note-item.gesturing { touch-action: none; }
+  .note-item.gesturing { touch-action: none !important; }
   /* 左滑操作区：置顶 / 复制 / 删除 三枚按钮，位于卡片本体之下右侧 */
   .note-item .swipe-actions {
     position: absolute;
@@ -398,6 +398,7 @@
     background: var(--chip-bg);
   }
   .note-item .swipe-btn {
+    pointer-events: auto; /* 任何时刻可点，永不被父级/手势禁用 */
     flex: 1 0 0;
     min-width: 0;
     display: inline-flex;
@@ -765,7 +766,7 @@
     position: fixed;
     bottom: calc(env(safe-area-inset-bottom) + 80px);
     left: 50%;
-    z-index: 60;
+    z-index: 9999; /* body 直下节点：必须盖过所有 view/顶栏/弹层 */
     padding: 8px 16px;
     background: rgba(0, 0, 0, 0.75);
     color: #fff;
@@ -1371,7 +1372,7 @@
 
   <div id="about-mask">
     <div id="about-card" role="dialog" aria-modal="true">
-      <h2>极简备忘录 v1.3.1</h2>
+      <h2>极简备忘录 v1.3.2</h2>
       <p>如果它帮到你，可以请我喝杯咖啡</p>
       <button id="about-close">关闭</button>
     </div>
@@ -1482,9 +1483,11 @@
     <input type="datetime-local" id="due-input" aria-label="提醒时间">
     <button id="due-clear">清除</button>
   </div>
-  <div id="undo-toast" role="status"></div>
   <input type="file" id="img-input" accept="image/*" multiple hidden>
 </section>
+
+<!-- 操作反馈 toast：挂在 body 直下，不随 #editor-view 显隐（列表页也可见） -->
+<div id="undo-toast" role="status"></div>
 
 <!-- 自定义删除确认框：按钮文字固定“是/否”，不受浏览器语言影响 -->
 <div id="confirm-modal" role="dialog" aria-modal="true" aria-label="确认删除">
@@ -2357,9 +2360,118 @@
     }
   }
 
-  // 手势结束清理：取消长按定时器、恢复面容与让位状态
+  /* ---------- window 级手势监听（passive:false） ----------
+     pointermove/up/cancel 挂在 window 上而不是卡片上：即使指针捕获丢失
+     （Android WebView 抢手势），事件仍会派发到 window，move 流不中断。
+     down 时注册、up/cancel 时移除；onMove 第一行 preventDefault，配合
+     .gesturing { touch-action:none !important } 双保险，浏览器绝不接管手势。 */
+  var gestureListenersAttached = false;
+
+  function onGestureMove(e) {
+    var g = gesture;
+    if (!g || e.pointerId !== g.pointerId) return;
+    e.preventDefault(); // 第一行：配合 touch-action:none 确保页面不滚动
+    var li = g.li;
+    var dx = e.clientX - g.startX;
+    var dy = e.clientY - g.startY;
+    if (g.mode === 'pending') {
+      var ax = Math.abs(dx), ay = Math.abs(dy);
+      if (ax > DRAG_JITTER || ay > DRAG_JITTER) {
+        if (g.longPressTimer) { clearTimeout(g.longPressTimer); g.longPressTimer = null; }
+        // 先判定方向：横向左移 > 10px 且 > 纵向 1.5 倍 → 左滑；纵向为主 → 手动滚动
+        if (dx < -DRAG_JITTER && ax > ay * 1.5) {
+          g.mode = 'swipe';
+          g.suppressClick = true;
+          li.classList.add('swiping');
+          g.viewX = dx;
+          applySwipe(g);
+        } else {
+          // touch-action 已由 .gesturing 设为 none，浏览器不再代滚，
+          // 由 JS 把纵向位移 1:1 映射到列表 scrollTop
+          g.mode = 'scroll';
+          g.lastY = e.clientY;
+        }
+      }
+      return;
+    }
+    if (!li.isConnected) return; // 手势中被重渲染删掉：等待 up/cancel 清理
+    if (g.mode === 'swipe') {
+      g.viewX = dx;
+      if (Math.abs(dx) > DRAG_JITTER) g.suppressClick = true;
+      applySwipe(g); // 跟手
+    } else if (g.mode === 'drag') {
+      g.dragShift = e.clientY - g.dragStartY;
+      moveDrag(g);
+    } else if (g.mode === 'scroll') {
+      var sy = e.clientY - g.lastY;
+      if (sy) listEl.scrollTop -= sy;
+      g.lastY = e.clientY;
+      g.suppressClick = true;
+    }
+  }
+
+  function onGestureUp(e) {
+    var g = gesture;
+    if (!g || e.pointerId !== g.pointerId) return;
+    detachGestureListeners();
+    var li = g.li;
+    if (g.mode === 'swipe') {
+      var body = li.querySelector('.swipe-body');
+      li.classList.remove('swiping'); // 先恢复过渡，再清除内联位移 → 平滑弹回/展开
+      if (g.viewX <= -SWIPE_SNAP) li.classList.add('swipe-open'); // 滑过 80px → 吸附展开
+      else closeOpenSwipe(li);                                      // 否则弹回
+      if (body) body.style.transform = '';
+      if (g.suppressClick) gestureSuppressClick = true;
+    } else if (g.mode === 'drag') {
+      var movedAmt = Math.abs(g.dragShift) > DRAG_JITTER;
+      if (movedAmt) g.suppressClick = true;
+      if (g.dragIndex === g.startIndex && !movedAmt) {
+        // 长按期间手指未移动：取消拖拽，视为普通点击（打开便签）
+        g.li.classList.remove('dragging');
+        g.li.style.transform = '';
+        resetGesture(g);
+        return;
+      }
+      if (g.suppressClick) gestureSuppressClick = true;
+      finishDragReorder(g); // 落位 + 立即写 order
+    } else {
+      // 未进入左滑/拖拽的简单点按：移动过才抑制 click
+      if (Math.abs(e.clientX - g.startX) > DRAG_JITTER ||
+          Math.abs(e.clientY - g.startY) > DRAG_JITTER) gestureSuppressClick = true;
+    }
+    li.classList.remove('gesturing'); // 松手恢复 pan-y
+    gesture = null;
+  }
+
+  function onGestureCancel(e) {
+    var g = gesture;
+    if (!g || e.pointerId !== g.pointerId) return;
+    detachGestureListeners();
+    resetGesture(g);
+  }
+
+  // 手势开始时在 window 上注册 move/up/cancel（ passive:false，preventDefault 才有效）
+  function attachGestureListeners() {
+    if (gestureListenersAttached) return;
+    gestureListenersAttached = true;
+    window.addEventListener('pointermove', onGestureMove, { passive: false });
+    window.addEventListener('pointerup', onGestureUp, { passive: false });
+    window.addEventListener('pointercancel', onGestureCancel, { passive: false });
+  }
+
+  // 手势结束时移除，平时 window 上零监听
+  function detachGestureListeners() {
+    if (!gestureListenersAttached) return;
+    gestureListenersAttached = false;
+    window.removeEventListener('pointermove', onGestureMove);
+    window.removeEventListener('pointerup', onGestureUp);
+    window.removeEventListener('pointercancel', onGestureCancel);
+  }
+
+  // 手势结束清理：摘除 window 监听、取消长按定时器、恢复面容与让位状态
   function resetGesture(g) {
     if (!g) return;
+    detachGestureListeners();
     if (g.longPressTimer) { clearTimeout(g.longPressTimer); g.longPressTimer = null; }
     var li = g.li;
     if (li && li.isConnected) {
@@ -2401,7 +2513,7 @@
     g.dragShift = 0;
     g.mode = 'drag';
     if (navigator.vibrate) { try { navigator.vibrate(20); } catch (err) {} }
-    try { g.li.setPointerCapture(g.pointerId); } catch (err) {}
+    // 指针已在 pointerdown 时第一时间捕获，这里无需（也不能）重复捕获
     g.li.classList.add('dragging');
     g.li.style.transform = 'translate3d(0px,0px,0) scale(1.02)'; // 放大+浮起（阴影由 CSS）
   }
@@ -2437,7 +2549,7 @@
   }
 
   // 松手落位：把卡片移到目标下标（DOM 同步成最终顺序），全体加过渡后清空 transform，
-  // 卡片自动“落”到新位置、其余卡片顺势让位；240ms 后写 order 并（必要时）切自定义排序
+  // 卡片自动“落”到新位置、其余卡片顺势让位；松手立即写 order，240ms 后只做清理/切排序
   function finishDragReorder(g) {
     var moved = g.dragIndex !== g.startIndex;
     var all = noteItemsInDom();
@@ -2456,17 +2568,16 @@
       all[i].classList.remove('drag-shift');
       all[i].style.transform = '';
     }
+    // 松手立即写入 IndexedDB 的 order（不等动画结束）；动画结束后只做清理，
+    // 以及“按时间排序拖拽 → 自动切到自定义排序”的收尾切换
+    if (moved) saveCustomOrder(noteItemsInDom());
     setTimeout(function () {
       for (i = 0; i < all.length; i++) all[i].classList.remove('drag-anim');
-      if (moved) {
-        saveCustomOrder(noteItemsInDom());
-        // 按修改/创建时间排序时拖拽 → 自动切换到自定义排序并保存
-        if (sortBy === 'updated' || sortBy === 'created') {
-          sortBy = 'custom';
-          try { localStorage.setItem(SORT_KEY, sortBy); } catch (err) {}
-          updateSortMenu();
-          renderList();
-        }
+      if (moved && (sortBy === 'updated' || sortBy === 'created')) {
+        sortBy = 'custom';
+        try { localStorage.setItem(SORT_KEY, sortBy); } catch (err) {}
+        updateSortMenu();
+        renderList();
       }
     }, 240);
   }
@@ -2545,9 +2656,10 @@
     }, 320);
   }
 
-  // 构建一枚左滑操作按钮。单一事件路径：只绑一个 click，点击后直接执行动作，
-  // 不再“先弹回、再等 240ms 执行”（两段式会让第一次点击被弹回动画/状态吃掉）。
-  // pointerdown 仅 stopPropagation 阻止卡片起手势，不 preventDefault，保证 click 正常触发。
+  // 构建一枚左滑操作按钮。单一事件路径：只绑一个 click，点击后立即执行动作，
+  // “关闭展开态 + 执行动作”同步完成，无两段式延迟；pointerdown 仅 stopPropagation
+  // 阻止卡片起手势（不 preventDefault，click 正常触发），并清掉手势层遗留的
+  // click 抑制位，保证第一次点击必然生效。按钮 pointer-events 恒为 auto（见 CSS）。
   function makeSwipeBtn(act, svg, label) {
     var b = document.createElement('button');
     b.type = 'button';
@@ -2555,13 +2667,17 @@
     b.dataset.act = act;
     b.setAttribute('aria-label', label);
     b.innerHTML = '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + svg + '</svg><span>' + label + '</span>';
-    b.addEventListener('pointerdown', function (e) { e.stopPropagation(); }); // 不触发卡片手势（不 preventDefault）
+    b.addEventListener('pointerdown', function (e) {
+      e.stopPropagation(); // 不触发卡片手势（不 preventDefault，保证 click 正常派发）
+      gestureSuppressClick = false; // 清掉上一手势遗留的抑制位：第一次点击绝不被吞
+    });
     b.addEventListener('click', function (e) {
       e.stopPropagation(); // 不触发卡片打开/多选
       var li = b.closest('.note-item');
       if (!li) return;
       var id = li.dataset.id;
       if (!id) return;
+      closeOpenSwipe(); // 关闭展开态 + 执行动作同步完成，无“先弹回、后执行”两段式
       runSwipeAction(act, id); // 立即执行；置顶重渲染、删除走曲线动画
     });
     return b;
@@ -2716,6 +2832,7 @@
       li.addEventListener('pointerdown', function (e) {
         listPressFired = false;
         gestureSuppressClick = false; // 新一轮按下：清掉上个手势可能残留的抑制位
+        if (gesture && (!gesture.li || !gesture.li.isConnected)) resetGesture(gesture); // 上个手势异常残留：自愈
         if (gesture || multiMode) return; // 已有手势/多选模式不启动新手势
         if (e.button !== undefined && e.button !== 0) return; // 只响应主键/触摸
         var t = e.target;
@@ -2727,10 +2844,11 @@
           return;
         }
         closeOpenSwipe(li); // 点其他卡片时，展开中的卡片先弹回
-        // 手势候选期就接管 touch-action 并捕获指针：
-        // touch-action 在 pointerdown 时被浏览器缓存，等到长按 500ms 才加 .dragging 已来不及
-        // （浏览器会按 pan-y 接管纵向手势并 pointercancel）；提前设 none 后由 JS 自己滚动。
-        try { li.setPointerCapture(e.pointerId); } catch (err) {}
+        // pointerdown 即捕获指针 + 接管 touch-action（.gesturing → none !important）：
+        // touch-action 在 pointerdown 时被浏览器缓存，拖拽开始才改已来不及
+        // （浏览器会按 pan-y 接管纵向手势并 pointercancel）；.summary-toggle /
+        // .todo-chk / .swipe-btn 等功能性子元素已在上面提前 return，不受捕获影响。
+        try { li.setPointerCapture(e.pointerId); } catch (err) {} // 第一时间捕获，丢捕获 = 丢 move 流
         li.classList.add('gesturing');
         gesture = {
           li: li,
@@ -2745,88 +2863,13 @@
           suppressClick: false,
           longPressTimer: null
         };
+        attachGestureListeners(); // move/up/cancel 全挂 window（passive:false），up/cancel 时移除
         // 按标题排序时禁止拖拽：不设长按定时器，长按不做任何事
         if (sortBy !== 'title') {
           gesture.longPressTimer = setTimeout(function () { startDragReorder(gesture); }, DRAG_HOLD);
         }
       });
-      li.addEventListener('pointermove', function (e) {
-        var g = gesture;
-        if (!g || g.li !== li || e.pointerId !== g.pointerId) return;
-        var dx = e.clientX - g.startX;
-        var dy = e.clientY - g.startY;
-        if (g.mode === 'pending') {
-          var ax = Math.abs(dx), ay = Math.abs(dy);
-          if (ax > DRAG_JITTER || ay > DRAG_JITTER) {
-            if (g.longPressTimer) { clearTimeout(g.longPressTimer); g.longPressTimer = null; }
-            // 先判定方向：横向左移 > 10px 且 > 纵向 1.5 倍 → 左滑；纵向为主 → 手动滚动
-            if (dx < -DRAG_JITTER && ax > ay * 1.5) {
-              g.mode = 'swipe';
-              g.suppressClick = true;
-              li.classList.add('swiping');
-              g.viewX = dx;
-              applySwipe(g);
-            } else {
-              // touch-action 已由 .gesturing 设为 none，浏览器不再代滚，
-              // 由 JS 把纵向位移 1:1 映射到列表 scrollTop
-              g.mode = 'scroll';
-              g.lastY = e.clientY;
-            }
-          }
-          return;
-        }
-        if (g.mode === 'swipe') {
-          g.viewX = dx;
-          if (Math.abs(dx) > DRAG_JITTER) g.suppressClick = true;
-          if (e.cancelable) e.preventDefault();
-          applySwipe(g); // 跟手
-        } else if (g.mode === 'drag') {
-          if (e.cancelable) e.preventDefault();
-          g.dragShift = e.clientY - g.dragStartY;
-          moveDrag(g);
-        } else if (g.mode === 'scroll') {
-          var sy = e.clientY - g.lastY;
-          if (sy) listEl.scrollTop -= sy;
-          g.lastY = e.clientY;
-          g.suppressClick = true;
-          if (e.cancelable) e.preventDefault();
-        }
-      });
-      li.addEventListener('pointerup', function (e) {
-        var g = gesture;
-        if (!g || g.li !== li || e.pointerId !== g.pointerId) return;
-        if (g.mode === 'swipe') {
-          var body = li.querySelector('.swipe-body');
-          li.classList.remove('swiping'); // 先恢复过渡，再清除内联位移 → 平滑弹回/展开
-          if (g.viewX <= -SWIPE_SNAP) li.classList.add('swipe-open'); // 滑过 80px → 吸附展开
-          else closeOpenSwipe(li);                                      // 否则弹回
-          if (body) body.style.transform = '';
-          if (g.suppressClick) gestureSuppressClick = true;
-        } else if (g.mode === 'drag') {
-          var movedAmt = Math.abs(g.dragShift) > DRAG_JITTER;
-          if (movedAmt) g.suppressClick = true;
-          if (g.dragIndex === g.startIndex && !movedAmt) {
-            // 长按期间手指未移动：取消拖拽，视为普通点击（打开便签）
-            g.li.classList.remove('dragging');
-            g.li.style.transform = '';
-            resetGesture(g);
-            return;
-          }
-          if (g.suppressClick) gestureSuppressClick = true;
-          finishDragReorder(g); // 落位 + 落库
-        } else {
-          // 未进入左滑/拖拽的简单点按：移动过才抑制 click
-          if (Math.abs(e.clientX - g.startX) > DRAG_JITTER ||
-              Math.abs(e.clientY - g.startY) > DRAG_JITTER) gestureSuppressClick = true;
-        }
-        li.classList.remove('gesturing'); // 松手恢复 pan-y
-        gesture = null;
-      });
-      li.addEventListener('pointercancel', function (e) {
-        var g = gesture;
-        if (!g || g.li !== li) return;
-        resetGesture(g);
-      });
+      // （pointermove/pointerup/pointercancel 已改为挂 window，见手势层 attachGestureListeners）
       // 长按/右键不再弹系统菜单（原长按操作菜单已移除）
       li.addEventListener('contextmenu', function (e) { e.preventDefault(); });
 
@@ -2896,7 +2939,7 @@
     // 弃用原生 confirm（按钮文字随浏览器语言变），改用可复用自定义确认框；
     // 点击“是” → 立即走曲线删除动画；点“否”/遮罩 → 什么都不做
     confirmDialog({
-      title: '确认删除',
+      title: '删除便签',
       message: '删除后无法恢复，确定删除这条便签吗？',
       confirmText: '是',
       cancelText: '否'
@@ -3129,10 +3172,11 @@
     trashPulseTimer = setTimeout(function () { btn.classList.remove('pulsing'); }, 320);
   }
 
-  // 顶栏垃圾桶按钮：无卡片在飞时点按 → 提示左滑删除
+  // 顶栏垃圾桶按钮：进入多选模式，由顶部「删除」统一走 confirmDialog 批量删除
+  // （原来是提示“左滑删除”的假入口，易被当成删除功能误点）
   $('trash-btn').addEventListener('click', function () {
-    if (flyAnimating) return; // 有卡片正在飞入：忽略本次点击
-    showUndoToast('Swipe a card left to delete it');
+    if (multiMode) return; // 多选模式顶栏被 #sel-bar 替换，此入口不可见，兑底忽略
+    enterMultiMode(null);
   });
 
   /* ---------- 视图切换（简化版单向滑入/滑出，状态由 show() 全权管理） ---------- */
@@ -3286,14 +3330,22 @@
   function deleteCurrent() {
     var note = noteById(currentId);
     var label = note ? titleOf(note) : '';
-    if (!confirm('删除便签「' + label + '」？此操作不可恢复。')) return;
-    notes = notes.filter(function (n) { return n.id !== currentId; });
-    dbDelete(currentId).catch(function () { /* 存储失败静默 */ });
-    cleanupImagesForNote(currentId);
-    openToken++; // 同 backToList：删除即离开编辑器，作废在途加载
-    currentId = null;
-    renderList();
-    show('list');
+    confirmDialog({
+      title: '删除便签',
+      message: '删除后无法恢复，确定删除这条便签吗？',
+      confirmText: '是',
+      cancelText: '否'
+    }).then(function (ok) {
+      if (!ok || currentId == null) return;
+      notes = notes.filter(function (n) { return n.id !== currentId; });
+      dbDelete(currentId).catch(function () { /* 存储失败静默 */ });
+      cleanupImagesForNote(currentId);
+      openToken++; // 同 backToList：删除即离开编辑器，作废在途加载
+      currentId = null;
+      renderList();
+      show('list');
+      showUndoToast('已删除');
+    });
   }
 
   /* ---------- 撤销 / 重做（仅编辑页正文与标题内容） ---------- */
@@ -3841,18 +3893,27 @@
   }
 
   // 删除正文图片：DOM、IndexedDB、objectURL 三处清理，并触发自动保存
+  // 确认框与其他删除入口统一走 confirmDialog（是/否），成功后统一 toast
   function deleteInlineImage(img) {
     var id = img.dataset && img.dataset.imgId;
     if (!id) return; // 缩略图等无 id 的图片不参与删除
-    if (!confirm('删除这张图片？')) return;
-    img.remove();
-    dbDeleteImage(id).catch(function () { /* 存储失败静默 */ });
-    if (imgUrlCache[id]) {
-      URL.revokeObjectURL(imgUrlCache[id]);
-      delete imgUrlCache[id];
-    }
-    editorEl.dispatchEvent(new Event('input', { bubbles: true })); // 触发自动保存
-    renderImageStrip();
+    confirmDialog({
+      title: '删除图片',
+      message: '删除后无法恢复，确定删除这张图片吗？',
+      confirmText: '是',
+      cancelText: '否'
+    }).then(function (ok) {
+      if (!ok) return;
+      img.remove();
+      dbDeleteImage(id).catch(function () { /* 存储失败静默 */ });
+      if (imgUrlCache[id]) {
+        URL.revokeObjectURL(imgUrlCache[id]);
+        delete imgUrlCache[id];
+      }
+      editorEl.dispatchEvent(new Event('input', { bubbles: true })); // 触发自动保存
+      renderImageStrip();
+      showUndoToast('已删除');
+    });
   }
 
   function startLongPress(e) {
@@ -4061,19 +4122,27 @@
   $('sel-delete').addEventListener('click', function () {
     var ids = Object.keys(selectedIds);
     if (!ids.length) { alert('请先选择要删除的便签'); return; }
-    if (!confirm('确认删除 ' + ids.length + ' 条便签？此操作不可恢复。')) return;
-    dbDeleteNotesWithImages(ids).then(function (imgIds) {
-      imgIds.forEach(function (id) {
-        if (imgUrlCache[id]) {
-          URL.revokeObjectURL(imgUrlCache[id]);
-          delete imgUrlCache[id];
-        }
+    // 多选批量删除：统一走自定义确认框（原生 confirm 按钮文字随系统语言变）
+    confirmDialog({
+      title: '删除便签',
+      message: '删除后无法恢复，确定删除这 ' + ids.length + ' 条便签吗？',
+      confirmText: '是',
+      cancelText: '否'
+    }).then(function (ok) {
+      if (!ok) return;
+      dbDeleteNotesWithImages(ids).then(function (imgIds) {
+        imgIds.forEach(function (id) {
+          if (imgUrlCache[id]) {
+            URL.revokeObjectURL(imgUrlCache[id]);
+            delete imgUrlCache[id];
+          }
+        });
+        notes = notes.filter(function (n) { return !selectedIds[n.id]; }); // 更新内存缓存
+        exitMultiMode(); // 退出多选并重渲染，删空时自动显示空状态
+        showUndoToast('已删除');
+      }).catch(function () {
+        alert('删除失败，请重试'); // 事务失败则什么都没删，数据保持原样
       });
-      notes = notes.filter(function (n) { return !selectedIds[n.id]; }); // 更新内存缓存
-      exitMultiMode(); // 退出多选并重渲染，删空时自动显示空状态
-      alert('已删除 ' + ids.length + ' 条便签');
-    }).catch(function () {
-      alert('删除失败，请重试'); // 事务失败则什么都没删，数据保持原样
     });
   });
 
