@@ -1470,7 +1470,7 @@
 
   <div id="about-mask">
     <div id="about-card" role="dialog" aria-modal="true">
-      <h2>极简备忘录 v1.5.1</h2>
+      <h2>极简备忘录 v1.5.2</h2>
       <p>如果它帮到你，可以请我喝杯咖啡</p>
       <button id="about-close">关闭</button>
     </div>
@@ -2493,12 +2493,10 @@
           li.classList.add('swiping');
           g.viewX = dx;
           applySwipe(g);
-          console.log('[gesture] move', { dx: dx, dy: dy, mode: g.mode });
         } else if (ay > DRAG_JITTER && ay > ax * 1.5) {
           // touch-action:none 常驻，浏览器不会代滚，由 JS 把纵向位移 1:1 映射到 scrollTop
           g.mode = 'scroll';
           g.lastY = t.clientY;
-          console.log('[gesture] move', { dx: dx, dy: dy, mode: g.mode });
         }
       }
       return;
@@ -2530,7 +2528,6 @@
       li.classList.remove('swiping'); // 先恢复过渡，再清除内联位移 → 平滑弹回/展开
       if (g.viewX <= -SWIPE_SNAP) {
         li.classList.add('swipe-open'); // 滑过 80px → 吸附展开
-        console.log('[gesture] swipe snap', { offset: g.viewX });
       } else {
         closeOpenSwipe(li); // 否则弹回
       }
@@ -2548,7 +2545,6 @@
         return;
       }
       if (g.suppressClick) gestureSuppressClick = true;
-      console.log('[gesture] drag drop', { fromIndex: g.startIndex, toIndex: g.dragIndex });
       finishDragReorder(g); // 落位 + 立即写 order
     } else if (g.mode === 'scroll') {
       // 已进入 JS 手动滚动：消费本次点按，不打开便签
@@ -2567,7 +2563,6 @@
   function onGestureCancel() {
     var g = gesture;
     if (!g) return;
-    console.log('[gesture] touchcancel', { mode: g.mode });
     resetGesture(g);
   }
 
@@ -2613,7 +2608,6 @@
       return;
     }
     closeOpenSwipe(li); // 点其他卡片时，展开中的卡片先弹回
-    console.log('[gesture] touchstart', { x: t.clientX, y: t.clientY, target: (e.target && e.target.className) || '' });
     gesture = {
       li: li,
       id: li.dataset.id,
@@ -2631,7 +2625,6 @@
     if (sortBy !== 'title') {
       gesture.longPressTimer = setTimeout(function () {
         if (gesture && gesture.mode === 'pending') {
-          console.log('[gesture] longpress fired');
           startDragReorder(gesture);
         }
       }, DRAG_HOLD);
@@ -2869,7 +2862,6 @@
     b.innerHTML = '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + svg + '</svg><span>' + label + '</span>';
     b.addEventListener('click', function (e) {
       e.stopPropagation(); // 不触发卡片打开/多选
-      console.log('[swipe] button click', { action: act });
       var li = b.closest('.note-item');
       if (!li) return;
       var id = li.dataset.id;
@@ -3533,7 +3525,7 @@
         if (sEl) {
           sEl.innerHTML = searchQuery ? highlightText(excerptOf(noteLeft), searchQuery) : excerptOf(noteLeft);
           sEl.classList.toggle('expanded', !!expandedSummaries[leavingId]);
-          // 重建摘要展开按钮（列表可见后才能准确测量行数）
+          // 重建摘要展开按钮（等编辑页完全滑出隐藏后再测量，避免滑出首帧在列表上做强制回流）
           var wrapEl = sEl.parentElement;
           if (wrapEl) {
             var oldToggle = wrapEl.querySelector('.summary-toggle');
@@ -3541,7 +3533,8 @@
             wrapEl.classList.remove('has-toggle');
             (function (nid, sE, wE) {
               var measure = function () {
-                if (!listView.classList.contains('active')) { requestAnimationFrame(measure); return; }
+                // 编辑页还在（滑出中/滑入中）→ 等它隐藏后再测量挂按钮
+                if (editorView.classList.contains('active')) { requestAnimationFrame(measure); return; }
                 var btn = buildSummaryToggle(nid, sE);
                 if (btn) { wE.classList.add('has-toggle'); wE.appendChild(btn); }
               };
@@ -4815,20 +4808,6 @@
     App.exitApp();
   });
 })();
-</script>
-<script>
-setTimeout(function() {
-  var info = [
-    'window.innerWidth: ' + window.innerWidth,
-    'documentElement.clientWidth: ' + document.documentElement.clientWidth,
-    'body.offsetWidth: ' + document.body.offsetWidth,
-    'body.scrollWidth: ' + document.body.scrollWidth,
-    'listView.offsetWidth: ' + (document.getElementById('list-view') ? document.getElementById('list-view').offsetWidth : 'N/A'),
-    'editorView.offsetWidth: ' + (document.getElementById('editor-view') ? document.getElementById('editor-view').offsetWidth : 'N/A'),
-    'visualViewport.width: ' + (window.visualViewport ? window.visualViewport.width : 'N/A'),
-  ].join('\n');
-  alert(info);
-}, 1500);
 </script>
 </body>
 </html>
