@@ -1,0 +1,117 @@
+═══════════════════════════════════════
+技能调用检查（必读）
+═══════════════════════════════════════
+
+本任务预期加载：
+- motion-web（动效规范和 easing/duration 参考）
+- systematic-debugging（性能卡顿根因排查）
+- ponytail（精简输出）
+
+请先明确列出：本次任务你会加载哪几个技能，各自用来解决哪个问题。
+
+═══════════════════════════════════════
+执行方式
+═══════════════════════════════════════
+
+先输出根因报告，等确认后再动手。
+
+═══════════════════════════════════════
+现象
+═══════════════════════════════════════
+
+页面布局已经修好。但页面切换不够丝滑，尤其是：
+- 从编辑页点左上角返回箭头 → 回列表页 → 卡顿、不流畅
+- 其他页面切换（比如进编辑页）也有轻微卡顿，但返回时更明显
+
+用户原话："页面的切换点击不是很丝滑，尤其是从编辑页左上角那个小箭头返回卡片页的时候，比较卡，不流畅。"
+
+═══════════════════════════════════════
+根因排查（systematic-debugging 流程）
+═══════════════════════════════════════
+
+按以下顺序排查：
+
+1. **backdrop-filter 在切换瞬间的重绘开销**
+   - 检查所有使用 backdrop-filter 的元素：#list-header、#new-bar、#editor-bar、.editor-panel、#search-wrap、#seg-bar、#undo-toast、#confirm-modal、#menu-pop 等。
+   - Android WebView 的 backdrop-filter 每一帧都要重新计算模糊，切换时如果多个 backdrop-filter 元素同时重绘，会严重掉帧。
+   - 检查是否有 .freeze-blur 类，它在返回时是否生效？
+   - 如果没有 .freeze-blur，或者生效范围不全，切换时全屏 backdrop-filter 同时刷新 → 卡顿。
+
+2. **编辑页的显示/隐藏机制**
+   - 检查 #editor-view 的 visible 切换逻辑：
+     a. 是用 visibility + opacity 切换，还是用 display 切换？
+     b. 切换时有没有触发重排（layout）？
+   - visibility 切换本身不便宜（需要重绘），加上 backdrop-filter 更慢。
+
+3. **返回时是否有 DOM 操作**
+   - backToList() 内部有没有 renderList() 或任何 DOM 重建？
+   - 有没有触发 scrollTop 重置？
+   - 有没有重建 FAB 或底部胶囊？
+
+4. **列表页和编辑页的层叠关系**
+   - 编辑页返回时，是"编辑页滑出"还是"列表页淡入"？
+   - 如果两个页面同时动画，性能会翻倍。
+
+5. **是否有 will-change 提示**
+   - 需要动画的元素有没有加 will-change: transform, opacity？
+   - will-change 加多了会反效果，只加在真正要动的元素上。
+
+═══════════════════════════════════════
+修复方向（按优先级）
+═══════════════════════════════════════
+
+【修复 1：切换时冻结 backdrop-filter】
+在页面切换动画期间，给所有使用 backdrop-filter 的元素临时加 .no-blur 类，把 backdrop-filter 设为 none。
+动画结束后 200ms 再移除 .no-blur，恢复模糊。
+
+具体：
+- 新增 CSS：
+  .no-blur { backdrop-filter: none !important; -webkit-backdrop-filter: none !important; }
+- 在切换开始前：
+  document.body.classList.add('no-blur');
+  或者给具体元素加类。
+- 切换结束后（260ms）：
+  document.body.classList.remove('no-blur');
+- 如果整个页面都加 .no-blur 太重，只给顶栏、底部胶囊、编辑栏加。
+
+【修复 2：改用 transform 驱动的切换】
+- 编辑页返回时，用 transform: translateX(0) → translateX(100%) 做滑出动画。
+- 或者用 opacity + transform 组合。
+- 不要用 visibility: visible ↔ hidden 切换（这个会强制重绘）。
+- 编辑页应该始终 mounted（display: flex），用 transform 移出屏幕外，或者用 opacity: 0 + pointer-events: none 隐藏。
+
+【修复 3：列表页加 will-change】
+- 给 #list-view 加 will-change: transform, opacity（在切换期间），让它提前升到合成层。
+- 切换结束后移除 will-change（避免长期占用 GPU 内存）。
+
+【修复 4：动画时长和曲线】
+- 切换时长 240-280ms。
+- 缓动用 cubic-bezier(0.32, 0.72, 0, 1)（motion-web 里的 swift 曲线）。
+- 不要用 ease-in-out（速度变化太突兀，感觉"顿"）。
+
+【修复 5：如果还有卡顿，降低 backdrop-filter 的模糊半径】
+- 从 blur(24px) 降到 blur(16px)。
+- 从 saturate(180%) 降到 saturate(140%)。
+- 视觉上差别不大，但性能提升明显。
+
+═══════════════════════════════════════
+严格约束
+═══════════════════════════════════════
+
+- 只改页面切换相关的动画和性能。
+- 不改布局宽度（刚修好，别动）。
+- 不改功能逻辑。
+- 保留液态玻璃的视觉效果（切换稳定后仍要有模糊）。
+- 切换动画用 transform + opacity，不碰 layout 属性。
+
+═══════════════════════════════════════
+输出要求
+═══════════════════════════════════════
+
+第一步（先输出）：
+- 根因报告：哪个元素/属性导致的卡顿。
+- 修复方案：改哪些规则，加哪些类。
+
+第二步（等确认后再做）：
+- 实际修改
+- 报告文件大小、修改的行号、验证结果。

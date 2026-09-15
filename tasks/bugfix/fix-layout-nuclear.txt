@@ -1,0 +1,145 @@
+═══════════════════════════════════════
+布局宽度问题的"极端保守版"修复
+═══════════════════════════════════════
+
+前提：这是手机 App，viewport 宽度 360-430px，不考虑平板/电脑。
+之前的修复都无效，说明根因没找到。这次不猜了，用最保守的方式：
+一次性砍掉所有可能限制宽度的规则，先让它能正常显示，再慢慢加回来。
+
+═══════════════════════════════════════
+具体操作
+═══════════════════════════════════════
+
+【修改 1】body 与 html 强制全宽
+在 CSS 最顶部加（或修改已有的 html/body 规则）：
+
+html, body {
+  width: 100vw !important;
+  max-width: 100vw !important;
+  min-width: 0 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  overflow-x: hidden !important;
+  box-sizing: border-box !important;
+}
+
+【修改 2】#list-view 强制全宽
+把 #list-view 的规则改为：
+
+#list-view {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  width: 100vw !important;
+  max-width: 100vw !important;
+  min-width: 0 !important;
+  margin: 0 !important;
+  display: flex;
+  flex-direction: column;
+  visibility: hidden;
+  box-sizing: border-box;
+}
+
+即：删掉 max-width: 640px 和 margin: 0 auto，强制全宽。
+
+【修改 3】#editor-view 强制全宽 + 去掉 transform
+把 #editor-view 的规则改为：
+
+#editor-view {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  width: 100vw !important;
+  max-width: 100vw !important;
+  margin: 0 !important;
+  display: flex;
+  flex-direction: column;
+  z-index: 2;
+  background: transparent;
+  visibility: hidden;
+  opacity: 0;
+  pointer-events: none;
+  box-sizing: border-box;
+}
+
+#editor-view.active {
+  visibility: visible;
+  opacity: 1;
+  pointer-events: auto;
+}
+
+即：删掉 transform: translateX(100%)，改用 opacity + visibility 控制显示隐藏。
+（滑动动画先不要，让它能用优先。如果要用动画，后续再加回来。）
+
+【修改 4】所有内部主容器强制全宽
+给以下选择器统一加 width: 100%、max-width: 100%、margin-left: 0、margin-right: 0、box-sizing: border-box：
+- #list-header
+- #seg-bar
+- #search-wrap
+- #note-list
+- #sel-bar
+- #editor-bar
+- #editor-toolbar
+- .editor-panel
+
+注意：#new-bar 保持它的居中定位，不要改它的 left: 50% 和 translateX。
+
+【修改 5】检查并清除所有硬编码百分比宽度
+搜索 CSS 里所有 width: 50%、width: 60%、width: 33%、width: 70% 之类的百分比宽度规则。
+如果它们出现在 #list-view、#editor-view、.editor-panel、#editor-bar、#note-list 这些主容器上，改成 width: 100%。
+
+【修改 6】清除可能引起横向溢出的元素
+- body::before：确保它是 position: fixed; top:0; left:0; width: 100vw; height: 100vh; pointer-events: none;
+- 任何 position: absolute 且 right 值为负数的元素，检查是否溢出
+
+═══════════════════════════════════════
+诊断输出
+═══════════════════════════════════════
+
+改完后，在 index.html 的 </body> 前加一段临时诊断 JS（让用户在手机上打开 App 时弹窗显示关键尺寸）：
+
+<script>
+setTimeout(function() {
+  var info = [
+    'window.innerWidth: ' + window.innerWidth,
+    'documentElement.clientWidth: ' + document.documentElement.clientWidth,
+    'body.offsetWidth: ' + document.body.offsetWidth,
+    'body.scrollWidth: ' + document.body.scrollWidth,
+    'listView.offsetWidth: ' + (document.getElementById('list-view') ? document.getElementById('list-view').offsetWidth : 'N/A'),
+    'editorView.offsetWidth: ' + (document.getElementById('editor-view') ? document.getElementById('editor-view').offsetWidth : 'N/A'),
+    'visualViewport.width: ' + (window.visualViewport ? window.visualViewport.width : 'N/A'),
+  ].join('\n');
+  alert(info);
+}, 1500);
+</script>
+
+这段代码在用户测试完后要删除。
+
+═══════════════════════════════════════
+严格约束
+═══════════════════════════════════════
+
+- 只修布局宽度，不动功能逻辑。
+- 保留液态玻璃的视觉（颜色、圆角、阴影、backdrop-filter），只改尺寸。
+- 用 !important 强制覆盖之前的规则。
+- 不要保留任何 max-width: 640px 之类的响应式断点——这是手机 App，不需要。
+- 空态文案、按钮位置、卡片布局都不要动。
+
+═══════════════════════════════════════
+执行顺序
+═══════════════════════════════════════
+
+1. 按上述修改改 index.html。
+2. cp index.html www/index.html。
+3. md5sum 确认一致。
+4. 报告：修改的行号、新增的 !important 规则、临时诊断代码的位置。
+5. 让用户用手机浏览器打开 http://10.80.184.150:8081/ 测试（不是 APK），
+   看是否还有右侧空白。
+6. 如果浏览器正常，问题就是 Android WebView 特有的，我们再针对性处理。
+7. 如果浏览器也不正常，用户截图弹窗里的尺寸信息，我们就能直接定位。
+
+先做，做完暂停等用户测试。

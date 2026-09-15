@@ -1,0 +1,180 @@
+═══════════════════════════════════════
+技能调用检查（必读）
+═══════════════════════════════════════
+
+执行本任务前，请检查当前环境已安装的技能，判断哪些与本任务相关，并主动加载使用。
+
+当前已安装技能清单：
+- systematic-debugging：系统化调试
+- motion-web：动效设计规范（本任务核心技能）
+- ponytail：精简输出
+- ui-ux-pro-max-skill：UI/UX 设计系统
+
+本任务预期加载：
+- motion-web（转场动画的双向配合、easing、时长规范）
+- ui-ux-pro-max-skill（iOS 风格转场的视觉参考）
+- ponytail（控制输出长度）
+
+请先明确列出：本次任务你会加载哪几个技能，各自用来解决哪个问题。
+
+═══════════════════════════════════════
+执行方式
+═══════════════════════════════════════
+
+先输出方案报告（不是根因报告，因为这是新需求不是 bug），等确认后再动手。
+
+═══════════════════════════════════════
+用户需求
+═══════════════════════════════════════
+
+现状：编辑页从右侧滑入，列表页等到编辑页完全盖满后才隐藏。
+用户观感："编辑页都打开了，列表页才从下层消失，卡。"
+
+期望：列表页和编辑页要"同时动"，互相配合。
+
+参考：iOS 原生转场动画——push 时，列表页会轻微左移 + 变暗，
+新页面从右侧滑入；pop 时反向。两个页面同时动，有层次感。
+
+═══════════════════════════════════════
+具体要实现的动画
+═══════════════════════════════════════
+
+【列表页 → 编辑页】（进入）
+
+时间轴（同时开始）：
+- 编辑页：从 translateX(100%) 滑入到 translateX(0)，320ms
+- 列表页：从 translateX(0) 移到 translateX(-30%)，320ms
+- 列表页：透明度从 1 降到 0.6，320ms
+- 列表页：轻微缩放 scale(1) → scale(0.96)，320ms
+
+两个页面用相同的 easing（cubic-bezier(0.32, 0.72, 0, 1)）和时长（320ms）。
+它们在同一帧开始，同一帧结束。
+
+【编辑页 → 列表页】（返回）
+
+时间轴（同时开始）：
+- 编辑页：从 translateX(0) 滑出到 translateX(100%)，320ms
+- 列表页：从 translateX(-30%) 回到 translateX(0)，320ms
+- 列表页：透明度从 0.6 恢复 1，320ms
+- 列表页：缩放从 0.96 恢复 1，320ms
+
+同样是两个页面同时动，同一帧结束。
+
+═══════════════════════════════════════
+技术实现要求
+═══════════════════════════════════════
+
+1. 列表页的 transform 和 opacity 必须在切换期间可控
+   - 检查 #list-view 是否已有 transition。
+   - 如果没有，添加：
+     #list-view {
+       transition: transform 320ms cubic-bezier(0.32, 0.72, 0, 1),
+                   opacity 320ms cubic-bezier(0.32, 0.72, 0, 1);
+       transform-origin: center right;
+     }
+   - transform-origin 建议设为 center right（右侧被推开）或者 center（居中缩放）。
+
+2. 进入编辑页时（show('editor')）：
+   - 保持 listView 的 .active（可见）
+   - 立即加一个类，比如 .pushed，触发列表页左移 + 变暗 + 缩放：
+     #list-view.pushed {
+       transform: translateX(-30%) scale(0.96);
+       opacity: 0.6;
+     }
+   - 同一帧，编辑页开始滑入
+   - 320ms 后（编辑页动画结束），把 listView 设为 visibility: hidden
+     （但保留 .pushed 类，因为下次返回时要从这里滑回来）
+
+3. 返回列表页时（hideEditorWithTransition）：
+   - 立即把 listView 的 visibility 设为 visible（保留 .pushed 状态）
+   - 同一帧，编辑页开始滑出，列表页移除 .pushed：
+     listView.classList.remove('pushed');
+   - 320ms 后，编辑页滑出完成，清理所有临时状态
+
+4. 性能保障：
+   - 切换期间，给 #list-view 和 #editor-view 都加 will-change: transform, opacity
+   - 切换结束后 300ms 移除 will-change
+   - 切换期间保持 .no-blur（冻结 backdrop-filter），避免重绘
+
+5. z-index 层叠：
+   - #list-view z-index 低（比如 1）
+   - #editor-view z-index 高（比如 2）
+   - 确保编辑页在列表页之上，滑入时能盖住列表页
+
+═══════════════════════════════════════
+CSS 具体规则
+═══════════════════════════════════════
+
+/* 列表页基础 transition */
+#list-view {
+  transition: transform 320ms cubic-bezier(0.32, 0.72, 0, 1),
+              opacity 320ms cubic-bezier(0.32, 0.72, 0, 1);
+  transform-origin: center right;
+}
+
+/* 列表页被推开的状态 */
+#list-view.pushed {
+  transform: translateX(-30%) scale(0.96);
+  opacity: 0.6;
+}
+
+═══════════════════════════════════════
+JS 改动
+═══════════════════════════════════════
+
+【进入编辑页】
+function showEditor(noteId) {
+  listView.classList.add('pushed');
+  listView.classList.add('active');
+
+  editorView.classList.add('active', 'entering');
+  requestAnimationFrame(() => {
+    editorView.classList.remove('entering');
+  });
+
+  setTimeout(() => {
+    listView.style.visibility = 'hidden';
+  }, 320);
+}
+
+【返回列表页】
+function hideEditorWithTransition() {
+  listView.style.visibility = '';
+  listView.classList.add('active');
+
+  editorView.classList.add('leaving');
+  listView.classList.remove('pushed');
+
+  setTimeout(() => {
+    editorView.classList.remove('active', 'leaving');
+    listView.style.visibility = '';
+  }, 320);
+}
+
+具体实现细节根据现有代码调整，以上为逻辑示意。
+
+═══════════════════════════════════════
+严格约束
+═══════════════════════════════════════
+
+- 只改转场动画，不动其他功能。
+- 不动布局宽度。
+- 不改功能逻辑（数据、事件、IndexedDB 都不动）。
+- 保留液态玻璃视觉效果。
+- 保留 .no-blur 冻结逻辑。
+- 保留上几轮修复的成果（返回不闪蓝底、胶囊文字单行等）。
+- 动画用 transform + opacity，不碰 layout 属性。
+- 两个页面用相同时长和 easing。
+
+═══════════════════════════════════════
+输出要求
+═══════════════════════════════════════
+
+第一步（先输出）：
+- 方案报告：列出要改的 CSS 规则、JS 函数、关键行号
+- 特别说明：如何确保两个页面"同一帧开始、同一帧结束"
+- 特别说明：如何不破坏之前的修复（返回不闪蓝底）
+
+第二步（等用户确认后再做）：
+- 实际修改
+- 报告文件大小、关键行号、验证结果
