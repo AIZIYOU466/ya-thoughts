@@ -158,8 +158,9 @@
 
   .view { display: none; height: 100vh; height: 100dvh; }
   .view.active { display: flex; flex-direction: column; }
-  /* 编辑页：透明底让全局渐变透过；始终 display:flex + visibility:hidden 保持渲染（不摘树），
-     返回时 DOM/动画不重播。约束2：.editor-panel 玻璃写作面板提供文字对比度。 */
+  /* 编辑页：不透明底板（body 同款渐变）在滑入时完全遮住列表页，不再透字；
+     始终 display:flex + visibility:hidden 保持渲染（不摘树），返回时 DOM/动画不重播。
+     约束2：.editor-panel 玻璃写作面板提供文字对比度（模糊对象=编辑页自己的底板）。 */
   #editor-view {
     position: fixed;
     top: 0; right: 0; bottom: 0; left: 0;
@@ -169,7 +170,8 @@
     display: flex;
     flex-direction: column;
     z-index: 2;
-    background: transparent;
+    /* 不透明底板：与 body 底渐变同源（160deg + 主题变量），滑入/滑出全程盖住列表页 */
+    background: linear-gradient(160deg, var(--page-grad-a), var(--page-grad-b));
     visibility: hidden;
     opacity: 0;
     pointer-events: none;
@@ -1470,7 +1472,7 @@
 
   <div id="about-mask">
     <div id="about-card" role="dialog" aria-modal="true">
-      <h2>极简备忘录 v1.5.2</h2>
+      <h2>极简备忘录 v1.5.3</h2>
       <p>如果它帮到你，可以请我喝杯咖啡</p>
       <button id="about-close">关闭</button>
     </div>
