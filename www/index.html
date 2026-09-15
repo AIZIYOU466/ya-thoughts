@@ -176,7 +176,7 @@
     opacity: 0;
     pointer-events: none;
     box-sizing: border-box;
-    transform: translateX(100%);
+    transform: translate3d(100%, 0, 0);
     transition: transform 320ms cubic-bezier(0.22, 1, 0.36, 1),
                 opacity 320ms cubic-bezier(0.22, 1, 0.36, 1);
   }
@@ -198,16 +198,16 @@
   /* 页面切换：320ms cubic-bezier(0.22,1,0.36,1) + opacity（约束3） */
   #editor-view.active {
     visibility: visible;
-    transform: translateX(0);
+    transform: translate3d(0, 0, 0);
     opacity: 1;
     pointer-events: auto;
   }
   #editor-view.active.entering {
-    transform: translateX(100%);
+    transform: translate3d(100%, 0, 0);
     opacity: 0;
   }
   #editor-view.active.leaving {
-    transform: translateX(100%);
+    transform: translate3d(100%, 0, 0);
     opacity: 0;
   }
   /* 切换期间冻结 backdrop-filter，避免多元素同时重绘模糊导致掉帧 */
@@ -1472,7 +1472,7 @@
 
   <div id="about-mask">
     <div id="about-card" role="dialog" aria-modal="true">
-      <h2>极简备忘录 v1.5.3</h2>
+      <h2>极简备忘录 v1.5.4</h2>
       <p>如果它帮到你，可以请我喝杯咖啡</p>
       <button id="about-close">关闭</button>
     </div>
@@ -3389,7 +3389,7 @@
     listView.style.willChange = 'transform, opacity';
     editorView.style.willChange = 'transform, opacity';
     headerEl.classList.add('freeze-blur'); // 滑出期间临时关顶栏 blur，避免合成闪白（约束3）
-    editorView.classList.add('leaving'); // → translateX(100%) + opacity 0，从任何当前位置都能过渡
+    editorView.classList.add('leaving'); // → translate3d(100%,0,0) + opacity 0，从任何当前位置都能过渡
     watchEditorAnimEnd();
   }
 
@@ -3400,12 +3400,18 @@
       pendingListShow = false;
       clearTimeout(noBlurClearTimer); // 清除可能残留的 no-blur 清除定时器
       finishEditorAnim(); // 上一次滑出未结束也要先复位，保证本次一定能进入
+      // 根因修复：finishEditorAnim() 内部会排一个 80ms 的 no-blur/will-change 清理定时器；
+      // 本函数马上要重新挂 no-blur/will-change 并启动 320ms 滑入动画，不清掉它会在
+      // t≈80ms 提前移除，让动画剩余 3/4 处于「无合成层 + 重新激活 backdrop-filter」的
+      // 高成本状态，收尾慢速段掉帧（编辑页滑入末尾顿挫根因）。
+      clearTimeout(noBlurClearTimer);
+      noBlurClearTimer = null;
       // 切换前：冻结 backdrop-filter + 提升合成层
       document.body.classList.add('no-blur');
       listView.style.willChange = 'transform, opacity';
       editorView.style.willChange = 'transform, opacity';
       headerEl.classList.remove('freeze-blur'); // 防御：确保进入编辑页时模糊恢复
-      editorView.classList.add('active');       // visibility:visible + translateX(0)
+      editorView.classList.add('active');       // visibility:visible + translate3d(0,0,0)
       editorView.classList.add('entering');     // 先摆到屏外起点 100%
       editorView.style.transition = 'none';     // 摆起点不参与过渡（含中途改道时避免来回弹）
       void editorView.offsetWidth;              // 强制重排，锁定起点
