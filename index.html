@@ -219,7 +219,15 @@
   .no-blur .editor-panel,
   .no-blur .editor-bar,
   .no-blur .editor-toolbar,
-  .no-blur #new-bar {
+  .no-blur #new-bar,
+  .no-blur #undo-toast {
+    -webkit-backdrop-filter: none !important;
+    backdrop-filter: none !important;
+  }
+  /* 分批恢复 backdrop-filter：移除 .no-blur 后底部胶囊再冻结一帧（.no-blur-rest），
+     避免 list-header/search-wrap/seg-bar/new-cap/new-bar 5 个玻璃面同帧重新采样 */
+  .no-blur-rest .new-cap,
+  .no-blur-rest #new-bar {
     -webkit-backdrop-filter: none !important;
     backdrop-filter: none !important;
   }
@@ -1472,7 +1480,7 @@
 
   <div id="about-mask">
     <div id="about-card" role="dialog" aria-modal="true">
-      <h2>极简备忘录 v1.5.5</h2>
+      <h2>极简备忘录 v1.5.6</h2>
       <p>如果它帮到你，可以请我喝杯咖啡</p>
       <button id="about-close">关闭</button>
     </div>
@@ -1636,6 +1644,7 @@
   var notes = []; // 内存缓存，启动时从 IndexedDB 加载
   var currentId = null;
   var saveTimer = null;
+  var pendingSaveId = null; // backToList 捕获的离开便签：currentId 置 null 后写库仍可定位
   var statusTimer = null;
   var imgUrlCache = {}; // 图片 id → objectURL，本会话内复用
   var stripRenderToken = 0; // 防止并发渲染重复追加缩略图
@@ -3343,12 +3352,19 @@
     editorView.classList.remove('entering', 'leaving');
     // 清除上一次的 noBlurClearTimer，防止泄漏
     clearTimeout(noBlurClearTimer);
+    document.body.classList.remove('no-blur-rest'); // 防御：中断路径清理分批恢复残留
     // 延迟清除 no-blur 和 will-change，确保动画完全结束
     noBlurClearTimer = setTimeout(function () {
+      // 分批恢复 backdrop-filter：先恢复顶栏/搜索/分段（编辑层此刻已隐藏，恢复成本≈0），
+      // 底部胶囊再冻结一帧恢复——避免 5 个玻璃面同帧重新采样造成的重绘尖峰（返回瞬间卡/闪根因之一）
+      document.body.classList.add('no-blur-rest');
       document.body.classList.remove('no-blur');
-      listView.style.willChange = '';
-      editorView.style.willChange = '';
-      noBlurClearTimer = null;
+      noBlurClearTimer = setTimeout(function () {
+        document.body.classList.remove('no-blur-rest');
+        listView.style.willChange = '';
+        editorView.style.willChange = '';
+        noBlurClearTimer = null;
+      }, 16); // 下一帧恢复底部胶囊
     }, 80); // 动画结束后 80ms 再移除，避免视觉闪烁
     if (wasLeaving) {
       editorView.classList.remove('active'); // 去掉 .active → visibility:hidden + pointer-events:none
@@ -3384,6 +3400,7 @@
     if (editorAnimCleanup) { editorAnimCleanup(); editorAnimCleanup = null; } // 取消在途动画（同时清除 noBlurClearTimer）
     // 切换前：冻结 backdrop-filter + 提升合成层
     clearTimeout(noBlurClearTimer); // 清除上一次残留的 no-blur 清除定时器
+    document.body.classList.remove('no-blur-rest'); // 同步清理分批恢复残留
     document.body.classList.add('no-blur');
     listView.classList.add('active'); // 提前让列表页可见，避免编辑页滑出时闪蓝底
     listView.style.willChange = 'transform, opacity';
@@ -3437,6 +3454,7 @@
     var myToken = ++openToken; // 本次的入场号；后续在途异步都带着它校验
     var note = noteById(id);
     if (!note) return;
+    pendingSaveId = null; // 上一条便签的离开写入目标已作废，换绑当前便签
     currentId = id;
     editorEl.innerHTML = upgradeLegacyMarkers(note.content); // 同步写入，无竞态
     hydrateImages(editorEl, myToken); // 异步补 src/pos，完成后校验 token
@@ -3484,14 +3502,17 @@
     openNote(note.id);
   }
 
-  function autosave() {
-    if (!currentId) return;
-    var note = noteById(currentId);
+  // 写库提交：只落库，不读 DOM、不依赖 currentId。正文在 input 时已同步进内存 note 对象，
+  // 所以定时器即使晚于返回/切便签触发也不会丢数据、不会把别的便签内容写串。
+  function commitSave(id) {
+    var nid = id || currentId || pendingSaveId;
+    var note = noteById(nid);
     if (!note) return;
-    note.content = editorEl.innerHTML.replace(/ class="lp-dim"/g, ''); // 序列化成 HTML 存库；长按反馈类不入库
-    note.updatedAt = Date.now();
-    syncImagesStars(); // 重点标注与正文一起入库
-    invalidateStarFlagCache(currentId);
+    if (!id || id === currentId) {
+      // 编辑器仍显示该便签：同步图片重点标注 + 清缓存（切换后跳过，避免读错 DOM）
+      syncImagesStars();
+      invalidateStarFlagCache(nid);
+    }
     dbPut(note).then(function () {
       saveStatus.classList.add('show');
       clearTimeout(statusTimer);
@@ -3504,6 +3525,7 @@
   function backToList() {
     openToken++; // 离开编辑器，作废该笔记所有在途异步加载
     var leavingId = currentId;
+    pendingSaveId = leavingId; // 捕获离开便签：currentId 置 null 后写库仍能定位（修复 1.5.5 延迟保存丢失）
     // 空便签自动清理，避免留下空条目
     var note = noteById(leavingId);
     var wasDeleted = false;
@@ -3515,6 +3537,9 @@
     }
     currentId = null;
     clearTimeout(wordCountTimer); // 取消在途的字数统计，避免空引用
+    clearTimeout(undoTimer);      // 同 wordCount：取消在途撤销快照序列化，避免滑出动画中途全量 innerHTML
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(function () { commitSave(leavingId); }, 450); // 最终写库：写入 input 时已更新的内存对象，blur 是否触发都不丢
     if (wasDeleted) {
       // 空便签已被清理：同步移除卡片（单节点，开销可忽略），列表立即一致
       var delLi = listEl.querySelector('li[data-id="' + leavingId + '"]');
@@ -4545,18 +4570,24 @@
   });
 
   editorEl.addEventListener('input', function () {
+    // 内存先行：立即把最新正文同步进 note 对象（不落库）→ 打字→返回不再有丢失窗口，
+    // 列表卡片定向更新、blur/防抖/保底写入都基于这个已更新的对象。
+    var note = noteById(currentId);
+    if (note) {
+      note.content = editorEl.innerHTML.replace(/ class="lp-dim"/g, ''); // 序列化成 HTML；长按反馈类不入库
+      note.updatedAt = Date.now();
+    }
     clearTimeout(saveTimer);
-    saveTimer = setTimeout(autosave, 1000); // 输入停止 1 秒后自动保存
+    saveTimer = setTimeout(commitSave, 1000); // 输入停止 1 秒后写库
     scheduleUndoSnapshot(); // 内容变化延迟 500ms 压入撤销快照（防抖）
     scheduleWordCount(); // 字数统计防抖 300ms
   });
   editorEl.addEventListener('blur', function () {
-    // 编辑后点返回：blur 与 click 同一手势任务，同步跑 autosave（全量 HTML 序列化 +
-    // IndexedDB 事务初始化）会阻塞滑出动画首帧。改为动画结束后再保存（450ms>320+80，
-    // 与卡片定向更新、.no-blur 移除错开），数据语义不变，仍走 autosave→dbPut；
-    // 页面关闭前 beforeunload 仍会同步保存兜底。
+    // 编辑后点返回：blur 与 click 同一手势任务。写库已与 DOM 解耦（commitSave 只写
+    // input 时同步更新的内存对象），此处延迟 450ms>320+80 落库，不阻塞滑出首帧；
+    // backToList 还会用离开便签 id 显式重排一次最终写入并吞掉本定时器，blur 是否触发都不丢。
     clearTimeout(saveTimer);
-    saveTimer = setTimeout(autosave, 450);
+    saveTimer = setTimeout(commitSave, 450);
   });
 
   /* ---------- 底部常驻格式按钮：加粗 / 高亮（对保存的选区操作） ---------- */
@@ -4722,7 +4753,7 @@
   });
 
   window.addEventListener('beforeunload', function () {
-    if (currentId) autosave();
+    if (currentId || pendingSaveId) commitSave();
   });
 
   // 应用内提醒：启动时检查已到期未完成的待办，alert 提示（最多列 5 条）
