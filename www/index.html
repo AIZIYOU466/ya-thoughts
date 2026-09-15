@@ -1472,7 +1472,7 @@
 
   <div id="about-mask">
     <div id="about-card" role="dialog" aria-modal="true">
-      <h2>极简备忘录 v1.5.4</h2>
+      <h2>极简备忘录 v1.5.5</h2>
       <p>如果它帮到你，可以请我喝杯咖啡</p>
       <button id="about-close">关闭</button>
     </div>
@@ -3515,82 +3515,93 @@
     }
     currentId = null;
     clearTimeout(wordCountTimer); // 取消在途的字数统计，避免空引用
+    if (wasDeleted) {
+      // 空便签已被清理：同步移除卡片（单节点，开销可忽略），列表立即一致
+      var delLi = listEl.querySelector('li[data-id="' + leavingId + '"]');
+      if (delLi) delLi.remove();
+    }
     // Bug4：返回列表——定向更新这一条卡片，不全量 renderList（innerHTML 重建全列表）。
     // renderList 重建所有卡片 + 重置滚动位置 → 主线程卡顿 + 列表跳回顶部 =整页重加载感/闪动。
     // 定向更新只改该卡片的标题/摘要/时间/待办态文本，其余卡片和滚动位置完全不动。
+    // 根因修复：整块更新推迟到编辑页完全滑出隐藏后再执行——titleOf/excerptOf 会全量解析
+    // 正文、摘要重测要强制回流；编辑后内容真变，同步执行会拉长「点击返回→动画首帧」
+    //（与 blur 同步 autosave 叠加成返回卡顿主因）。滑出期间列表短暂显示旧内容，
+    // 动画结束瞬间刷新（既定设计）；编辑器滑入/其他路径不受影响。
     if (leavingId != null && !wasDeleted) {
-      var noteLeft = noteById(leavingId);
-      var li = listEl.querySelector('li[data-id="' + leavingId + '"]');
-      if (noteLeft && li) {
-        // 更新标题（含搜索高亮）
-        var tEl = li.querySelector('.title');
-        if (tEl) tEl.innerHTML = searchQuery ? highlightText(titleOf(noteLeft), searchQuery) : titleOf(noteLeft);
-        // 更新时间（创建于/编辑于两行）
-        var tmEl = li.querySelector('.time');
-        if (tmEl) renderNoteTime(tmEl, noteLeft);
-        // 更新摘要（含搜索高亮，恢复展开态）
-        var sEl = li.querySelector('.summary');
-        if (sEl) {
-          sEl.innerHTML = searchQuery ? highlightText(excerptOf(noteLeft), searchQuery) : excerptOf(noteLeft);
-          sEl.classList.toggle('expanded', !!expandedSummaries[leavingId]);
-          // 重建摘要展开按钮（等编辑页完全滑出隐藏后再测量，避免滑出首帧在列表上做强制回流）
-          var wrapEl = sEl.parentElement;
-          if (wrapEl) {
-            var oldToggle = wrapEl.querySelector('.summary-toggle');
-            if (oldToggle) oldToggle.remove();
-            wrapEl.classList.remove('has-toggle');
-            (function (nid, sE, wE) {
-              var measure = function () {
-                // 编辑页还在（滑出中/滑入中）→ 等它隐藏后再测量挂按钮
-                if (editorView.classList.contains('active')) { requestAnimationFrame(measure); return; }
-                var btn = buildSummaryToggle(nid, sE);
-                if (btn) { wE.classList.add('has-toggle'); wE.appendChild(btn); }
-              };
-              measure();
-            })(leavingId, sEl, wrapEl);
-          }
-        }
-        // 更新待办完成态（编辑器内可切换）
-        if (isTodo(noteLeft)) {
-          li.classList.add('is-todo');
-          var chk = li.querySelector('.todo-chk');
-          if (chk) chk.classList.toggle('on', isDone(noteLeft));
-          li.classList.toggle('is-done', isDone(noteLeft));
-        }
-        // 更新 due角标（编辑器内可修改截止时间）
-        var badge = li.querySelector('.due-badge');
-        if (isTodo(noteLeft) && !isDone(noteLeft) && noteLeft.dueAt) {
-          var dTxt = dueText(noteLeft);
-          if (!badge) {
-            var face = li.querySelector('.swipe-body');
-            if (face) {
-              badge = document.createElement('div');
-              badge.className = 'due-badge';
-              face.appendChild(badge);
+      (function (nid) {
+        var apply = function () {
+          // 编辑页还在（滑出中/滑入中）→ 等它隐藏后再更新，避免动画期间在列表上做回流
+          if (editorView.classList.contains('active')) { requestAnimationFrame(apply); return; }
+          var noteLeft = noteById(nid);
+          var li = listEl.querySelector('li[data-id="' + nid + '"]');
+          if (noteLeft && li) {
+            // 更新标题（含搜索高亮）
+            var tEl = li.querySelector('.title');
+            if (tEl) tEl.innerHTML = searchQuery ? highlightText(titleOf(noteLeft), searchQuery) : titleOf(noteLeft);
+            // 更新时间（创建于/编辑于两行）
+            var tmEl = li.querySelector('.time');
+            if (tmEl) renderNoteTime(tmEl, noteLeft);
+            // 更新摘要（含搜索高亮，恢复展开态）
+            var sEl = li.querySelector('.summary');
+            if (sEl) {
+              sEl.innerHTML = searchQuery ? highlightText(excerptOf(noteLeft), searchQuery) : excerptOf(noteLeft);
+              sEl.classList.toggle('expanded', !!expandedSummaries[nid]);
+              // 重建摘要展开按钮（等编辑页完全滑出隐藏后再测量，避免滑出首帧在列表上做强制回流）
+              var wrapEl = sEl.parentElement;
+              if (wrapEl) {
+                var oldToggle = wrapEl.querySelector('.summary-toggle');
+                if (oldToggle) oldToggle.remove();
+                wrapEl.classList.remove('has-toggle');
+                (function (nid2, sE, wE) {
+                  var measure = function () {
+                    // 编辑页还在（滑出中/滑入中）→ 等它隐藏后再测量挂按钮
+                    if (editorView.classList.contains('active')) { requestAnimationFrame(measure); return; }
+                    var btn = buildSummaryToggle(nid2, sE);
+                    if (btn) { wE.classList.add('has-toggle'); wE.appendChild(btn); }
+                  };
+                  measure();
+                })(nid, sEl, wrapEl);
+              }
             }
+            // 更新待办完成态（编辑器内可切换）
+            if (isTodo(noteLeft)) {
+              li.classList.add('is-todo');
+              var chk = li.querySelector('.todo-chk');
+              if (chk) chk.classList.toggle('on', isDone(noteLeft));
+              li.classList.toggle('is-done', isDone(noteLeft));
+            }
+            // 更新 due角标（编辑器内可修改截止时间）
+            var badge = li.querySelector('.due-badge');
+            if (isTodo(noteLeft) && !isDone(noteLeft) && noteLeft.dueAt) {
+              var dTxt = dueText(noteLeft);
+              if (!badge) {
+                var face = li.querySelector('.swipe-body');
+                if (face) {
+                  badge = document.createElement('div');
+                  badge.className = 'due-badge';
+                  face.appendChild(badge);
+                }
+              }
+              if (badge) {
+                badge.className = 'due-badge' + (dTxt === '已过期' ? ' overdue' : '');
+                badge.textContent = dTxt;
+                badge.dataset.id = nid;
+              }
+              li.classList.add('has-due');
+            } else if (badge) {
+              badge.remove();
+              li.classList.remove('has-due');
+            }
+          } else if (!noteLeft && li) {
+            // 空便签已被清理，移除卡片
+            li.remove();
+          } else {
+            // li 不存在或过滤器结构变化，安全回退全量重建（列表已可见，无需再 show('list')）
+            renderList();
           }
-          if (badge) {
-            badge.className = 'due-badge' + (dTxt === '已过期' ? ' overdue' : '');
-            badge.textContent = dTxt;
-            badge.dataset.id = leavingId;
-          }
-          li.classList.add('has-due');
-        } else if (badge) {
-          badge.remove();
-          li.classList.remove('has-due');
-        }
-      } else if (!noteLeft && li) {
-        // 空便签已被清理，移除卡片
-        li.remove();
-      } else {
-        // li 不存在或过滤器结构变化，安全回退全量重建
-        renderList();
-        show('list');
-        return;
-      }
-    } else if (leavingId != null && wasDeleted) {
-      var delLi = listEl.querySelector('li[data-id="' + leavingId + '"]');
-      if (delLi) delLi.remove();
+        };
+        apply();
+      })(leavingId);
     }
     // 更新条数与空态
     var sorted = sortedNotesFor(segFilter).filter(matchesSearch);
@@ -4539,7 +4550,14 @@
     scheduleUndoSnapshot(); // 内容变化延迟 500ms 压入撤销快照（防抖）
     scheduleWordCount(); // 字数统计防抖 300ms
   });
-  editorEl.addEventListener('blur', autosave);
+  editorEl.addEventListener('blur', function () {
+    // 编辑后点返回：blur 与 click 同一手势任务，同步跑 autosave（全量 HTML 序列化 +
+    // IndexedDB 事务初始化）会阻塞滑出动画首帧。改为动画结束后再保存（450ms>320+80，
+    // 与卡片定向更新、.no-blur 移除错开），数据语义不变，仍走 autosave→dbPut；
+    // 页面关闭前 beforeunload 仍会同步保存兜底。
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(autosave, 450);
+  });
 
   /* ---------- 底部常驻格式按钮：加粗 / 高亮（对保存的选区操作） ---------- */
 
