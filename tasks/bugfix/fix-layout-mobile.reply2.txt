@@ -1,0 +1,79 @@
+═══════════════════════════════════════
+对 git diff 清单的回复
+═══════════════════════════════════════
+
+你的 git diff 清单很完整。但根因判断"三者叠加"太笼统，需要更明确。
+请按以下顺序执行，用"控制变量法"找真正的根因。
+
+═══════════════════════════════════════
+第一步：先做最保守的修复
+═══════════════════════════════════════
+
+只做这两处，其他别动：
+
+1. #editor-view 添加 width: 100%
+   （你报告里说的，同意）
+
+2. body 添加显式宽度约束：
+   body { width: 100%; max-width: 100%; overflow-x: hidden; }
+   （防止任何元素横向溢出把布局视口撑大）
+
+然后让用户在手机上测试（真机或浏览器都行）。
+
+- 如果问题消失 → 根因是 #editor-view 缺宽度 或 横向溢出撑大视口。结束。
+- 如果问题还在 → 进入第二步。
+
+═══════════════════════════════════════
+第二步：控制变量法排查（如果第一步无效）
+═══════════════════════════════════════
+
+在第一步的基础上，逐条注释掉以下 CSS，每注释一条让用户测试一次：
+
+测试 1：注释 body::before 整块（145-148 行）
+测试 2：注释 #list-view 的 max-width: 640px（209 行）
+测试 3：注释 .editor-panel 的 backdrop-filter（170-183 行）
+测试 4：注释 #new-bar 整块（870-902 行）
+测试 5：注释 #editor-view 的 transform: translateX(100%)（163-173 行）
+测试 6：注释 #search-wrap 和 #seg-bar 的 backdrop-filter（346-349、605-609 行）
+
+每次注释后，让用户报告：内容宽度有没有变化？
+用表格记录：
+| 测试编号 | 注释的规则 | 用户反馈 | 结论 |
+
+一旦某条注释后问题消失，就是那一条引起的。恢复其他注释，只保留那一条的修复。
+
+═══════════════════════════════════════
+第三步：加临时诊断工具
+═══════════════════════════════════════
+
+如果控制变量法也找不到，加一段临时的 JS 调试代码，让用户在手机上打开 App 后能看到实际尺寸：
+
+```javascript
+// 临时诊断 — 完成后删除
+setTimeout(() => {
+  const info = {
+    'window.innerWidth': window.innerWidth,
+    'document.documentElement.clientWidth': document.documentElement.clientWidth,
+    'body.offsetWidth': document.body.offsetWidth,
+    'body.scrollWidth': document.body.scrollWidth,
+    '#list-view.offsetWidth': document.getElementById('list-view')?.offsetWidth,
+    '#editor-view.offsetWidth': document.getElementById('editor-view')?.offsetWidth,
+    'visualViewport.width': window.visualViewport?.width,
+  };
+  alert(JSON.stringify(info, null, 2));
+}, 1000);
+让用户在手机上打开 App，截图弹窗内容。
+这些数字能立刻告诉我们：
+
+· 布局视口宽度是多少（如果远大于 430，说明 viewport 有问题）
+· body 实际宽度是多少
+· #list-view 实际宽度是多少
+
+═══════════════════════════════════════
+第一步先执行，输出结果后暂停
+═══════════════════════════════════════
+
+先做第一步的两处修改 + 让用户测试。
+用户反馈后，再决定是否进入第二步。
+
+不要一次做太多。
