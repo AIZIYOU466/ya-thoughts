@@ -1619,6 +1619,12 @@
       </svg>
       <span>导入</span>
     </button>
+    <button id="menu-update-check">
+      <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/>
+      </svg>
+      <span>检查更新</span>
+    </button>
     <button id="menu-about">
       <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
         <circle cx="12" cy="12" r="9"/><path d="M12 8h.01"/><path d="M12 11v5"/>
@@ -4137,12 +4143,12 @@
     updateUndoButtons();
   }
 
-  function showUndoToast(text) {
+  function showUndoToast(text, ms) { // ms 可选：手动检查等场景按需延长展示时长
     var toast = $('undo-toast');
     toast.textContent = text;
     toast.classList.add('show');
     clearTimeout(undoToastTimer);
-    undoToastTimer = setTimeout(function () { toast.classList.remove('show'); }, 1500);
+    undoToastTimer = setTimeout(function () { toast.classList.remove('show'); }, ms || 1500);
   }
 
   /* ---------- 图片插入 ---------- */
@@ -5006,6 +5012,15 @@
   });
   $('menu-export').addEventListener('click', doExport);
   $('menu-import').addEventListener('click', doImport);
+  $('menu-update-check').addEventListener('click', function () {
+    closeMenu();
+    if (!(window.Capacitor && window.Capacitor.Plugins)) {
+      showUndoToast('检查更新仅在 App 内可用');
+      return;
+    }
+    showUndoToast('正在检查更新…', 8000); // 最长 3 镜像 × 3s 超时；结果 toast/弹窗会覆盖该提示
+    checkForUpdate(true); // 手动检查：不受 24h 免打扰限制，结果必达
+  });
   $('menu-about').addEventListener('click', function () {
     closeMenu();
     $('about-mask').classList.add('open');
@@ -5617,6 +5632,8 @@
     'https://ghfast.top/https://raw.githubusercontent.com/AIZIYOU466/ya-thoughts/main/version.json'
   ];
   var updateInfo = null; // 当前弹出的版本信息（供稍后/下载记录 dismiss）
+  var UPDATE_TIMEOUT = 3000; // 单个镜像超时（毫秒）：5s 缩短为 3s
+  var autoRetriesLeft = 2;   // 自动检查全镜像失败后的重试次数（+首轮共 3 轮；手动检查不重试）
 
   // 版本号 '1.6.0' 风格逐位数字比较：a>b→1，a<b→-1，相等→0（1.10.0 > 1.9.0，非字典序）
   function compareVersion(a, b) {
@@ -5630,31 +5647,73 @@
     return 0;
   }
 
-  // 轮询 3 个国内镜像：逐个 fetch（5 秒超时），第一个成功即用；全部失败静默
-  function checkForUpdate() {
-    if (!(window.Capacitor && window.Capacitor.Plugins)) return; // 浏览器环境跳过
-    var i = 0;
+  // 轮询 3 个国内镜像：逐个 fetch（3 秒超时），第一个成功即用；全部失败时
+  // 自动检查（force=false）会 2 秒后重试（最多 3 轮），手动检查（force=true）
+  // 不重试但始终 toast 反馈结果。全程 console.log 便于真机 adb logcat 定位。
+  function checkForUpdate(force) {
+    if (!(window.Capacitor && window.Capacitor.Plugins)) {
+      if (force) showUndoToast('检查更新仅在 App 内可用'); // 浏览器网页点菜单项也给反馈
+      return;
+    }
+    var i = 0, failures = [];
     (function next() {
-      if (i >= UPDATE_URLS.length) return; // 全部失败：静默
+      if (i >= UPDATE_URLS.length) { // 全部镜像失败
+        var reason = failures.length
+          ? failures.filter(function (v, k) { return failures.indexOf(v) === k; }).join(' / ')
+          : '未知错误';
+        console.log('[update] 全部镜像检查失败：' + reason);
+        if (force) {
+          showUndoToast('检查更新失败：' + reason);
+        } else if (autoRetriesLeft > 0) {
+          autoRetriesLeft--;
+          console.log('[update] 2 秒后自动重试（剩余 ' + autoRetriesLeft + ' 次）');
+          setTimeout(function () { checkForUpdate(false); }, 2000);
+        }
+        return;
+      }
       var url = UPDATE_URLS[i++];
       var ctrl = new AbortController();
-      var timer = setTimeout(function () { ctrl.abort(); }, 5000);
+      var timer = setTimeout(function () { ctrl.abort(); }, UPDATE_TIMEOUT);
+      console.log('[update] 尝试镜像 ' + i + '/' + UPDATE_URLS.length + '：' + url);
       fetch(url, { signal: ctrl.signal })
         .then(function (r) {
-          if (!r.ok) throw new Error('http');
+          if (!r.ok) throw { kind: 'http', status: r.status };
           return r.json();
         })
         .then(function (info) {
           clearTimeout(timer);
-          if (!info || !info.version) return;
-          if (compareVersion(CURRENT_VERSION, info.version) >= 0) return; // 不是新版本
-          // 同版本 24h 内已提醒过 → 不重复打扰
-          var dv = localStorage.getItem('update_dismissed_version');
-          var da = parseInt(localStorage.getItem('update_dismissed_at') || '0', 10);
-          if (dv === info.version && da && Date.now() - da < 24 * 3600 * 1000) return;
+          if (!info || !info.version) { // 200 但内容无效：当失败处理，继续换镜像
+            console.log('[update] 镜像返回无效版本信息');
+            failures.push('无效响应');
+            next();
+            return;
+          }
+          var cmp = compareVersion(CURRENT_VERSION, info.version);
+          if (cmp >= 0) { // 不是新版本（含版本同位：当前代码 == 已发布版本）
+            console.log('[update] 已是最新：本地 ' + CURRENT_VERSION + ' >= 远端 ' + info.version);
+            if (force) showUndoToast('已是最新版本 v' + CURRENT_VERSION);
+            return;
+          }
+          if (!force) { // 自动检查：同版本 24h 内已提醒过 → 不重复打扰；手动检查每次都查
+            var dv = localStorage.getItem('update_dismissed_version');
+            var da = parseInt(localStorage.getItem('update_dismissed_at') || '0', 10);
+            if (dv === info.version && da && Date.now() - da < 24 * 3600 * 1000) {
+              console.log('[update] 24h 内已提醒过 ' + info.version + '，跳过');
+              return;
+            }
+          }
+          console.log('[update] 发现新版本 ' + info.version + '，打开更新弹窗');
           showUpdateDialog(info);
         })
-        .catch(function () { clearTimeout(timer); next(); }); // 镜像失败：换下一个
+        .catch(function (err) {
+          clearTimeout(timer);
+          var reason = (err && err.name === 'AbortError') ? '超时'
+            : (err && err.kind === 'http') ? 'HTTP ' + err.status
+            : '网络错误';
+          console.log('[update] 镜像失败：' + reason);
+          failures.push(reason);
+          next();
+        });
     })();
   }
 
