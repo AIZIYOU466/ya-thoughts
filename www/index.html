@@ -2855,13 +2855,16 @@
     var dt = now - velSampleT;
     velSampleT = now;
     if (dt <= 0 || dt > 120) { velSamples.length = 0; return; } // 停顿/跳跃帧清零
-    velSamples.push(-sy / dt);
-    if (velSamples.length > 3) velSamples.shift();
+    velSamples.push({ v: -sy / dt, t: now });
+    // 保留最近 ~100ms 的采样，取中值防抖
+    while (velSamples.length > 0 && now - velSamples[0].t > 100) velSamples.shift();
   }
   function endScrollVelocity() {
-    var v = velSamples.length
-      ? velSamples.slice().sort(function (a, b) { return a - b; })[velSamples.length >> 1]
-      : 0;
+    var v = 0;
+    if (velSamples.length) {
+      var sorted = velSamples.slice().sort(function (a, b) { return a.v - b.v; });
+      v = sorted[sorted.length >> 1].v; // 中值
+    }
     velSamples.length = 0; velSampleT = 0;
     return v;
   }
@@ -2893,10 +2896,10 @@
       else applied *= 0.85;
     }
     el.scrollTop = top + applied * dt;
-    momentumVel = v * Math.pow(0.94, dt / 16.67); // 每帧 ~6% 衰减（按实际 dt 换算，帧率无关）
+    momentumVel = v * Math.pow(0.997, dt); // 减速度 ~0.3%/ms，接近 iOS 原生（0.998/ms）
     if (Math.abs(momentumVel) < 0.02) {
       if (el.scrollTop < -0.5 || el.scrollTop > max + 0.5) {
-        smoothSnapScroll(el, el.scrollTop < 0 ? 0 : max); // 越界停在边界外：温和归位
+        springSnapScroll(el, el.scrollTop < 0 ? 0 : max); // 越界：弹簧回弹
       } else {
         stopMomentum();
       }
@@ -2904,17 +2907,27 @@
     }
     momentumRaf = requestAnimationFrame(momentumStep);
   }
-  function smoothSnapScroll(el, target) { // 越界回弹：150ms easeOutCubic
+  // 弹簧回弹：模拟弹簧物理，τ≈250ms 阻尼≈0.85，过冲后自然收敛
+  function springSnapScroll(el, target) {
     stopMomentum();
-    var from = el.scrollTop, t0 = Date.now();
-    (function step() {
+    var from = el.scrollTop;
+    var startT = performance.now();
+    var tau = 250;   // 弹簧时间常数 ms
+    var zeta = 0.85; // 阻尼比（<1 欠阻尼 = 有过冲）
+    var omega = Math.sqrt(1 - zeta * zeta) / tau; // 角频率 rad/ms
+    (function step(ts) {
       if (!el.isConnected) return;
-      var p = Math.min(1, (Date.now() - t0) / 150);
-      var k = 1 - Math.pow(1 - p, 3);
-      el.scrollTop = from + (target - from) * k;
-      if (p < 1) momentumRaf = requestAnimationFrame(step);
-      else momentumRaf = 0;
-    })();
+      var elapsed = ts - startT;
+      // 位移 = A * e^(-ζt/τ) * cos(ωt)
+      var disp = (from - target) * Math.exp(-zeta * elapsed / tau) * Math.cos(omega * elapsed);
+      el.scrollTop = target + disp;
+      if (Math.abs(el.scrollTop - target) < 0.3 && elapsed > 100) {
+        el.scrollTop = target;
+        momentumRaf = 0;
+        return;
+      }
+      momentumRaf = requestAnimationFrame(step);
+    })(performance.now());
   }
 
   // 手势启动（挂在每张 .note-item 的 touchstart 上，passive:true 不 preventDefault）：
@@ -4792,6 +4805,7 @@
   }
 
   function closeViewer() {
+    resetViewerTransform(); // 关闭时彻底清理动画/手势状态，防止 vAnimating 卡死
     viewerEl.classList.remove('open');
     viewerImgEl.removeAttribute('src');
     document.body.style.overflow = '';
@@ -5625,7 +5639,7 @@
 
   /* ---------- 应用内更新（国内镜像；只 Capacitor 环境生效，浏览器静默跳过） ---------- */
   var UPDATE_MODAL = $('update-modal');
-  var CURRENT_VERSION = '1.6.1'; // 与 android/app/build.gradle 的 versionName 保持一致
+  var CURRENT_VERSION = '1.6.2'; // 与 android/app/build.gradle 的 versionName 保持一致
   var UPDATE_URLS = [
     'https://cdn.jsdelivr.net/gh/AIZIYOU466/ya-thoughts@main/version.json',
     'https://gh-proxy.com/https://raw.githubusercontent.com/AIZIYOU466/ya-thoughts/main/version.json',
