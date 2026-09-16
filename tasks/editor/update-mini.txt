@@ -1,0 +1,132 @@
+技能：加载 ui-ux-pro-max-skill、motion-web、ponytail。
+先输出方案，确认后再动手。
+
+任务：给 Ya thoughts 加"应用内更新"，全程用国内镜像。
+
+═══════════════════════
+一、version.json（仓库根目录新增）
+═══════════════════════
+{
+  "version": "1.6.0",
+  "notes": "更新说明，多行用 \n",
+  "apkUrl": "https://gh-proxy.com/https://github.com/AIZIYOU466/ya-thoughts/releases/download/v1.6.0/app-release.apk",
+  "apkUrlBackup": "https://ghfast.top/https://github.com/AIZIYOU466/ya-thoughts/releases/download/v1.6.0/app-release.apk"
+}
+
+═══════════════════════
+二、改 .github/workflows/build-apk.yml
+═══════════════════════
+1. 文件顶部加：
+   permissions:
+     contents: write
+
+2. Build APK 之后加三步：
+
+- name: Extract version
+  id: get_version
+  run: |
+    VERSION=$(grep -oP 'versionName "\K[^"]+' android/app/build.gradle)
+    echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+- name: Generate version.json
+  run: |
+    V="${{ steps.get_version.outputs.version }}"
+    R="AIZIYOU466/ya-thoughts"
+    cat > version.json << EOF
+    {
+      "version": "$V",
+      "notes": "自动构建 $V",
+      "apkUrl": "https://gh-proxy.com/https://github.com/$R/releases/download/v$V/app-release.apk",
+      "apkUrlBackup": "https://ghfast.top/https://github.com/$R/releases/download/v$V/app-release.apk"
+    }
+    EOF
+
+- name: Commit version.json
+  run: |
+    git config user.name "github-actions[bot]"
+    git config user.email "github-actions[bot]@users.noreply.github.com"
+    git add version.json
+    git commit -m "chore: update version.json [skip ci]" || echo "no changes"
+    git push
+
+3. 再加一步创建 Release：
+- name: Create Release
+  uses: softprops/action-gh-release@v2
+  with:
+    tag_name: v${{ steps.get_version.outputs.version }}
+    name: Ya thoughts v${{ steps.get_version.outputs.version }}
+    files: android/app/build/outputs/apk/release/app-release.apk
+    make_latest: true
+  env:
+    GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+⚠️ 死循环避免：commit message 必须带 [skip ci]。
+⚠️ 同 tag 重复推送会失败，所以每次必须改 versionName。
+
+═══════════════════════
+三、App 内逻辑（index.html）
+═══════════════════════
+常量：
+const CURRENT_VERSION = '1.6.0';
+const URLS = [
+  'https://cdn.jsdelivr.net/gh/AIZIYOU466/ya-thoughts@main/version.json',
+  'https://gh-proxy.com/https://raw.githubusercontent.com/AIZIYOU466/ya-thoughts/main/version.json',
+  'https://ghfast.top/https://raw.githubusercontent.com/AIZIYOU466/ya-thoughts/main/version.json'
+];
+
+compareVersion(a, b)：按 '.' 分割逐位数字比较，返回 1/-1/0。
+
+checkForUpdate()：
+1. 依次 fetch 每个 URL，5 秒超时，第一个成功就 break。
+2. 全部失败 → 静默 return。
+3. compareVersion(CURRENT_VERSION, info.version) >= 0 → return。
+4. 检查 localStorage: update_dismissed_version 和 update_dismissed_at，
+   同版本且 <24h → return。
+5. showUpdateDialog(info)。
+
+启动时：setTimeout(checkForUpdate, 2000)。
+
+只在 window.Capacitor 存在时执行。
+
+═══════════════════════════
+四、弹窗 UI（液态玻璃风格）
+═══════════════════════════
+HTML：
+<div id="update-modal" hidden>
+  <div class="update-card">
+    <div class="update-title">发现新版本</div>
+    <div class="update-version"></div>
+    <div class="update-notes"></div>
+    <div class="update-actions">
+      <button id="update-later">稍后</button>
+      <button id="update-download">下载更新</button>
+    </div>
+  </div>
+</div>
+
+CSS 要点：
+- #update-modal: fixed inset 0, z-index 9999, bg rgba(0,0,0,0.5),
+  flex 居中, backdrop-filter blur(4px)
+- .update-card: --glass-bg-strong + --glass-blur + 边框 + 圆角 20px,
+  padding 24px, max-width 320px
+- .update-notes: 14px, 行高 1.6, max-height 120px, overflow-y auto,
+  white-space pre-wrap
+- .update-actions: flex gap 12px
+- #update-later: 灰字 #6B7280
+- #update-download: 主色胶囊 #2E6BE6 白字
+- 入场：scale(0.95→1) + opacity(0→1), 200ms cubic-bezier(0.32,0.72,0,1)
+
+交互：
+- "稍后": localStorage 记 version + Date.now()，关闭弹窗
+- "下载更新": window.open(info.apkUrl) + 记录 dismiss
+- 点遮罩: 等同"稍后"
+
+═══════════════════════
+约束
+═══════════════════════
+- 只加更新功能，不动其他任何东西
+- 不改数据结构、导出/导入、编辑页、通知
+- fetch 失败静默忽略
+- 只 Capacitor 环境显示
+
+输出：方案报告 → 等确认 → 改代码 → 报告文件大小和行号。

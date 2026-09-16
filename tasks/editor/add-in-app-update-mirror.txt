@@ -1,0 +1,282 @@
+═══════════════════════════════════════
+技能调用检查（必读）
+═══════════════════════════════════════
+
+执行本任务前，请检查当前环境已安装的技能，判断哪些与本任务相关，并主动加载使用。
+
+本任务预期加载：
+- ui-ux-pro-max-skill（更新弹窗的视觉设计）
+- motion-web（弹窗入场动效）
+- ponytail（控制输出长度）
+
+请先明确列出：本次任务你会加载哪几个技能，各自用来解决哪个问题。
+
+═══════════════════════════════════════
+执行方式
+═══════════════════════════════════════
+
+先输出实施方案，等确认后再动手。
+
+═══════════════════════════════════════
+任务目标
+═══════════════════════════════════════
+
+给 Ya thoughts 加"应用内更新"功能，**全程使用国内可访问的镜像源**。
+
+用户场景：
+- 用户装了 App。
+- 开发者发布新版本（推送到 GitHub）。
+- 用户下次打开 App，启动 2 秒后弹出"发现新版本 vX.Y.Z"。
+- 用户点"下载更新"→ 用系统浏览器打开镜像加速的 APK 下载链接。
+- 用户点"稍后"→ 同一版本 24 小时内不再打扰。
+
+═══════════════════════════════════════
+核心架构（基于国内网络的现实）
+═══════════════════════════════════════
+
+【为什么不用 GitHub API】
+- api.github.com 在国内经常超时或被墙。
+- 未认证的 API 有 60 次/小时的 rate limit。
+
+【改用方案】
+1. 在仓库里放一个 `version.json` 文件（纯文本，几十字节）。
+2. Actions 每次构建后，自动更新这个文件（写入最新版本号、镜像下载链接、更新说明）。
+3. App 通过 **jsDelivr CDN** 读取 version.json。
+   jsDelivr 在国内有 CDN 节点，速度快且稳定。
+4. APK 下载链接用 **gh-proxy 类镜像**加速。
+
+═══════════════════════════════════════
+第一步：version.json 文件结构
+═══════════════════════════════════════
+
+仓库根目录新增 version.json：
+
+{
+  "version": "1.6.0",
+  "notes": "本次更新内容：\n- 新增图片裁剪\n- 修复数据丢失\n- 优化返回动画",
+  "apkUrl": "https://gh-proxy.com/https://github.com/AIZIYOU466/ya-thoughts/releases/download/v1.6.0/app-release.apk",
+  "apkUrlBackup": "https://ghfast.top/https://github.com/AIZIYOU466/ya-thoughts/releases/download/v1.6.0/app-release.apk",
+  "publishedAt": "2026-09-16T00:00:00Z"
+}
+
+字段说明：
+- version：版本号，不带 v 前缀。
+- notes：更新说明，多行用 \n 分隔。
+- apkUrl：主下载链接（gh-proxy 镜像）。
+- apkUrlBackup：备用下载链接（ghfast.top 镜像）。
+- publishedAt：发布时间。
+
+═══════════════════════════════════════
+第二步：改造 GitHub Actions workflow
+═══════════════════════════════════════
+
+修改 .github/workflows/build-apk.yml。
+
+在 Build APK 之后、Upload APK 之前，添加两个步骤：
+
+# 提取 versionName
+- name: Extract version
+  id: get_version
+  run: |
+    VERSION=$(grep -oP 'versionName "\K[^"]+' android/app/build.gradle)
+    echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+# 生成 version.json（供 App 通过 jsDelivr 读取）
+- name: Generate version.json
+  run: |
+    VERSION="${{ steps.get_version.outputs.version }}"
+    TAG="v$VERSION"
+    REPO="AIZIYOU466/ya-thoughts"
+    cat > version.json << EOF
+    {
+      "version": "$VERSION",
+      "notes": "自动构建版本 $VERSION",
+      "apkUrl": "https://gh-proxy.com/https://github.com/$REPO/releases/download/$TAG/app-release.apk",
+      "apkUrlBackup": "https://ghfast.top/https://github.com/$REPO/releases/download/$TAG/app-release.apk",
+      "publishedAt": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    }
+    EOF
+    cat version.json
+
+# 提交 version.json 回仓库
+- name: Commit version.json
+  run: |
+    git config user.name "github-actions[bot]"
+    git config user.email "github-actions[bot]@users.noreply.github.com"
+    git add version.json
+    git commit -m "chore: update version.json to ${{ steps.get_version.outputs.version }}" || echo "no changes"
+    git push
+
+# 创建 GitHub Release
+- name: Create Release
+  uses: softprops/action-gh-release@v2
+  with:
+    tag_name: v${{ steps.get_version.outputs.version }}
+    name: Ya thoughts v${{ steps.get_version.outputs.version }}
+    body: 自动构建版本 v${{ steps.get_version.outputs.version }}
+    files: android/app/build/outputs/apk/release/app-release.apk
+    make_latest: true
+  env:
+    GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+注意事项：
+- Commit version.json 步骤需要在 Create Release 之前，且给 workflow 加上
+  `permissions: contents: write`。
+- workflow 文件顶部加：
+  permissions:
+    contents: write
+- 同一个 tag 重复推送会失败，所以每次必须改 versionName。
+
+═══════════════════════════════════════
+第三步：App 内读取 version.json
+═══════════════════════════════════════
+
+【常量】
+const CURRENT_VERSION = '1.6.0';  // 每次发版时手动改
+const VERSION_JSON_URLS = [
+  'https://cdn.jsdelivr.net/gh/AIZIYOU466/ya-thoughts@main/version.json',
+  'https://gh-proxy.com/https://raw.githubusercontent.com/AIZIYOU466/ya-thoughts/main/version.json',
+  'https://ghfast.top/https://raw.githubusercontent.com/AIZIYOU466/ya-thoughts/main/version.json'
+];
+const UPDATE_CHECK_DELAY = 2000;
+const DISMISS_HOURS = 24;
+
+【版本检查逻辑（多镜像 fallback）】
+async function checkForUpdate() {
+  // 1. 检查是否刚被"稍后"过
+  const dismissedVersion = localStorage.getItem('update_dismissed_version');
+  const dismissedAt = parseInt(localStorage.getItem('update_dismissed_at') || '0');
+  // 如果和远端版本相同且未超时，先跳过（但远端版本还不知道，所以先记录，等拿到版本后再判断）
+
+  // 2. 依次尝试每个镜像
+  let info = null;
+  for (const url of VERSION_JSON_URLS) {
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 5000);
+      const resp = await fetch(url, { signal: controller.signal, cache: 'no-store' });
+      clearTimeout(timeoutId);
+      if (resp.ok) {
+        info = await resp.json();
+        break;  // 成功就停止
+      }
+    } catch (e) {
+      console.log('[update] mirror failed:', url, e.message);
+      // 继续尝试下一个镜像
+    }
+  }
+
+  if (!info) {
+    console.log('[update] all mirrors failed, skip');
+    return;
+  }
+
+  // 3. 比较版本
+  if (compareVersion(CURRENT_VERSION, info.version) >= 0) {
+    return;  // 已是最新，不提示
+  }
+
+  // 4. 检查"稍后"状态
+  if (dismissedVersion === info.version && (Date.now() - dismissedAt) < DISMISS_HOURS * 3600 * 1000) {
+    return;  // 24 小时内不再提示同一版本
+  }
+
+  // 5. 显示弹窗
+  showUpdateDialog(info);
+}
+
+【compareVersion 函数】
+function compareVersion(a, b) {
+  const pa = a.split('.').map(Number);
+  const pb = b.split('.').map(Number);
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    const va = pa[i] || 0;
+    const vb = pb[i] || 0;
+    if (va > vb) return 1;
+    if (va < vb) return -1;
+  }
+  return 0;
+}
+
+【启动时】
+setTimeout(checkForUpdate, UPDATE_CHECK_DELAY);
+
+【下载时】
+function downloadUpdate(info) {
+  // 优先用主镜像
+  let url = info.apkUrl;
+  window.open(url, '_blank');
+  dismissUpdateDialog(info.version);
+}
+
+═══════════════════════════════════════
+第四步：更新弹窗 UI
+═══════════════════════════════════════
+
+【HTML 结构】
+<div id="update-modal" hidden>
+  <div class="update-card">
+    <div class="update-icon">✨</div>
+    <div class="update-title">发现新版本</div>
+    <div class="update-version">v1.6.0</div>
+    <div class="update-notes"></div>
+    <div class="update-actions">
+      <button id="update-later">稍后</button>
+      <button id="update-download">下载更新</button>
+    </div>
+  </div>
+</div>
+
+【CSS（液态玻璃风格）】
+- #update-modal：fixed inset 0，z-index 9999，background rgba(0,0,0,0.5)，
+  display flex 居中，backdrop-filter blur(4px)
+- .update-card：玻璃质感（--glass-bg-strong + --glass-blur + 边框 + 圆角 20px），
+  内边距 24px，最大宽度 320px，阴影
+- .update-icon：40px，居中，主色
+- .update-title：17px/600，居中
+- .update-version：13px，#6B7280，居中
+- .update-notes：14px，行高 1.6，max-height 120px，overflow-y auto，
+  white-space pre-wrap，margin-top 16px
+- .update-actions：flex gap 12px margin-top 20px
+- #update-later：灰字按钮，14px/500 #6B7280
+- #update-download：主色胶囊，白字，点击 scale(0.96) 150ms
+
+【入场动画】
+- .update-card：scale(0.95)→1 + opacity 0→1，200ms cubic-bezier(0.32, 0.72, 0, 1)
+
+【交互】
+- 点"稍后"：dismissUpdateDialog(version)，记录 localStorage
+- 点"下载更新"：window.open(info.apkUrl, '_blank')，然后 dismiss
+- 点遮罩：等同"稍后"
+
+═══════════════════════════════════════
+严格约束
+═══════════════════════════════════════
+
+- 只加更新功能，不动其他任何东西。
+- 不改数据结构、不改导出/导入。
+- 不改编辑页、列表页、图片相关的现有功能。
+- 不改通知功能。
+- 弹窗用液态玻璃风格。
+- 多镜像 fallback：jsDelivr → gh-proxy raw → ghfast raw。
+- 每个请求 5 秒超时。
+- 全部失败时静默忽略。
+- 只在 Capacitor 环境显示（window.Capacitor 存在时）。
+
+═══════════════════════════════════════
+输出要求
+═══════════════════════════════════════
+
+第一步（先输出）：
+- 实施方案：
+  a. workflow yaml 的完整改动（含 permissions 和 version.json 生成）。
+  b. version.json 的示例内容。
+  c. index.html 新增的常量、函数、HTML、CSS。
+  d. 多镜像 fallback 的完整逻辑。
+  e. 怎么让用户在真机上测试"有更新"这个场景。
+- 特别说明：workflow 里 commit version.json 会不会触发死循环
+  （push → Actions → 再 push → 再 Actions）？怎么避免？
+
+第二步（等用户确认后再做）：
+- 实际修改所有文件。
+- 报告：修改的文件清单和行号、新增的函数、验证清单。
