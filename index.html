@@ -1446,6 +1446,138 @@
   }
   #clean-close:active { transform: scale(0.96); }
 
+  /* ============ 自动清理结果弹窗（沿用「关于」居中卡片模式） ============ */
+  #clean-result-mask {
+    position: fixed; inset: 0; z-index: 130;
+    display: none;
+    align-items: center; justify-content: center;
+    background: var(--mask);
+  }
+  #clean-result-mask.open { display: flex; animation: fade-in 0.2s var(--ease); }
+  #clean-result-card {
+    background: var(--glass-bg-strong);
+    -webkit-backdrop-filter: var(--glass-blur);
+    backdrop-filter: var(--glass-blur);
+    border: 1px solid var(--glass-border);
+    border-radius: 20px;
+    padding: 24px 20px 18px;
+    width: calc(100% - 48px); max-width: 320px;
+    box-shadow: var(--shadow-pop), var(--glass-highlight);
+    animation: pop-in 0.2s var(--ease);
+    max-height: 62vh;
+    overflow-y: auto;
+  }
+  #clean-result-title { font-size: 16px; font-weight: 600; text-align: center; margin-bottom: 12px; }
+  #clean-result-list { display: flex; flex-direction: column; gap: 6px; }
+  .clean-result-item {
+    font-size: 13px; color: var(--text-secondary);
+    background: var(--chip-bg);
+    border-radius: 10px;
+    padding: 8px 12px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .clean-result-more { background: transparent; text-align: center; color: var(--text-tertiary); }
+  #clean-result-hint { font-size: 12px; color: var(--text-tertiary); text-align: center; margin: 14px 0 16px; }
+  #clean-result-ok {
+    display: block; margin: 0 auto;
+    border-radius: var(--radius-pill);
+    background: var(--primary); color: #fff;
+    font-size: 15px; font-weight: 600;
+    padding: 11px 28px;
+    transition: transform 0.15s var(--ease);
+  }
+  #clean-result-ok:active { transform: scale(0.96); }
+
+  /* ============ 回收箱（⋯ 菜单进入；全屏页，z 60 高于列表/编辑页/菜单） ============ */
+  #bin-mask {
+    position: fixed; inset: 0; z-index: 60;
+    display: none;
+    flex-direction: column;
+    background: var(--bg-page);
+  }
+  #bin-mask.open { display: flex; animation: fade-in 0.2s var(--ease); }
+  #bin-header {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 12px 4px;
+    flex: 0 0 auto;
+  }
+  #bin-title {
+    position: absolute; left: 0; right: 0;
+    text-align: center;
+    font-size: 17px; font-weight: 600;
+    color: var(--text-primary);
+    pointer-events: none;
+  }
+  #bin-back {
+    width: 44px; height: 44px;
+    display: inline-flex; align-items: center; justify-content: center;
+    border-radius: 50%;
+    color: var(--text-secondary);
+    transition: background 0.15s var(--ease), transform 0.1s var(--ease);
+  }
+  #bin-back:active { background: var(--chip-bg); transform: scale(0.94); }
+  #bin-clear {
+    color: var(--danger);
+    font-size: 15px; font-weight: 600;
+    padding: 10px 12px;
+    border-radius: 10px;
+    transition: background 0.15s var(--ease);
+  }
+  #bin-clear:active { background: var(--chip-bg); }
+  #bin-list {
+    flex: 1;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    padding: 4px 16px 24px;
+  }
+  .bin-item {
+    display: flex; align-items: center; gap: 12px;
+    background: var(--bg-card);
+    border-radius: 14px;
+    padding: 13px 16px;
+    margin-bottom: 10px;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .bin-item:active { background: var(--chip-bg); }
+  .bin-info { flex: 1; min-width: 0; }
+  .bin-title {
+    font-size: 15px;
+    color: var(--text-primary);
+    font-weight: 500;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .bin-meta { font-size: 12px; color: var(--text-secondary); margin-top: 3px; }
+  .bin-restore {
+    flex: 0 0 auto;
+    color: var(--primary);
+    font-size: 14px; font-weight: 600;
+    padding: 10px 12px;
+    border-radius: 10px;
+    transition: background 0.15s var(--ease);
+  }
+  .bin-restore:active { background: var(--primary-soft); }
+  .bin-empty {
+    margin-top: 22vh;
+    display: flex; flex-direction: column; align-items: center;
+    justify-content: center; gap: 10px;
+    color: var(--text-secondary);
+    text-align: center;
+  }
+  .bin-empty .bin-empty-icon {
+    width: 64px; height: 64px;
+    display: flex; align-items: center; justify-content: center;
+    border-radius: 50%;
+    background: var(--chip-bg);
+    color: var(--text-tertiary);
+  }
+  .bin-empty p { font-size: 14px; color: var(--text-primary); }
+  .bin-empty span { font-size: 12px; }
+
   /* ============ 图片全屏查看器 ============ */
   #img-viewer {
     position: fixed; inset: 0; z-index: 100;
@@ -1692,6 +1824,12 @@
       </svg>
       <span>检查更新</span>
     </button>
+    <button id="menu-bin">
+      <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M3 12a9 9 0 1 0 2.64-6.36L3 8"/><path d="M3 3v5h5"/>
+      </svg>
+      <span>回收箱</span>
+    </button>
     <button id="menu-clean">
       <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
         <path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/>
@@ -1734,6 +1872,29 @@
       </svg>
       <span>待办</span>
     </button>
+  </div>
+
+  <!-- 自动清理结果弹窗（启动 20:00 后触发自动清理时弹出） -->
+<div id="clean-result-mask" role="dialog" aria-modal="true" aria-label="自动清理结果">
+  <div id="clean-result-card" role="document">
+    <h3 id="clean-result-title"></h3>
+    <div id="clean-result-list"></div>
+    <p id="clean-result-hint">可在回收箱找回（保留 3 天）</p>
+    <button type="button" id="clean-result-ok">知道了</button>
+  </div>
+</div>
+
+<div id="bin-mask" role="dialog" aria-modal="true" aria-label="回收箱">
+    <header id="bin-header">
+      <button id="bin-back" title="返回" aria-label="返回">
+        <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M15 18l-6-6 6-6"/>
+        </svg>
+      </button>
+      <span id="bin-title">回收箱</span>
+      <button id="bin-clear" type="button">清空</button>
+    </header>
+    <div id="bin-list"></div>
   </div>
 
   <div id="about-mask">
@@ -1997,6 +2158,8 @@
     if (n.pinnedAt === undefined) n.pinnedAt = null;   // 预留
     if (n.color === undefined) n.color = null;         // 预留
     if (n.starred === undefined) n.starred = false;    // 预留
+    if (n.deletedAt === undefined) n.deletedAt = null;    // 回收箱：null = 未删除
+    if (n.deletedFrom === undefined) n.deletedFrom = null; // 回收箱：'manual' 手动 | 'auto' 自动清理
     if (n.order === undefined) n.order = null;         // 拖拽排序字段：null 时按 createdAt 兜底
     return n;
   }
@@ -2055,12 +2218,6 @@
     });
   }
 
-  function dbDelete(id) {
-    return openDB().then(function (db) {
-      return reqAsPromise(db.transaction(STORE, 'readwrite').objectStore(STORE).delete(id));
-    });
-  }
-
   /* 图片存取：Blob 直接入 IndexedDB，pos 记录在正文中的顺序 */
 
   function dbPutImage(rec) {
@@ -2078,28 +2235,6 @@
   function dbDeleteImage(id) {
     return openDB().then(function (db) {
       return reqAsPromise(db.transaction(IMAGES, 'readwrite').objectStore(IMAGES).delete(id));
-    });
-  }
-
-  // 删除某便签的全部图片，resolve 被删除的图片 id 列表
-  function dbDeleteImagesForNote(noteId) {
-    return openDB().then(function (db) {
-      return new Promise(function (resolve, reject) {
-        var ids = [];
-        var tx = db.transaction(IMAGES, 'readwrite');
-        var index = tx.objectStore(IMAGES).index('noteId');
-        var req = index.openCursor(IDBKeyRange.only(noteId));
-        req.onsuccess = function () {
-          var cursor = req.result;
-          if (cursor) {
-            ids.push(cursor.primaryKey);
-            cursor.delete();
-            cursor.continue();
-          }
-        };
-        tx.oncomplete = function () { resolve(ids); };
-        tx.onerror = function () { reject(tx.error); };
-      });
     });
   }
 
@@ -2179,17 +2314,41 @@
     return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
   }
 
+  // 查便签：回收箱里的已删除便签视为不存在（任何入口都打不开/改不了）；
+  // 回收箱视图直接用 notes 过滤，不依赖本函数。
   function noteById(id) {
     for (var i = 0; i < notes.length; i++) {
-      if (notes[i].id === id) return notes[i];
+      if (notes[i].id === id && notes[i].deletedAt == null) return notes[i];
     }
     return null;
+  }
+
+  // 软删除：只打 deletedAt/deletedFrom 标记进回收箱（保留 3 天，之后物理删除），
+  // 并立即取消其待办系统通知；图片 Blob 待到回收箱超期清理时才真正删除。
+  function markNoteDeleted(id, from) {
+    for (var i = 0; i < notes.length; i++) {
+      var n = notes[i];
+      if (n.id === id) {
+        n.deletedAt = Date.now();
+        n.deletedFrom = from;
+        dbPut(n).catch(function () { /* 存储失败静默 */ });
+        break;
+      }
+    }
+    cancelNoteNotification(id);
   }
 
   /* ---------- 待办工具函数 ---------- */
 
   function isTodo(note) { return note.type === 'todo'; }
   function isDone(note) { return note.doneAt != null; }
+
+  function isBinNote(n) { return !!(n && n.deletedAt != null); }
+
+  // 回收箱条目：按删除时间倒序（最近删除的在前）
+  function binNotes() {
+    return notes.filter(isBinNote).sort(function (a, b) { return b.deletedAt - a.deletedAt; });
+  }
 
   // 已过期：doneAt 为空 且已到截止时间（dueAt < now）；已完成优先，过期不回退
   function isOverdue(note) {
@@ -2360,15 +2519,6 @@
   // 摘要用：整个去掉 img 标签，只保留纯文本
   function plainTextOf(html) {
     return htmlToPlain(html);
-  }
-
-  // 去掉图片后是否没有正文（纯图片便签不算空，不能被自动清理）
-  function isNoteEmpty(note) {
-    var d = document.createElement('div');
-    d.innerHTML = note.content || '';
-    var imgs = d.querySelectorAll('img');
-    for (var i = 0; i < imgs.length; i++) imgs[i].remove();
-    return !d.textContent.trim();
   }
 
   // 标题 = 正文第一个非空行
@@ -2731,6 +2881,7 @@
       return 2;                                                    // 普通笔记
     };
     return notes.slice().filter(function (n) {
+      if (n.deletedAt != null) return false; // 回收箱：正常列表不显示
       if (filter === 'todo') return isTodo(n); // 全部待办：进行中→已过期→已完成（已完成不隐藏、沉底）
       if (filter === 'done') return isTodo(n) && isDone(n);
       return true;
@@ -3536,7 +3687,7 @@
     // 点击“是” → 立即走曲线删除动画；点“否”/遮罩 → 什么都不做
     confirmDialog({
       title: '删除便签',
-      message: '删除后无法恢复，确定删除这条便签吗？',
+      message: '删除后可到回收箱找回（保留 3 天），确定删除这条便签吗？',
       confirmText: '是',
       cancelText: '否'
     }).then(function (ok) {
@@ -3604,24 +3755,14 @@
     return null;
   }
 
-  // 即删：IndexedDB（连带图片）→ 内存缓存 → DOM 折叠补位（200ms）→ 计数/空态
+  // 即删：软删除进回收箱（打标记）→ 卡片折叠补位（200ms）→ 计数/空态；
+  // 图片 Blob 不删，待到回收箱超期清理时才真正连带删除。
   function removeNoteNow(id) {
-    cancelNoteNotification(id); // 删除便签：取消其系统通知
-    dbDeleteNotesWithImages([id]).then(function (imgIds) {
-      imgIds.forEach(function (imgId) {
-        if (imgUrlCache[imgId]) {
-          URL.revokeObjectURL(imgUrlCache[imgId]);
-          delete imgUrlCache[imgId];
-        }
-      });
-      notes = notes.filter(function (n) { return n.id !== id; }); // 更新内存缓存
-      collapseListItem(liForNoteId(id), function () {
-        var remain = sortedNotesFor(segFilter).filter(matchesSearch).length;
-        if (remain === 0) renderList(); // 空态 / 计数由 renderList 统一处理
-        else countEl.textContent = remain + ' 条';
-      });
-    }).catch(function () {
-      alert('删除失败，请重试'); // 事务失败则什么都没删，数据保持原样
+    markNoteDeleted(id, 'manual');
+    collapseListItem(liForNoteId(id), function () {
+      var remain = sortedNotesFor(segFilter).filter(matchesSearch).length;
+      if (remain === 0) renderList(); // 空态 / 计数由 renderList 统一处理
+      else countEl.textContent = remain + ' 条';
     });
   }
 
@@ -3962,25 +4103,11 @@
     openToken++; // 离开编辑器，作废该笔记所有在途异步加载
     var leavingId = currentId;
     pendingSaveId = leavingId; // 捕获离开便签：currentId 置 null 后写库仍能定位（修复 1.5.5 延迟保存丢失）
-    // 空便签自动清理，避免留下空条目
-    var note = noteById(leavingId);
-    var wasDeleted = false;
-    if (note && isNoteEmpty(note)) {
-      notes = notes.filter(function (n) { return n.id !== leavingId; });
-      dbDelete(leavingId).catch(function () { /* 存储失败静默 */ });
-      cleanupImagesForNote(leavingId);
-      wasDeleted = true;
-    }
     currentId = null;
     clearTimeout(wordCountTimer); // 取消在途的字数统计，避免空引用
     clearTimeout(undoTimer);      // 同 wordCount：取消在途撤销快照序列化，避免滑出动画中途全量 innerHTML
     clearTimeout(saveTimer);
     saveTimer = setTimeout(function () { commitSave(leavingId); }, 450); // 最终写库：写入 input 时已更新的内存对象，blur 是否触发都不丢
-    if (wasDeleted) {
-      // 空便签已被清理：同步移除卡片（单节点，开销可忽略），列表立即一致
-      var delLi = listEl.querySelector('li[data-id="' + leavingId + '"]');
-      if (delLi) delLi.remove();
-    }
     // Bug4：返回列表——定向更新这一条卡片，不全量 renderList（innerHTML 重建全列表）。
     // renderList 重建所有卡片 + 重置滚动位置 → 主线程卡顿 + 列表跳回顶部 =整页重加载感/闪动。
     // 定向更新只改该卡片的标题/摘要/时间/待办态文本，其余卡片和滚动位置完全不动。
@@ -3988,7 +4115,7 @@
     // 正文、摘要重测要强制回流；编辑后内容真变，同步执行会拉长「点击返回→动画首帧」
     //（与 blur 同步 autosave 叠加成返回卡顿主因）。滑出期间列表短暂显示旧内容，
     // 动画结束瞬间刷新（既定设计）；编辑器滑入/其他路径不受影响。
-    if (leavingId != null && !wasDeleted) {
+    if (leavingId != null) {
       (function (nid) {
         var apply = function () {
           // 编辑页还在（滑出中/滑入中）→ 等它隐藏后再更新，避免动画期间在列表上做回流
@@ -4086,14 +4213,12 @@
     var label = note ? titleOf(note) : '';
     confirmDialog({
       title: '删除便签',
-      message: '删除后无法恢复，确定删除这条便签吗？',
+      message: '删除后可到回收箱找回（保留 3 天），确定删除这条便签吗？',
       confirmText: '是',
       cancelText: '否'
     }).then(function (ok) {
       if (!ok || currentId == null) return;
-      notes = notes.filter(function (n) { return n.id !== currentId; });
-      dbDelete(currentId).catch(function () { /* 存储失败静默 */ });
-      cleanupImagesForNote(currentId);
+      markNoteDeleted(currentId, 'manual');
       openToken++; // 同 backToList：删除即离开编辑器，作废在途加载
       currentId = null;
       renderList();
@@ -4537,17 +4662,6 @@
   }
 
   // 删除便签时清理其图片，并回收已生成的 objectURL
-  function cleanupImagesForNote(noteId) {
-    dbDeleteImagesForNote(noteId).then(function (ids) {
-      ids.forEach(function (id) {
-        if (imgUrlCache[id]) {
-          URL.revokeObjectURL(imgUrlCache[id]);
-          delete imgUrlCache[id];
-        }
-      });
-    }).catch(function () { /* 存储失败静默 */ });
-  }
-
   /* ---------- 导出 / 导入 ---------- */
 
   function closeMenu() {
@@ -4615,6 +4729,7 @@
               id: n.id, content: n.content, createdAt: n.createdAt, updatedAt: n.updatedAt,
               type: n.type, dueAt: n.dueAt, doneAt: n.doneAt,
               pinnedAt: n.pinnedAt, color: n.color, starred: n.starred,
+              deletedAt: n.deletedAt, deletedFrom: n.deletedFrom, // 回收箱状态跨备份保留
               order: n.order // 拖拽排序字段
             };
           }),
@@ -4677,6 +4792,8 @@
           pinnedAt: (payload.version >= 2 && 'pinnedAt' in n && n.pinnedAt !== undefined) ? n.pinnedAt : null,
           color: (payload.version >= 2 && 'color' in n && n.color !== undefined) ? n.color : null,
           starred: (payload.version >= 2 && n.starred === true),
+          deletedAt: (payload.version >= 2 && typeof n.deletedAt === 'number') ? n.deletedAt : null,
+          deletedFrom: (payload.version >= 2 && (n.deletedFrom === 'manual' || n.deletedFrom === 'auto')) ? n.deletedFrom : null,
           order: typeof n.order === 'number' ? n.order : null // 拖拽排序字段（旧备份无则回退按创建时间）
         });
       });
@@ -5333,6 +5450,34 @@
   function setCleanPref(key, on) { try { localStorage.setItem(key, on ? '1' : '0'); } catch (e) {} }
   function setCleanLastDate(ymd) { try { localStorage.setItem(CLEAN_LAST_KEY, ymd); } catch (e) {} }
 
+  /* 自动清理结果弹窗：最多列 10 条，超出折叠成「…还有 N 条」 */
+  var cleanResultMask = $('clean-result-mask');
+  var cleanResultList = $('clean-result-list');
+  var cleanResultTitle = $('clean-result-title');
+  function showCleanResult(doneNotes, expiredNotes) {
+    var total = doneNotes.length + expiredNotes.length;
+    cleanResultTitle.textContent = '已自动清理 ' + total + ' 条事项';
+    cleanResultList.innerHTML = '';
+    var items = doneNotes.map(function (n) { return '已完成：' + titleOf(n); })
+      .concat(expiredNotes.map(function (n) { return '已过期：' + titleOf(n); }));
+    var LIMIT = 10;
+    items.slice(0, LIMIT).forEach(function (line) {
+      var div = document.createElement('div');
+      div.className = 'clean-result-item';
+      div.textContent = line;
+      cleanResultList.appendChild(div);
+    });
+    if (items.length > LIMIT) {
+      var more = document.createElement('div');
+      more.className = 'clean-result-item clean-result-more';
+      more.textContent = '…还有 ' + (items.length - LIMIT) + ' 条';
+      cleanResultList.appendChild(more);
+    }
+    cleanResultMask.classList.add('open');
+  }
+  $('clean-result-ok').addEventListener('click', function () { cleanResultMask.classList.remove('open'); });
+  cleanResultMask.addEventListener('click', function (e) { if (e.target === cleanResultMask) cleanResultMask.classList.remove('open'); });
+
   $('menu-clean').addEventListener('click', function () {
     closeMenu();
     cleanDoneEl.checked = cleanPref(CLEAN_DONE_KEY);
@@ -5348,7 +5493,128 @@
   cleanDoneEl.addEventListener('change', function () { setCleanPref(CLEAN_DONE_KEY, cleanDoneEl.checked); });
   cleanExpiredEl.addEventListener('change', function () { setCleanPref(CLEAN_EXPIRED_KEY, cleanExpiredEl.checked); });
 
-  // App 启动时执行一次：今天 20:00 已过、且今天还没清理过才动手（无后台定时任务，打开即检查）
+  /* ============ 回收箱（⋯ 菜单进入；软删除便签保留 3 天，超期在启动时清理） ============ */
+  var binMaskEl = $('bin-mask');
+  var binListEl = $('bin-list');
+  var binDirty = false; // 恢复/清空后，关闭时刷新列表
+  var BIN_KEEP_MS = 3 * 24 * 60 * 60 * 1000; // 回收箱保留 3 天
+
+  // 恢复：清掉删除标记；置顶便签仍是最高级，恢复条在置顶之下排最前——
+  // 默认按修改时间排序时把 updatedAt 提到现在（普通区最前/无截止待办最前），
+  // 自定义排序下用 order=-1 把其放到普通区最前（下次拖拽会整体重写 order，无残留）。
+  function restoreNote(id) {
+    var note = null;
+    for (var i = 0; i < notes.length; i++) if (notes[i].id === id) { note = notes[i]; break; }
+    if (!note || !isBinNote(note)) return;
+    note.deletedAt = null;
+    note.deletedFrom = null;
+    note.updatedAt = Date.now();
+    if (sortBy === 'custom') note.order = -1;
+    dbPut(note).catch(function () { /* 存储失败静默 */ });
+    if (isTodo(note)) scheduleNoteNotification(note); // 恢复待办的系统通知
+    binDirty = true;
+    closeBin();
+  }
+
+  // 渲染回收箱：deletedAt 倒序（binNotes 已排好）；已超 3 天的条目不再展示（启动时已物理清理）
+  function renderBin() {
+    var now = Date.now();
+    var items = binNotes().filter(function (n) { return n.deletedAt + BIN_KEEP_MS > now; });
+    binListEl.innerHTML = '';
+    if (!items.length) {
+      var empty = document.createElement('div');
+      empty.className = 'bin-empty';
+      empty.innerHTML = '<div class="bin-empty-icon"><svg viewBox="0 0 24 24" width="30" height="30" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 2.64-6.36L3 8"/><path d="M3 3v5h5"/></svg></div>' +
+        '<p>回收箱是空的</p><span>删除的便签会在这里保留 3 天</span>';
+      binListEl.appendChild(empty);
+      return;
+    }
+    items.forEach(function (n) {
+      var row = document.createElement('div');
+      row.className = 'bin-item';
+      row.dataset.id = n.id;
+      var info = document.createElement('div');
+      info.className = 'bin-info';
+      var t = document.createElement('div');
+      t.className = 'bin-title';
+      t.textContent = titleOf(n);
+      var m = document.createElement('div');
+      m.className = 'bin-meta';
+      var how = n.deletedFrom === 'auto' ? '自动清理于 ' : '手动删除于 ';
+      var remain = Math.max(1, Math.ceil((n.deletedAt + BIN_KEEP_MS - now) / (24 * 60 * 60 * 1000)));
+      m.textContent = how + relativeTime(n.deletedAt) + ' · 还剩 ' + remain + ' 天';
+      info.appendChild(t);
+      info.appendChild(m);
+      var btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'bin-restore';
+      btn.textContent = '恢复';
+      row.appendChild(info);
+      row.appendChild(btn);
+      binListEl.appendChild(row);
+    });
+  }
+
+  function closeBin() {
+    binMaskEl.classList.remove('open');
+    if (binDirty) { binDirty = false; renderList(); }
+  }
+
+  // 启动时物理清理：回收箱里超 3 天的便签永久删除（连带图片 Blob，超期不可恢复，静默无提示）
+  function purgeExpiredBinItems() {
+    var cutoff = Date.now() - BIN_KEEP_MS;
+    var doomed = [];
+    notes.forEach(function (n) { if (isBinNote(n) && n.deletedAt < cutoff) doomed.push(n.id); });
+    if (!doomed.length) return;
+    dbDeleteNotesWithImages(doomed).then(function (imgIds) {
+      imgIds.forEach(function (id) {
+        if (imgUrlCache[id]) {
+          URL.revokeObjectURL(imgUrlCache[id]);
+          delete imgUrlCache[id];
+        }
+      });
+      notes = notes.filter(function (n) { return doomed.indexOf(n.id) === -1; }); // 物理删除
+    }).catch(function () { /* 存储失败：下次启动再试 */ });
+  }
+
+  $('menu-bin').addEventListener('click', function () {
+    closeMenu();
+    renderBin();
+    binMaskEl.classList.add('open');
+  });
+  $('bin-back').addEventListener('click', closeBin);
+  binMaskEl.addEventListener('click', function (e) { if (e.target === binMaskEl) closeBin(); });
+  binListEl.addEventListener('click', function (e) { // 点行或「恢复」按钮都恢复
+    var row = e.target.closest ? e.target.closest('.bin-item') : null;
+    if (row) restoreNote(row.dataset.id);
+  });
+  $('bin-clear').addEventListener('click', function () {
+    var ids = binNotes().map(function (n) { return n.id; });
+    if (!ids.length) { renderBin(); return; } // 无条目：just 保持空态
+    confirmDialog({
+      title: '清空回收箱',
+      message: '将永久删除回收箱内 ' + ids.length + ' 条便签（含图片），无法恢复，确定清空？',
+      confirmText: '清空',
+      cancelText: '取消'
+    }).then(function (ok) {
+      if (!ok) return;
+      dbDeleteNotesWithImages(ids).then(function (imgIds) {
+        imgIds.forEach(function (id) {
+          if (imgUrlCache[id]) {
+            URL.revokeObjectURL(imgUrlCache[id]);
+            delete imgUrlCache[id];
+          }
+        });
+        notes = notes.filter(function (n) { return ids.indexOf(n.id) === -1; }); // 物理删除（回收箱内没有恢复入口了）
+        binDirty = true;
+        renderBin();
+        showUndoToast('已清空');
+      }).catch(function () { alert('清空失败，请重试'); });
+    });
+  });
+
+  // App 启动时执行一次：今天 20:00 已过、且今天还没清理过才动手（无后台定时任务，打开即检查）。
+  // v2：自动清理改为软删除进回收箱（deletedFrom='auto'）并弹窗告知；图片待到超期才物理删除。
   function runAutoClean() {
     var cleanDone = cleanPref(CLEAN_DONE_KEY), cleanExpired = cleanPref(CLEAN_EXPIRED_KEY);
     if (!cleanDone && !cleanExpired) return;
@@ -5356,24 +5622,17 @@
     if (now.getHours() * 60 + now.getMinutes() < 20 * 60) return; // 未到 20:00
     var ymd = now.getFullYear() + '-' + pad(now.getMonth() + 1) + '-' + pad(now.getDate());
     if (localStorage.getItem(CLEAN_LAST_KEY) === ymd) return; // 今天已清理过
-    var doneIds = [], expiredIds = []; // 条件互斥：已完成优先，过期不重复计数
+    var doneNotes = [], expiredNotes = []; // 条件互斥：已完成优先，过期不重复计数；回收箱里的跳过
     notes.forEach(function (n) {
-      if (!isTodo(n)) return;
-      if (isDone(n)) { if (cleanDone) doneIds.push(n.id); }
-      else if (isOverdue(n) && cleanExpired) expiredIds.push(n.id);
+      if (!isTodo(n) || isBinNote(n)) return;
+      if (isDone(n)) { if (cleanDone) doneNotes.push(n); }
+      else if (isOverdue(n) && cleanExpired) expiredNotes.push(n);
     });
-    var doomed = doneIds.concat(expiredIds);
-    if (!doomed.length) { setCleanLastDate(ymd); return; } // 无可清理项，仅记录日期
-    doomed.forEach(cancelNoteNotification); // 取消对应系统通知
-    dbDeleteNotesWithImages(doomed).then(function (imgIds) { // 批量删：事务内连带图片
-      imgIds.forEach(function (imgId) {
-        if (imgUrlCache[imgId]) { URL.revokeObjectURL(imgUrlCache[imgId]); delete imgUrlCache[imgId]; }
-      });
-      notes = notes.filter(function (n) { return doomed.indexOf(n.id) === -1; }); // 更新内存缓存
-      setCleanLastDate(ymd);
-      renderList(); // 计数 / 空态由 renderList 统一处理
-      showUndoToast('已清理 ' + doneIds.length + ' 条已完成，' + expiredIds.length + ' 条已过期');
-    }).catch(function () { /* 存储失败：数据保持原样，下次打开重试 */ });
+    if (!doneNotes.length && !expiredNotes.length) { setCleanLastDate(ymd); return; } // 无可清理项，仅记录日期
+    doneNotes.concat(expiredNotes).forEach(function (n) { markNoteDeleted(n.id, 'auto'); }); // 软删 + 取消通知
+    setCleanLastDate(ymd);
+    renderList(); // 计数 / 空态由 renderList 统一处理
+    showCleanResult(doneNotes, expiredNotes); // 结果弹窗（含回收箱找回提示）
   }
 
   importInput.addEventListener('change', function () {
@@ -5415,25 +5674,14 @@
     // 多选批量删除：统一走自定义确认框（原生 confirm 按钮文字随系统语言变）
     confirmDialog({
       title: '删除便签',
-      message: '删除后无法恢复，确定删除这 ' + ids.length + ' 条便签吗？',
+      message: '删除后可到回收箱找回（保留 3 天），确定删除这 ' + ids.length + ' 条便签吗？',
       confirmText: '是',
       cancelText: '否'
     }).then(function (ok) {
       if (!ok) return;
-      ids.forEach(cancelNoteNotification); // 批量删除：取消对应系统通知
-      dbDeleteNotesWithImages(ids).then(function (imgIds) {
-        imgIds.forEach(function (id) {
-          if (imgUrlCache[id]) {
-            URL.revokeObjectURL(imgUrlCache[id]);
-            delete imgUrlCache[id];
-          }
-        });
-        notes = notes.filter(function (n) { return !selectedIds[n.id]; }); // 更新内存缓存
-        exitMultiMode(); // 退出多选并重渲染，删空时自动显示空状态
-        showUndoToast('已删除');
-      }).catch(function () {
-        alert('删除失败，请重试'); // 事务失败则什么都没删，数据保持原样
-      });
+      ids.forEach(function (id) { markNoteDeleted(id, 'manual'); }); // 软删除进回收箱
+      exitMultiMode(); // 退出多选并重渲染，删空时自动显示空状态
+      showUndoToast('已删除');
     });
   });
 
@@ -5899,7 +6147,7 @@
     } catch (e) { /* 隐私模式等场景 */ }
     var now = Date.now();
     var due = notes.filter(function (n) {
-      return isTodo(n) && !isDone(n) && n.dueAt && n.dueAt <= now;
+      return isTodo(n) && !isDone(n) && n.deletedAt == null && n.dueAt && n.dueAt <= now;
     }).sort(function (a, b) { return a.dueAt - b.dueAt; });
     if (!due.length) return;
     var lines = due.slice(0, 5).map(function (n) { return '· ' + titleOf(n); });
@@ -5972,7 +6220,9 @@
   // 启动恢复：遍历全部便签逐条对齐通知（覆盖重启丢通知、导入数据等场景）
   function resyncAllTodoNotifications() {
     if (!getLocalNotifications()) return;
-    notes.forEach(scheduleNoteNotification);
+    notes.forEach(function (n) {
+      if (n.deletedAt == null) scheduleNoteNotification(n); // 回收箱里的不重新调度
+    });
   }
 
   /* ---------- 应用内更新（国内镜像；只 Capacitor 环境生效，浏览器静默跳过） ---------- */
@@ -6131,6 +6381,7 @@
       updateSortMenu(); // 应用持久化的排序方式后再首次渲染
       renderList();
       runAutoClean(); // 每天 20:00 后首次打开检查一次（内部视情况再 renderList）
+      purgeExpiredBinItems(); // 回收箱超 3 天条目物理清理（静默）
       checkDueReminders();
       requestNotificationPermission(); // 启动时请求通知权限（Android 13+ 弹窗；浏览器静默跳过）
       checkExactAlarmSetting();        // 启动时检查精确闹钟权限（Android 专用，未授权仅告警不打扰）
