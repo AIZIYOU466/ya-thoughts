@@ -1083,6 +1083,7 @@
     -webkit-touch-callout: none; /* 长按不弹系统菜单 */
     -webkit-user-select: none;
     user-select: none;
+    -webkit-user-drag: none; /* 防 contenteditable 原生拖拽吞 click（影响查看器打开） */
   }
   #editor img.lp-dim { filter: brightness(0.65); transition: filter 0.15s ease; }
   /* 图片重点标注：主色边框 + 右上角小星标 */
@@ -1389,7 +1390,7 @@
   }
   #img-viewer.open { display: flex; animation: fade-in 0.2s var(--ease); will-change: opacity; }
   /* 关闭动画由增强层接管：加 .closing 保持可见并淡出 0.18s */
-  #img-viewer.closing { display: flex; animation: fade-out 0.18s var(--ease) forwards; }
+  #img-viewer.closing { display: flex; animation: fade-out 0.18s var(--ease) forwards; pointer-events: none; }
   #img-viewer.closing #viewer-img { visibility: hidden; } /* 原 close 逻辑已移除 src，隐藏空图 */
   #viewer-img {
     max-width: 95%;
@@ -4239,6 +4240,7 @@
       img.dataset.imgId = rec.id;
       img.dataset.imgNoteId = rec.noteId; // 供重点标注写库时补 noteId
       img.alt = '便签图片';
+      img.draggable = false; // 防 contenteditable 原生拖拽吞 click（影响查看器打开）
       img.src = imgUrlCache[rec.id]; // 对象 URL 立即可用，不等落库
       insertNodeAtCaret(img);
       renderImageStrip();
@@ -4778,6 +4780,8 @@
   var vLastTapT = 0, vLastTapX = 0, vLastTapY = 0; // 上一次点击的时间与位置
   var vPendingClose = false;                   // 单击确认后关闭查看器（由 300ms 超时统一执行）
   var vAnimating = false;                      // 双击缩放动画进行中（期间忽略新手势）
+  var vAnimStartT = 0;                         // 动画开始时间戳（入口自愈：锁超 400ms 强制解除）
+  var vOpenedAt = 0;                           // 查看器打开时间戳（打开后 400ms 内忽略关闭点击，防双击竞态秒关）
   var vDblAnimTimer = null;                    // 动画锁兜底移除定时器
   var lpTimer = null, lpImg = null, lpX = 0, lpY = 0;
   var longPressFired = false; // 长按触发后抑制其后的 click，避免误放大
@@ -4798,9 +4802,11 @@
 
   function openViewer(src) {
     if (!src) return;
+    if (viewerEl.classList.contains('open') && viewerImgEl.getAttribute('src') === src) return; // 幂等：已开同图不重复
     viewerImgEl.src = src;
     resetViewerTransform();
     viewerEl.classList.add('open');
+    vOpenedAt = Date.now();
     document.body.style.overflow = 'hidden'; // 查看期间禁止页面滚动
   }
 
@@ -5140,7 +5146,7 @@
   // 查看器手势状态机：'idle' | 'pinching' | 'dragging' | 'doubletap-pending'
   // 双击判定：两次点击 <300ms 且位移 <30px；双击缩放动画期间忽略新手势
   viewerEl.addEventListener('touchstart', function (e) {
-    if (vAnimating) return; // 双击动画进行中：忽略新手势（防第二次 touchend 误触发拖拽）
+    if (vAnimSelfHeal()) return; // 双击动画进行中：忽略新手势（锁超 400ms 入口自愈解除）
     vMoved = false;
     vStartX = e.touches[0].clientX;
     vStartY = e.touches[0].clientY;
@@ -5160,7 +5166,7 @@
   }, { passive: false });
   viewerEl.addEventListener('touchmove', function (e) {
     e.preventDefault(); // touch-action:none 的兑底，确保页面不滚动
-    if (vAnimating) return;
+    if (vAnimSelfHeal()) return;
     if (e.touches.length === 2) {
       vMoved = true;
       var s = pinchStartScale * touchDist(e.touches) / pinchStartDist;
@@ -5189,6 +5195,7 @@
     }
   }, { passive: false });
   viewerEl.addEventListener('touchend', function (e) {
+    if (vAnimSelfHeal()) return; // 动画锁未解除（含自愈后仍锁定）：不处理 touchend，防误走双击判定
     if (e.touches.length < 2) pinchMode = false;
     if (vGesture === 'pinching' && e.touches.length === 1) { // 双指抬起一根后继续单指平移
       vGesture = vScale > 1 ? 'dragging' : 'idle';
@@ -5239,6 +5246,7 @@
     }
     viewerImgEl.classList.add('v-anim'); // 300ms 过渡曲线
     vAnimating = true;
+    vAnimStartT = Date.now();
     applyViewerTransform();
     clearTimeout(vDblAnimTimer);
     vDblAnimTimer = setTimeout(endViewerAnim, 320); // transitionend 兜底
@@ -5246,6 +5254,11 @@
   function endViewerAnim() {
     vAnimating = false;
     viewerImgEl.classList.remove('v-anim'); // 必须尽快移除，避免拖累后续捏合/拖拽
+  }
+  // vAnimating 入口自愈：锁超 400ms 仍未解除（定时器被 WebView 节流/丢事件）则强制解除，锁定不可能残留
+  function vAnimSelfHeal() {
+    if (vAnimating && Date.now() - vAnimStartT > 400) endViewerAnim();
+    return vAnimating;
   }
   // transitionend 优先触发则提前结束动画锁；transform 可能不变而不触发，320ms 定时器兜底
   viewerImgEl.addEventListener('transitionend', function (e) {
@@ -5259,6 +5272,7 @@
   viewerEl.addEventListener('click', function (e) {
     if (vMoved) { vMoved = false; return; }
     if (vGesture === 'doubletap-pending') return;
+    if (Date.now() - vOpenedAt < 400) return; // 打开 400ms 内忽略关闭点击：防桌面双击/移动端快速二连击把刚开的查看器瞬间关掉
     if (e.target === viewerEl || e.target === viewerImgEl || e.target === viewerCloseEl) {
       closeViewer();
     }
@@ -5639,7 +5653,7 @@
 
   /* ---------- 应用内更新（国内镜像；只 Capacitor 环境生效，浏览器静默跳过） ---------- */
   var UPDATE_MODAL = $('update-modal');
-  var CURRENT_VERSION = '1.6.2'; // 与 android/app/build.gradle 的 versionName 保持一致
+  var CURRENT_VERSION = '1.6.3'; // 与 android/app/build.gradle 的 versionName 保持一致
   var UPDATE_URLS = [
     'https://cdn.jsdelivr.net/gh/AIZIYOU466/ya-thoughts@main/version.json',
     'https://gh-proxy.com/https://raw.githubusercontent.com/AIZIYOU466/ya-thoughts/main/version.json',
