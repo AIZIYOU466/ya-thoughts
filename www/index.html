@@ -683,7 +683,8 @@
     transition: background 0.2s var(--ease), border-color 0.2s var(--ease);
   }
   #list-view:not(.multi) .is-todo .todo-chk { display: inline-flex; animation: box-pop 0.2s var(--ease-spring); }
-  .note-item .todo-chk.on { background: var(--primary); border-color: var(--primary); color: #fff; }
+  .note-item .todo-chk.on { background: var(--todo-accent); border-color: var(--todo-accent); color: #fff; } /* 已完成：绿实心+白勾 */
+  .note-item .todo-chk.overdue { border-color: var(--danger); } /* 已过期：空心红圈 */
   .note-item.is-done { opacity: 0.6; }
   .note-item.is-done .title { text-decoration: line-through; }
   .note-item .due-badge {
@@ -781,7 +782,7 @@
     color: transparent;
     transition: background 0.2s var(--ease), border-color 0.2s var(--ease);
   }
-  #editor-todo-chk.on { background: var(--primary); border-color: var(--primary); color: #fff; }
+  #editor-todo-chk.on { background: var(--todo-accent); border-color: var(--todo-accent); color: #fff; } /* 已完成：绿实心+白勾（与列表一致） */
   #editor-todo-chk + span { font-size: 13px; color: var(--text-secondary); }
   #due-btn {
     display: none;
@@ -1380,6 +1381,71 @@
   }
   #about-close:active { transform: scale(0.96); }
 
+  /* ============ 自动清理设置弹窗（复用「关于」居中卡片模式） ============ */
+  #clean-mask {
+    position: fixed; inset: 0; z-index: 50;
+    display: none;
+    align-items: center; justify-content: center;
+    background: var(--mask);
+  }
+  #clean-mask.open { display: flex; animation: fade-in 0.2s var(--ease); }
+  #clean-card {
+    background: var(--glass-bg-strong);
+    -webkit-backdrop-filter: var(--glass-blur);
+    backdrop-filter: var(--glass-blur);
+    border: 1px solid var(--glass-border);
+    border-radius: 20px;
+    padding: 28px 24px 24px;
+    width: calc(100% - 48px); max-width: 320px;
+    box-shadow: var(--shadow-pop), var(--glass-highlight);
+    animation: pop-in 0.2s var(--ease);
+  }
+  #clean-card h2 { font-size: 17px; font-weight: 600; text-align: center; margin-bottom: 14px; }
+  #clean-card p { font-size: 13px; color: var(--text-secondary); text-align: center; margin: 14px 0 18px; }
+  /* 开关行：左文案 + 右滑动开关 */
+  .clean-switch {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    min-height: 46px;
+    padding: 0 2px;
+    font-size: 15px;
+    color: var(--text-primary);
+    cursor: pointer;
+  }
+  .clean-switch input { position: absolute; opacity: 0; pointer-events: none; }
+  .clean-switch .track {
+    position: relative;
+    flex: 0 0 auto;
+    width: 42px; height: 24px;
+    border-radius: 12px;
+    background: var(--chip-bg);
+    transition: background 0.2s var(--ease);
+  }
+  .clean-switch .track::after {
+    content: '';
+    position: absolute; top: 3px; left: 3px;
+    width: 18px; height: 18px;
+    border-radius: 50%;
+    background: #fff;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
+    transition: transform 0.2s var(--ease);
+  }
+  .clean-switch input:checked + .track { background: var(--primary); }
+  .clean-switch input:checked + .track::after { transform: translateX(18px); }
+  #clean-close {
+    display: block;
+    margin: 0 auto;
+    border-radius: var(--radius-pill);
+    background: var(--primary);
+    color: #fff;
+    font-size: 15px; font-weight: 600;
+    padding: 11px 28px;
+    transition: transform 0.15s var(--ease);
+  }
+  #clean-close:active { transform: scale(0.96); }
+
   /* ============ 图片全屏查看器 ============ */
   #img-viewer {
     position: fixed; inset: 0; z-index: 100;
@@ -1626,6 +1692,12 @@
       </svg>
       <span>检查更新</span>
     </button>
+    <button id="menu-clean">
+      <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/>
+      </svg>
+      <span>自动清理</span>
+    </button>
     <button id="menu-about">
       <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
         <circle cx="12" cy="12" r="9"/><path d="M12 8h.01"/><path d="M12 11v5"/>
@@ -1669,6 +1741,16 @@
       <h2>极简备忘录 v1.5.6</h2>
       <p>如果它帮到你，可以请我喝杯咖啡</p>
       <button id="about-close">关闭</button>
+    </div>
+  </div>
+  <!-- 自动清理设置弹窗：复用「关于」居中卡片模式，两开关独立 -->
+  <div id="clean-mask">
+    <div id="clean-card" role="dialog" aria-modal="true">
+      <h2>自动清理</h2>
+      <label class="clean-switch"><span>自动清理已完成事项</span><input type="checkbox" id="clean-done"><span class="track"></span></label>
+      <label class="clean-switch"><span>自动清理已过期事项</span><input type="checkbox" id="clean-expired"><span class="track"></span></label>
+      <p>每天 20:00 自动执行。</p>
+      <button id="clean-close">关闭</button>
     </div>
   </div>
   <!-- 分享兜底 modal：剪贴板 API 不可用时手动复制 -->
@@ -2108,6 +2190,11 @@
 
   function isTodo(note) { return note.type === 'todo'; }
   function isDone(note) { return note.doneAt != null; }
+
+  // 已过期：doneAt 为空 且已到截止时间（dueAt < now）；已完成优先，过期不回退
+  function isOverdue(note) {
+    return isTodo(note) && !isDone(note) && note.dueAt != null && note.dueAt < Date.now();
+  }
 
   // 待办卡片右上角倒计时文案（有 dueAt 且未完成才显示）
   /* ---------- 字数统计（编辑页）：中文按字、英文按词、数字按连续串 ---------- */
@@ -2577,8 +2664,8 @@
   });
 
   // 列表排序（含分段过滤）：
-  // 全部：未完成待办（有 dueAt 按 dueAt 升序，无按 updatedAt 倒序）→ 普通笔记（updatedAt 倒序）→ 已完成待办（doneAt 倒序）
-  // 待办：type=todo 且未完成；已完成：type=todo 且已完成（doneAt 倒序）
+  // 全部：置顶 → 进行中待办（dueAt 升序/updatedAt 倒序）→ 已过期待办（dueAt 升序）→ 普通笔记 → 已完成待办（doneAt 倒序沉底）
+  // 待办：type=todo 全部（进行中→已过期→已完成沉底，已完成不隐藏）；已完成：type=todo 且已完成
   /* ---------- 置顶 ---------- */
 
   function isPinned(n) { return !!(n && n.pinnedAt); }
@@ -2636,9 +2723,15 @@
   }
 
   function sortedNotesFor(filter) {
-    var rank = function (n) { return isTodo(n) && isDone(n) ? 2 : (isTodo(n) ? 0 : 1); };
+    var now = Date.now(); // 过期判定统一用同一时刻，保证一次渲染内排序稳定
+    var rank = function (n) {
+      if (isDone(n)) return 3;                                     // 已完成：沉底
+      if (isTodo(n) && n.dueAt != null && n.dueAt < now) return 1; // 已过期
+      if (isTodo(n)) return 0;                                     // 进行中
+      return 2;                                                    // 普通笔记
+    };
     return notes.slice().filter(function (n) {
-      if (filter === 'todo') return isTodo(n) && !isDone(n);
+      if (filter === 'todo') return isTodo(n); // 全部待办：进行中→已过期→已完成（已完成不隐藏、沉底）
       if (filter === 'done') return isTodo(n) && isDone(n);
       return true;
     }).sort(function (a, b) {
@@ -2647,13 +2740,14 @@
       if (pa && pb) return b.pinnedAt - a.pinnedAt; // 置顶区按 pinnedAt 倒序
       var ra = rank(a), rb = rank(b);
       if (ra !== rb) return ra - rb;
-      if (ra === 0) {
+      if (ra === 0) { // 进行中：有 dueAt 按 dueAt 升序，无按 updatedAt 倒序
         if (a.dueAt != null && b.dueAt != null) return a.dueAt - b.dueAt;
         if (a.dueAt != null) return -1;
         if (b.dueAt != null) return 1;
         return b.updatedAt - a.updatedAt;
       }
-      if (ra === 2) return b.doneAt - a.doneAt;
+      if (ra === 1) return a.dueAt - b.dueAt; // 已过期：dueAt 升序（最久的最前）
+      if (ra === 3) return b.doneAt - a.doneAt; // 已完成：doneAt 倒序沉底
       return compareNotesBySort(a, b); // 普通区按当前排序方式
     });
   }
@@ -3285,7 +3379,7 @@
       // 待办：卡片左侧圆形复选框，点击直接切换完成状态（不进编辑页）
       if (isTodo(note)) {
         var chk = document.createElement('div');
-        chk.className = 'todo-chk' + (isDone(note) ? ' on' : '');
+        chk.className = 'todo-chk' + (isDone(note) ? ' on' : (isOverdue(note) ? ' overdue' : ''));
         chk.textContent = '✓';
         chk.addEventListener('click', function (e) {
           e.stopPropagation(); // 不触发卡片打开/多选
@@ -3791,6 +3885,7 @@
 
   function openNote(id) {
     stopMomentum(); // 离开列表进编辑页：停掉惯性
+    resetCropBusy(); // 进入编辑页时重置 cropBusy（防止上次残留）
     var myToken = ++openToken; // 本次的入场号；后续在途异步都带着它校验
     var note = noteById(id);
     if (!note) return;
@@ -3933,7 +4028,10 @@
             if (isTodo(noteLeft)) {
               li.classList.add('is-todo');
               var chk = li.querySelector('.todo-chk');
-              if (chk) chk.classList.toggle('on', isDone(noteLeft));
+              if (chk) {
+                chk.classList.toggle('on', isDone(noteLeft));
+                chk.classList.toggle('overdue', isOverdue(noteLeft)); // 过期圆圈同步变红
+              }
               li.classList.toggle('is-done', isDone(noteLeft));
             }
             // 更新 due角标（编辑器内可修改截止时间）
@@ -4240,6 +4338,7 @@
       img.dataset.imgId = rec.id;
       img.dataset.imgNoteId = rec.noteId; // 供重点标注写库时补 noteId
       img.alt = '便签图片';
+      img.contentEditable = 'false'; // 防 contenteditable 光标/编辑误入图片（存在时整段禁用编辑）
       img.draggable = false; // 防 contenteditable 原生拖拽吞 click（影响查看器打开）
       img.src = imgUrlCache[rec.id]; // 对象 URL 立即可用，不等落库
       insertNodeAtCaret(img);
@@ -4269,7 +4368,7 @@
           return insertImageBlob(file, file.type); // 小图：跳过裁剪直接插入原图
         }
         cropQueue.push({ img: img, file: file, noteId: currentId });
-        if (!cropBusy) { cropBusy = true; cropSkipped = 0; openCropUI(cropQueue[0]); }
+        if (!cropBusy) { cropBusy = true; cropSkipped = 0; armCropBusyTimer(); openCropUI(cropQueue[0]); }
       }).catch(function () {
         showUndoToast('图片加载失败');
       });
@@ -4538,22 +4637,64 @@
   var cropOkBtn = $('crop-ok');
   var cropQueue = [];   // 待裁剪队列（{img, file, noteId}）
   var cropBusy = false; // 正在裁剪（防重入与队列调度）
+  var cropBusyTimer = null; // cropBusy 超时自愈定时器
+  function resetCropBusy() {
+    cropBusy = false;
+    if (cropBusyTimer) { clearTimeout(cropBusyTimer); cropBusyTimer = null; }
+  }
+  function armCropBusyTimer() {
+    if (cropBusyTimer) clearTimeout(cropBusyTimer);
+    cropBusyTimer = setTimeout(function () {
+      if (cropBusy) { console.warn('[crop] cropBusy 超时 30s 自愈重置'); resetCropBusy(); }
+    }, 30000);
+  }
+  // App 启动时强制重置（防止上次会话残留）
+  resetCropBusy();
   var cropSkipped = 0;  // 本批被取消的张数（队列结束时 toast 提示）
   var cropData = null;  // 当前裁剪上下文：{img, job, baseW, baseH, scale, tx, ty, minScale, frame}
   var cropTouch = null; // 手势状态：{mode:'pinch'|'pan', startDist, startScale, lastX, lastY}
 
-  // FileReader → Image 元素（拿自然尺寸；同时作为裁剪与 canvas 的数据源）
+  // createObjectURL → Image 元素（拿自然尺寸；同时作为裁剪与 canvas 的数据源）
+  // 大图自动压缩到长边 ≤ 1920px，避免 WebView 解码大 dataURL 静默失败
   function readImageElement(file) {
     return new Promise(function (resolve, reject) {
-      var fr = new FileReader();
-      fr.onerror = function () { reject(new Error('read')); };
-      fr.onload = function () {
-        var img = new Image();
-        img.onerror = function () { reject(new Error('decode')); };
-        img.onload = function () { resolve(img); };
-        img.src = fr.result;
+      var blobUrl = URL.createObjectURL(file);
+      var timer = setTimeout(function () {
+        URL.revokeObjectURL(blobUrl);
+        reject(new Error('timeout'));
+      }, 20000);
+      var img = new Image();
+      img.onerror = function () {
+        clearTimeout(timer);
+        URL.revokeObjectURL(blobUrl);
+        reject(new Error('decode'));
       };
-      fr.readAsDataURL(file);
+      img.onload = function () {
+        clearTimeout(timer);
+        var naturalW = img.naturalWidth, naturalH = img.naturalHeight;
+        if (naturalW <= 1920 && naturalH <= 1920) {
+          URL.revokeObjectURL(blobUrl);
+          resolve(img);
+          return;
+        }
+        // 长边超 1920 → canvas 压缩到 1920，质量 0.85
+        var scale = 1920 / Math.max(naturalW, naturalH);
+        var cw = Math.round(naturalW * scale);
+        var ch = Math.round(naturalH * scale);
+        var canvas = document.createElement('canvas');
+        canvas.width = cw; canvas.height = ch;
+        canvas.getContext('2d').drawImage(img, 0, 0, cw, ch);
+        URL.revokeObjectURL(blobUrl);
+        canvas.toBlob(function (blob) {
+          if (!blob) { resolve(img); return; }
+          var compUrl = URL.createObjectURL(blob);
+          var compImg = new Image();
+          compImg.onload = function () { resolve(compImg); };
+          compImg.onerror = function () { resolve(img); };
+          compImg.src = compUrl;
+        }, 'image/jpeg', 0.85);
+      };
+      img.src = blobUrl;
     });
   }
 
@@ -4637,8 +4778,8 @@
 
   function nextCropJob() {
     cropQueue.shift();
-    if (cropQueue.length) { openCropUI(cropQueue[0]); return; }
-    cropBusy = false;
+    if (cropQueue.length) { armCropBusyTimer(); openCropUI(cropQueue[0]); return; }
+    resetCropBusy();
     if (cropSkipped > 0) {
       showUndoToast('已跳过 ' + cropSkipped + ' 张图片');
       cropSkipped = 0;
@@ -4672,22 +4813,28 @@
     var cap = 2560 / Math.max(cw, chh);   // 输出长边 ≤ 2560px
     if (cap < 1) { cw = Math.round(cw * cap); chh = Math.round(chh * cap); }
     hideCropUI(); // 立即响应：确认后界面马上关闭，不等到编码结束
+    armCropBusyTimer(); // 启动 30s 超时自愈
     setTimeout(function () { // 重活挪出点击回调，不阻塞主线程
-      var canvas = document.createElement('canvas');
-      canvas.width = cw; canvas.height = chh;
-      var ctx = canvas.getContext('2d');
-      ctx.drawImage(img, sx, sy, sw, sh, 0, 0, cw, chh);
-      var done = function (blob) {
-        if (currentId === job.noteId) insertImageBlob(blob, 'image/jpeg'); // 已切笔记则放弃插入
+      try {
+        var canvas = document.createElement('canvas');
+        canvas.width = cw; canvas.height = chh;
+        var ctx = canvas.getContext('2d');
+        ctx.drawImage(img, sx, sy, sw, sh, 0, 0, cw, chh);
+        var done = function (blob) {
+          if (currentId === job.noteId) insertImageBlob(blob, 'image/jpeg'); // 已切笔记则放弃插入
+          nextCropJob();
+        };
+        if (canvas.toBlob) {
+          canvas.toBlob(function (b) {
+            if (b) done(b);
+            else done(dataURLtoBlob(canvas.toDataURL('image/jpeg', 0.88))); // 罕见 null 兜底
+          }, 'image/jpeg', 0.88);
+        } else {
+          done(dataURLtoBlob(canvas.toDataURL('image/jpeg', 0.88)));
+        }
+      } catch (e) {
+        console.error('[crop] confirmCrop 异常:', e);
         nextCropJob();
-      };
-      if (canvas.toBlob) {
-        canvas.toBlob(function (b) {
-          if (b) done(b);
-          else done(dataURLtoBlob(canvas.toDataURL('image/jpeg', 0.88))); // 罕见 null 兜底
-        }, 'image/jpeg', 0.88);
-      } else {
-        done(dataURLtoBlob(canvas.toDataURL('image/jpeg', 0.88)));
       }
     }, 35);
   }
@@ -5051,6 +5198,59 @@
   $('about-mask').addEventListener('click', function (e) {
     if (e.target === $('about-mask')) $('about-mask').classList.remove('open');
   });
+
+  /* ============ 自动清理设置：⋯ 菜单入口 + 弹窗 + 启动检查 ============ */
+  var CLEAN_DONE_KEY = 'auto_clean_done';
+  var CLEAN_EXPIRED_KEY = 'auto_clean_expired';
+  var CLEAN_LAST_KEY = 'auto_clean_last_date';
+  var cleanDoneEl = $('clean-done');
+  var cleanExpiredEl = $('clean-expired');
+  function cleanPref(key) { return localStorage.getItem(key) === '1'; } // 缺省 = 关闭
+  function setCleanPref(key, on) { try { localStorage.setItem(key, on ? '1' : '0'); } catch (e) {} }
+  function setCleanLastDate(ymd) { try { localStorage.setItem(CLEAN_LAST_KEY, ymd); } catch (e) {} }
+
+  $('menu-clean').addEventListener('click', function () {
+    closeMenu();
+    cleanDoneEl.checked = cleanPref(CLEAN_DONE_KEY);
+    cleanExpiredEl.checked = cleanPref(CLEAN_EXPIRED_KEY);
+    $('clean-mask').classList.add('open');
+  });
+  $('clean-close').addEventListener('click', function () {
+    $('clean-mask').classList.remove('open');
+  });
+  $('clean-mask').addEventListener('click', function (e) {
+    if (e.target === $('clean-mask')) $('clean-mask').classList.remove('open');
+  });
+  cleanDoneEl.addEventListener('change', function () { setCleanPref(CLEAN_DONE_KEY, cleanDoneEl.checked); });
+  cleanExpiredEl.addEventListener('change', function () { setCleanPref(CLEAN_EXPIRED_KEY, cleanExpiredEl.checked); });
+
+  // App 启动时执行一次：今天 20:00 已过、且今天还没清理过才动手（无后台定时任务，打开即检查）
+  function runAutoClean() {
+    var cleanDone = cleanPref(CLEAN_DONE_KEY), cleanExpired = cleanPref(CLEAN_EXPIRED_KEY);
+    if (!cleanDone && !cleanExpired) return;
+    var now = new Date();
+    if (now.getHours() * 60 + now.getMinutes() < 20 * 60) return; // 未到 20:00
+    var ymd = now.getFullYear() + '-' + pad(now.getMonth() + 1) + '-' + pad(now.getDate());
+    if (localStorage.getItem(CLEAN_LAST_KEY) === ymd) return; // 今天已清理过
+    var doneIds = [], expiredIds = []; // 条件互斥：已完成优先，过期不重复计数
+    notes.forEach(function (n) {
+      if (!isTodo(n)) return;
+      if (isDone(n)) { if (cleanDone) doneIds.push(n.id); }
+      else if (isOverdue(n) && cleanExpired) expiredIds.push(n.id);
+    });
+    var doomed = doneIds.concat(expiredIds);
+    if (!doomed.length) { setCleanLastDate(ymd); return; } // 无可清理项，仅记录日期
+    doomed.forEach(cancelNoteNotification); // 取消对应系统通知
+    dbDeleteNotesWithImages(doomed).then(function (imgIds) { // 批量删：事务内连带图片
+      imgIds.forEach(function (imgId) {
+        if (imgUrlCache[imgId]) { URL.revokeObjectURL(imgUrlCache[imgId]); delete imgUrlCache[imgId]; }
+      });
+      notes = notes.filter(function (n) { return doomed.indexOf(n.id) === -1; }); // 更新内存缓存
+      setCleanLastDate(ymd);
+      renderList(); // 计数 / 空态由 renderList 统一处理
+      showUndoToast('已清理 ' + doneIds.length + ' 条已完成，' + expiredIds.length + ' 条已过期');
+    }).catch(function () { /* 存储失败：数据保持原样，下次打开重试 */ });
+  }
 
   importInput.addEventListener('change', function () {
     var f = importInput.files && importInput.files[0];
@@ -5653,7 +5853,7 @@
 
   /* ---------- 应用内更新（国内镜像；只 Capacitor 环境生效，浏览器静默跳过） ---------- */
   var UPDATE_MODAL = $('update-modal');
-  var CURRENT_VERSION = '1.6.3'; // 与 android/app/build.gradle 的 versionName 保持一致
+  var CURRENT_VERSION = '1.6.4'; // 与 android/app/build.gradle 的 versionName 保持一致
   var UPDATE_URLS = [
     'https://cdn.jsdelivr.net/gh/AIZIYOU466/ya-thoughts@main/version.json',
     'https://gh-proxy.com/https://raw.githubusercontent.com/AIZIYOU466/ya-thoughts/main/version.json',
@@ -5806,6 +6006,7 @@
       backfillOrder(); // 无 order 字段的旧便签按 createdAt 升序补齐（初始顺序按创建时间）
       updateSortMenu(); // 应用持久化的排序方式后再首次渲染
       renderList();
+      runAutoClean(); // 每天 20:00 后首次打开检查一次（内部视情况再 renderList）
       checkDueReminders();
       requestNotificationPermission(); // 启动时请求通知权限（Android 13+ 弹窗；浏览器静默跳过）
       checkExactAlarmSetting();        // 启动时检查精确闹钟权限（Android 专用，未授权仅告警不打扰）
@@ -5817,6 +6018,24 @@
       // 数据库打不开（极端隐私模式等）时显示空列表
       renderList();
     });
+
+  /* ---------- 全局错误捕获（仅 Capacitor 环境 toast + console；浏览器 console 静默） ---------- */
+  var globalErrorFn = function (ev) {
+    try {
+      var msg = ev && ev.message;
+      console.error('[global] 未捕获错误:', ev && ev.error ? ev.error : msg);
+      if (window.Capacitor && window.Capacitor.Plugins) showUndoToast('出错了，请稍后重试');
+    } catch (e) { /* 捕获逻辑自身异常不再上报，避免二次崩溃 */ }
+  };
+  var globalRejectFn = function (ev) {
+    try {
+      var reason = ev && ev.reason;
+      console.error('[global] 未处理的 Promise 拒绝:', reason);
+      if (window.Capacitor && window.Capacitor.Plugins) showUndoToast('出错了，请稍后重试');
+    } catch (e) { /* 同上 */ }
+  };
+  window.addEventListener('error', globalErrorFn);
+  window.addEventListener('unhandledrejection', globalRejectFn);
 })();
 
 /* ---------- UI 动效增强层（独立 IIFE，只做表现增强，不改任何业务逻辑） ---------- */
