@@ -1,0 +1,69 @@
+═══════════════════════════════════════
+技能调用检查（必读）
+═══════════════════════════════════════
+
+本任务预期加载：
+- ponytail（控制输出长度）
+
+请先明确列出：本次任务你会加载哪几个技能。
+
+═══════════════════════════════════════
+背景
+═══════════════════════════════════════
+
+用户的手机是 Android 14。Android 14 对 SCHEDULE_EXACT_ALARM 的默认策略是"未授予"，
+导致 LocalNotifications 的精确闹钟可能延迟几分钟才触发。
+对"待办提醒"场景不可接受。
+
+用户自己用 App，不上架 Play Store，因此可以直接用 USE_EXACT_ALARM 权限
+（Android 13+ 新增，装完后自动授予，不需要用户手动去系统设置开）。
+
+═══════════════════════════════════════
+任务
+═══════════════════════════════════════
+
+【修改 1：AndroidManifest.xml】
+在 android/app/src/main/AndroidManifest.xml 里，把权限声明改为同时包含：
+
+<uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+<uses-permission android:name="android.permission.USE_EXACT_ALARM" />
+<uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
+<uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+
+说明：
+- USE_EXACT_ALARM 是主用权限（Android 13+ 自动授予）。
+- SCHEDULE_EXACT_ALARM 保留作为旧版本 Android 的兼容（Android 12 及以下）。
+- 两个一起声明，Android 会优先用 USE_EXACT_ALARM。
+
+【修改 2：index.html 里的 scheduleNoteNotification】
+在调用 LocalNotifications.schedule 时，给通知对象加上：
+
+allowWhileIdle: true
+
+这样在 Doze 模式下也能准时触发。
+
+【修改 3：可选 — 检查权限状态】
+如果 LocalNotifications 提供了检查"精确闹钟权限"的 API，
+在 App 启动时调用一次，如果未授权，console.log 一条警告。
+不需要弹窗打扰用户（因为 USE_EXACT_ALARM 大概率已授权）。
+
+如果插件没有这个 API，跳过这一项。
+
+═══════════════════════════════════════
+严格约束
+═══════════════════════════════════════
+
+- 只改权限声明和 allowWhileIdle 参数。
+- 不改其他任何东西。
+- 不改数据结构。
+- 不改功能逻辑。
+- 不引入新依赖。
+
+═══════════════════════════════════════
+输出要求
+═══════════════════════════════════════
+
+1. 修改 AndroidManifest.xml 的权限声明（列出前后对比）。
+2. 修改 index.html 的 scheduleNoteNotification（列出前后对比）。
+3. 报告文件大小和修改的行号。
+4. 如果插件不支持检查精确闹钟权限，明确说明"跳过修改 3"。

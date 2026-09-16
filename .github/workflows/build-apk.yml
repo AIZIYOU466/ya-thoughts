@@ -1,5 +1,8 @@
 name: Build Android APK
 
+permissions:
+  contents: write
+
 on:
   push:
     branches: [ main ]
@@ -37,6 +40,43 @@ jobs:
             -Pandroid.injected.signing.store.password=***REMOVED*** \
             -Pandroid.injected.signing.key.alias=yathoughts \
             -Pandroid.injected.signing.key.password=***REMOVED***
+
+      - name: Extract version
+        id: get_version
+        run: |
+          VERSION=$(grep -oP 'versionName "\K[^"]+' android/app/build.gradle)
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Generate version.json
+        run: |
+          V="${{ steps.get_version.outputs.version }}"
+          R="AIZIYOU466/ya-thoughts"
+          cat > version.json << EOF
+          {
+            "version": "$V",
+            "notes": "自动构建 $V",
+            "apkUrl": "https://gh-proxy.com/https://github.com/$R/releases/download/v$V/app-release.apk",
+            "apkUrlBackup": "https://ghfast.top/https://github.com/$R/releases/download/v$V/app-release.apk"
+          }
+          EOF
+
+      - name: Commit version.json
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add version.json
+          git commit -m "chore: update version.json [skip ci]" || echo "no changes"
+          git push
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.get_version.outputs.version }}
+          name: Ya thoughts v${{ steps.get_version.outputs.version }}
+          files: android/app/build/outputs/apk/release/app-release.apk
+          make_latest: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Upload APK
         uses: actions/upload-artifact@v4

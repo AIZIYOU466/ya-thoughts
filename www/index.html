@@ -1344,6 +1344,7 @@
     will-change: transform, opacity;
     animation: viewer-in 0.24s var(--ease-spring);
   }
+  #viewer-img.v-anim { transition: transform 300ms cubic-bezier(0.4, 0, 0.2, 1); } /* 双击缩放动画 */
   @keyframes viewer-in { from { opacity: 0; transform: scale(0.95); } to { opacity: 1; transform: scale(1); } }
   #viewer-close {
     position: absolute;
@@ -1356,6 +1357,121 @@
     transition: background 0.15s var(--ease), transform 0.1s var(--ease);
   }
   #viewer-close:active { background: rgba(255, 255, 255, 0.22); transform: scale(0.94); will-change: transform; }
+
+  /* ============ 图片裁剪 overlay（选图后全屏裁剪，确认后才插入） ============ */
+  #crop-overlay {
+    position: fixed; inset: 0; z-index: 105;
+    display: none;
+    background: rgba(0, 0, 0, 0.92);
+    touch-action: none; /* 手势交给 JS（Android WebView 手势必须 Touch Events） */
+  }
+  #crop-overlay.open { display: block; animation: fade-in 0.2s var(--ease); }
+  #crop-stage { position: absolute; inset: 0; overflow: hidden; }
+  #crop-img {
+    position: absolute; left: 0; top: 0;
+    transform-origin: 0 0; /* translate = 图片左上角坐标，scale 绕左上角，坐标系最简 */
+    max-width: none; max-height: none;
+    will-change: transform;
+    -webkit-user-select: none; user-select: none;
+    -webkit-touch-callout: none; -webkit-user-drag: none;
+  }
+  #crop-frame {
+    position: absolute;
+    border: 1.5px solid #fff;
+    box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.6); /* 框外单条 CSS 遮罩压暗，突出裁剪框 */
+    pointer-events: none; /* 不抢图片手势 */
+  }
+  .crop-corner {
+    position: absolute; width: 22px; height: 22px;
+    border: 2px solid #fff;
+    pointer-events: none;
+  }
+  .crop-corner.tl { left: -2px; top: -2px; border-right: none; border-bottom: none; }
+  .crop-corner.tr { right: -2px; top: -2px; border-left: none; border-bottom: none; }
+  .crop-corner.bl { left: -2px; bottom: -2px; border-right: none; border-top: none; }
+  .crop-corner.br { right: -2px; bottom: -2px; border-left: none; border-top: none; }
+  #crop-bar {
+    position: absolute;
+    left: 50%; bottom: calc(env(safe-area-inset-bottom) + 16px);
+    transform: translateX(-50%);
+    display: flex; align-items: center; gap: 14px;
+    padding: 8px 10px;
+    background: var(--glass-bg-strong);
+    -webkit-backdrop-filter: var(--glass-blur);
+    backdrop-filter: var(--glass-blur);
+    border: 1px solid var(--glass-border);
+    border-radius: 16px;
+    box-shadow: var(--shadow-pop), var(--glass-highlight);
+    z-index: 2;
+  }
+  #crop-cancel {
+    font-size: 15px; color: var(--text-secondary);
+    padding: 8px 6px; min-height: 40px;
+  }
+  #crop-ok {
+    font-size: 15px; font-weight: 600; color: #fff;
+    background: var(--primary);
+    padding: 8px 18px; border-radius: var(--radius-pill);
+    min-height: 40px;
+  }
+  #crop-ratios { display: flex; align-items: center; gap: 2px; }
+  #crop-ratios .crop-ratio-btn {
+    width: 40px; height: 40px;
+    display: inline-flex; align-items: center; justify-content: center;
+    border-radius: 12px;
+    color: var(--text-secondary);
+    transition: background 0.15s var(--ease), color 0.15s var(--ease);
+  }
+  #crop-ratios .crop-ratio-btn:active { background: var(--chip-press); }
+  #crop-ratios .crop-ratio-btn.active { background: var(--primary); color: #fff; }
+
+  /* ============ 应用内更新弹窗（液态玻璃） ============ */
+  #update-modal {
+    position: fixed; inset: 0; z-index: 9999;
+    display: none;
+    align-items: center; justify-content: center;
+    padding: 24px;
+    background: rgba(0, 0, 0, 0.5);
+    -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px); /* 遮罩层轻度模糊，聚焦卡片 */
+  }
+  #update-modal.open { display: flex; }
+  .update-card {
+    width: 100%; max-width: 320px;
+    padding: 24px;
+    background: var(--glass-bg-strong);
+    -webkit-backdrop-filter: var(--glass-blur);
+    backdrop-filter: var(--glass-blur);
+    border: 1px solid var(--glass-border);
+    border-radius: 20px;
+    box-shadow: var(--shadow-pop), var(--glass-highlight);
+    animation: update-in 200ms cubic-bezier(0.32, 0.72, 0, 1);
+  }
+  .update-title { font-size: 17px; font-weight: 600; }
+  .update-version { margin-top: 4px; font-size: 13px; font-weight: 600; color: var(--primary); }
+  .update-notes {
+    margin-top: 12px;
+    font-size: 14px; line-height: 1.6;
+    color: var(--text-secondary);
+    max-height: 120px; overflow-y: auto;
+    white-space: pre-wrap; word-break: break-word; /* notes 多行用 \n，按换行显示 */
+  }
+  .update-actions { margin-top: 18px; display: flex; gap: 12px; justify-content: flex-end; }
+  #update-later {
+    font-size: 15px; color: #6B7280;
+    padding: 9px 6px; min-height: 40px;
+  }
+  #update-download {
+    font-size: 15px; font-weight: 600; color: #fff;
+    background: var(--primary);
+    padding: 9px 18px; border-radius: var(--radius-pill);
+    min-height: 40px;
+    transition: transform 0.15s var(--ease);
+  }
+  #update-download:active { transform: scale(0.96); }
+  @keyframes update-in {
+    from { opacity: 0; transform: scale(0.95); }
+    to { opacity: 1; transform: scale(1); }
+  }
 
   /* 响应式断点已移除：这是手机 App，不需要 */
 
@@ -1607,6 +1723,50 @@
     </svg>
   </button>
   <img id="viewer-img" alt="图片预览">
+</div>
+
+<!-- 图片裁剪 overlay：选图后全屏裁剪，确认后才插入（逻辑独立于查看器） -->
+<div id="crop-overlay" role="dialog" aria-modal="true" aria-label="裁剪图片">
+  <div id="crop-stage">
+    <img id="crop-img" alt="裁剪图片">
+    <div id="crop-frame" aria-hidden="true">
+      <span class="crop-corner tl"></span>
+      <span class="crop-corner tr"></span>
+      <span class="crop-corner bl"></span>
+      <span class="crop-corner br"></span>
+    </div>
+  </div>
+  <div id="crop-bar">
+    <button id="crop-cancel" type="button">取消</button>
+    <div id="crop-ratios" aria-label="裁剪比例">
+      <button type="button" class="crop-ratio-btn active" data-ratio="1:1" title="1:1">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="2"/></svg>
+      </button>
+      <button type="button" class="crop-ratio-btn" data-ratio="4:3" title="4:3">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><rect x="3" y="5.25" width="18" height="13.5" rx="2"/></svg>
+      </button>
+      <button type="button" class="crop-ratio-btn" data-ratio="16:9" title="16:9">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><rect x="3" y="6.94" width="18" height="10.125" rx="2"/></svg>
+      </button>
+      <button type="button" class="crop-ratio-btn" data-ratio="orig" title="原图">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="9.5" r="1.5"/><path d="M21 16l-4.7-4.7L9 18.6"/></svg>
+      </button>
+    </div>
+    <button id="crop-ok" type="button">确认</button>
+  </div>
+</div>
+
+<!-- 应用内更新弹窗（液态玻璃；只在 Capacitor 环境出现） -->
+<div id="update-modal" role="dialog" aria-modal="true" aria-label="发现新版本">
+  <div class="update-card">
+    <div class="update-title">发现新版本</div>
+    <div class="update-version"></div>
+    <div class="update-notes"></div>
+    <div class="update-actions">
+      <button id="update-later" type="button">稍后</button>
+      <button id="update-download" type="button">下载更新</button>
+    </div>
+  </div>
 </div>
 
 <script>
@@ -2010,6 +2170,7 @@
     note.doneAt = isDone(note) ? null : Date.now();
     note.updatedAt = Date.now();
     dbPut(note).catch(function () { /* 存储失败静默 */ });
+    scheduleNoteNotification(note); // 完成 → 自动取消通知；取消完成 → 重新调度
     renderList();
     if (currentId === id) syncEditorTodoUI();
   }
@@ -3174,6 +3335,7 @@
 
   // 即删：IndexedDB（连带图片）→ 内存缓存 → DOM 折叠补位（200ms）→ 计数/空态
   function removeNoteNow(id) {
+    cancelNoteNotification(id); // 删除便签：取消其系统通知
     dbDeleteNotesWithImages([id]).then(function (imgIds) {
       imgIds.forEach(function (imgId) {
         if (imgUrlCache[imgId]) {
@@ -3508,6 +3670,7 @@
     var nid = id || currentId || pendingSaveId;
     var note = noteById(nid);
     if (!note) return;
+    scheduleNoteNotification(note); // 待办：随每次保存对齐系统通知（幂等，条件不满足自动取消）
     if (!id || id === currentId) {
       // 编辑器仍显示该便签：同步图片重点标注 + 清缓存（切换后跳过，避免读错 DOM）
       syncImagesStars();
@@ -3871,6 +4034,39 @@
     editorEl.dispatchEvent(new Event('input', { bubbles: true }));
   }
 
+  // 落库 + 插入图片（裁剪产出与原图共用；mime 由调用方指定）
+  function insertImageBlob(blob, mime) {
+    if (!currentId) return Promise.resolve(false);
+    var rec = {
+      id: uid(),
+      noteId: currentId,
+      mime: mime || blob.type || 'image/jpeg',
+      blob: blob,
+      pos: Date.now(), // 存储时在正文中的顺序（DOM 顺序）
+      createdAt: Date.now(),
+      starred: false // 图片重点标注，默认无
+    };
+    return dbPutImage(rec).then(function () {
+      if (currentId !== rec.noteId) {
+        // 上传落库前用户已离开该笔记：作废插入并清掉孤儿记录，避免图片串到别的便签
+        dbDeleteImage(rec.id).catch(function () { /* 存储失败静默 */ });
+        return false;
+      }
+      var img = document.createElement('img');
+      img.dataset.imgId = rec.id;
+      img.dataset.imgNoteId = rec.noteId; // 供重点标注写库时补 noteId
+      img.alt = '便签图片';
+      img.src = URL.createObjectURL(rec.blob); // 立即在正文里显示
+      insertNodeAtCaret(img);
+      renderImageStrip();
+      return true;
+    }).catch(function () {
+      alert('图片保存失败，请重试');
+      return false;
+    });
+  }
+
+  // 选图入口：读尺寸 → 过小(<100px)直接插入；否则进裁剪队列逐张裁剪
   function handleImageFiles(files) {
     if (!currentId || !files || !files.length) return;
     Array.prototype.forEach.call(files, function (file) {
@@ -3879,30 +4075,14 @@
         alert('图片「' + file.name + '」超过 10MB，已跳过');
         return;
       }
-      var rec = {
-        id: uid(),
-        noteId: currentId,
-        mime: file.type,
-        blob: file,
-        pos: Date.now(), // 存储时在正文中的顺序（DOM 顺序）
-        createdAt: Date.now(),
-        starred: false // 图片重点标注，默认无
-      };
-      dbPutImage(rec).then(function () {
-        if (currentId !== rec.noteId) {
-          // 上传落库前用户已离开该笔记：作废插入并清掉孤儿记录，避免图片串到别的便签
-          dbDeleteImage(rec.id).catch(function () { /* 存储失败静默 */ });
-          return;
+      readImageElement(file).then(function (img) {
+        if (img.naturalWidth < 100 || img.naturalHeight < 100) {
+          return insertImageBlob(file, file.type); // 小图：跳过裁剪直接插入原图
         }
-        var img = document.createElement('img');
-        img.dataset.imgId = rec.id;
-        img.dataset.imgNoteId = rec.noteId; // 供重点标注写库时补 noteId
-        img.alt = '便签图片';
-        img.src = URL.createObjectURL(rec.blob); // 立即在正文里显示
-        insertNodeAtCaret(img);
-        renderImageStrip();
+        cropQueue.push({ img: img, file: file, noteId: currentId });
+        if (!cropBusy) { cropBusy = true; cropSkipped = 0; openCropUI(cropQueue[0]); }
       }).catch(function () {
-        alert('图片保存失败，请重试');
+        showUndoToast('图片加载失败');
       });
     });
   }
@@ -4159,6 +4339,231 @@
     });
   }
 
+  /* ---------- 图片裁剪（选图后全屏裁剪，确认后才插入；逻辑独立于查看器） ---------- */
+
+  var cropEl = $('crop-overlay');
+  var cropStageEl = $('crop-stage');
+  var cropImgEl = $('crop-img');
+  var cropFrameEl = $('crop-frame');
+  var cropOkBtn = $('crop-ok');
+  var cropQueue = [];   // 待裁剪队列（{img, file, noteId}）
+  var cropBusy = false; // 正在裁剪（防重入与队列调度）
+  var cropSkipped = 0;  // 本批被取消的张数（队列结束时 toast 提示）
+  var cropData = null;  // 当前裁剪上下文：{img, job, baseW, baseH, scale, tx, ty, minScale, frame}
+  var cropTouch = null; // 手势状态：{mode:'pinch'|'pan', startDist, startScale, lastX, lastY}
+
+  // FileReader → Image 元素（拿自然尺寸；同时作为裁剪与 canvas 的数据源）
+  function readImageElement(file) {
+    return new Promise(function (resolve, reject) {
+      var fr = new FileReader();
+      fr.onerror = function () { reject(new Error('read')); };
+      fr.onload = function () {
+        var img = new Image();
+        img.onerror = function () { reject(new Error('decode')); };
+        img.onload = function () { resolve(img); };
+        img.src = fr.result;
+      };
+      fr.readAsDataURL(file);
+    });
+  }
+
+  function cropInitData(job) {
+    var img = job.img;
+    var sw = cropStageEl.clientWidth, sh = cropStageEl.clientHeight;
+    var fit = Math.min(sw / img.naturalWidth, sh / img.naturalHeight) * 0.92; // contain 92%，初始已覆盖裁剪框
+    cropImgEl.style.width = Math.round(img.naturalWidth * fit) + 'px';
+    cropImgEl.style.height = Math.round(img.naturalHeight * fit) + 'px';
+    cropData = {
+      img: img, job: job,
+      baseW: img.naturalWidth * fit, baseH: img.naturalHeight * fit,
+      scale: 1, minScale: 0.5,
+      tx: (sw - img.naturalWidth * fit) / 2,
+      ty: (sh - img.naturalHeight * fit) / 2,
+      frame: null
+    };
+  }
+
+  // 裁剪框：比例 + 尺寸 + 位置（中心略上移，给底部工具栏让位）；同时算出最小缩放
+  function layoutCropFrame() {
+    var d = cropData;
+    var sw = cropStageEl.clientWidth, sh = cropStageEl.clientHeight;
+    var r = d.ratio === 0 ? d.img.naturalWidth / d.img.naturalHeight : d.ratio;
+    var fw = Math.min(sw * 0.62, sh * 0.5);
+    var fh = fw / r;
+    var fx = (sw - fw) / 2;
+    var fy = Math.max(0, sh * 0.45 - fh / 2); // 中心在 45% 高度
+    cropFrameEl.style.width = fw + 'px';
+    cropFrameEl.style.height = fh + 'px';
+    cropFrameEl.style.left = fx + 'px';
+    cropFrameEl.style.top = fy + 'px';
+    d.frame = { x: fx, y: fy, w: fw, h: fh };
+    d.minScale = Math.max(0.5, Math.max(fw / d.baseW, fh / d.baseH)); // 保证裁剪框始终有图
+  }
+
+  function applyCropTransform() {
+    if (!cropData) return;
+    cropImgEl.style.transform =
+      'translate(' + cropData.tx + 'px,' + cropData.ty + 'px) scale(' + cropData.scale + ')';
+  }
+
+  // 平移钳制：图片显示区必须覆盖整个裁剪框；触到边界时轻微震动提示
+  function clampCropPan(vibrate) {
+    var d = cropData, f = d.frame;
+    var imgW = d.baseW * d.scale, imgH = d.baseH * d.scale;
+    var nx = d.tx, ny = d.ty;
+    if (imgW >= f.w) nx = Math.min(f.x, Math.max(f.x + f.w - imgW, d.tx));
+    else nx = f.x + (f.w - imgW) / 2;
+    if (imgH >= f.h) ny = Math.min(f.y, Math.max(f.y + f.h - imgH, d.ty));
+    else ny = f.y + (f.h - imgH) / 2;
+    if (vibrate && (nx !== d.tx || ny !== d.ty) && navigator.vibrate) {
+      try { navigator.vibrate(10); } catch (e) {} // 到边轻震提示
+    }
+    d.tx = nx; d.ty = ny;
+  }
+
+  function openCropUI(job) {
+    cropEl.classList.add('open'); // 先显示再量尺寸：display:none 时 clientWidth/Height 为 0
+    document.body.style.overflow = 'hidden';
+    cropInitData(job);
+    cropData.ratio = 1; // 默认 1:1；高亮第一个比例按钮
+    Array.prototype.forEach.call(document.querySelectorAll('#crop-ratios .crop-ratio-btn'), function (b) {
+      b.classList.toggle('active', b.dataset.ratio === '1:1');
+    });
+    layoutCropFrame();
+    applyCropTransform();
+    cropImgEl.src = job.img.src; // 复用刚才解码的 DataURL
+  }
+  function hideCropUI() {
+    cropEl.classList.remove('open');
+    cropImgEl.removeAttribute('src');
+    cropData = null;
+    cropTouch = null;
+    document.body.style.overflow = '';
+  }
+
+  function nextCropJob() {
+    cropQueue.shift();
+    if (cropQueue.length) { openCropUI(cropQueue[0]); return; }
+    cropBusy = false;
+    if (cropSkipped > 0) {
+      showUndoToast('已跳过 ' + cropSkipped + ' 张图片');
+      cropSkipped = 0;
+    }
+  }
+
+  // 取消：跳过当前张，继续处理队列；队列空时结束
+  function cancelCrop() {
+    if (!cropBusy || !cropEl.classList.contains('open')) return;
+    cropSkipped++;
+    hideCropUI();
+    nextCropJob();
+  }
+
+  // 确认：裁剪框屏幕坐标 → 图片原始坐标 → Canvas → toBlob(JPEG 0.88) → 走现有插入链路
+  function confirmCrop() {
+    var d = cropData;
+    if (!d || !d.frame) return;
+    var f = d.frame;
+    var imgW = d.baseW * d.scale, imgH = d.baseH * d.scale;
+    var rx = f.x - d.tx, ry = f.y - d.ty;              // 裁剪框相对图片显示区左上角
+    var sx = rx / imgW * d.img.naturalWidth;
+    var sy = ry / imgH * d.img.naturalHeight;
+    var sw = f.w / imgW * d.img.naturalWidth;
+    var sh = f.h / imgH * d.img.naturalHeight;
+    var cw = Math.max(1, Math.round(sw)), chh = Math.max(1, Math.round(sh));
+    var canvas = document.createElement('canvas');
+    canvas.width = cw; canvas.height = chh;
+    var ctx = canvas.getContext('2d');
+    ctx.drawImage(d.img, sx, sy, sw, sh, 0, 0, cw, chh);
+    var done = function (blob) {
+      var job = d.job;
+      hideCropUI();
+      if (currentId === job.noteId) insertImageBlob(blob, 'image/jpeg'); // 已切笔记则放弃插入
+      nextCropJob();
+    };
+    if (canvas.toBlob) {
+      canvas.toBlob(function (b) {
+        if (b) done(b);
+        else done(dataURLtoBlob(canvas.toDataURL('image/jpeg', 0.88))); // 罕见 null 兜底
+      }, 'image/jpeg', 0.88);
+    } else {
+      done(dataURLtoBlob(canvas.toDataURL('image/jpeg', 0.88)));
+    }
+  }
+
+  // toBlob 不可用（旧内核）时的回退：toDataURL → Blob
+  function dataURLtoBlob(dataURL) {
+    var i = dataURL.indexOf(',');
+    var mime = dataURL.slice(5, i).split(';')[0];
+    var bin = atob(dataURL.slice(i + 1));
+    var arr = new Uint8Array(bin.length);
+    for (var k = 0; k < bin.length; k++) arr[k] = bin.charCodeAt(k);
+    return new Blob([arr], { type: mime || 'image/jpeg' });
+  }
+
+  // 裁剪手势：单指平移 + 双指捏合（0.5~3x，且不小于覆盖裁剪框所需的最小值）
+  cropStageEl.addEventListener('touchstart', function (e) {
+    e.preventDefault();
+    if (!cropData) return;
+    if (e.touches.length === 2) {
+      cropTouch = { mode: 'pinch', startDist: touchDist(e.touches), startScale: cropData.scale };
+    } else if (e.touches.length === 1 && !cropTouch) {
+      cropTouch = { mode: 'pan', lastX: e.touches[0].clientX, lastY: e.touches[0].clientY };
+    }
+  }, { passive: false });
+  cropStageEl.addEventListener('touchmove', function (e) {
+    e.preventDefault();
+    if (!cropTouch || !cropData) return;
+    if (cropTouch.mode === 'pinch' && e.touches.length >= 2) {
+      var d = cropData;
+      var cx = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+      var cy = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+      var ns = Math.min(3, Math.max(d.minScale,
+        cropTouch.startScale * touchDist(e.touches) / cropTouch.startDist));
+      var k = ns / d.scale;
+      d.tx = cx - (cx - d.tx) * k; // 捏合中心保持原位
+      d.ty = cy - (cy - d.ty) * k;
+      d.scale = ns;
+      clampCropPan(false);
+      applyCropTransform();
+    } else if (cropTouch.mode === 'pan' && e.touches.length === 1) {
+      var x = e.touches[0].clientX, y = e.touches[0].clientY;
+      cropData.tx += x - cropTouch.lastX;
+      cropData.ty += y - cropTouch.lastY;
+      cropTouch.lastX = x; cropTouch.lastY = y;
+      clampCropPan(true); // 拖到边界轻震提示
+      applyCropTransform();
+    }
+  }, { passive: false });
+  function cropTouchend(e) {
+    if (!e.touches.length) cropTouch = null;
+    else if (e.touches.length === 1 && cropTouch && cropTouch.mode === 'pinch') {
+      cropTouch.mode = 'pan'; // 双指抬到剩一根：继续单指平移
+      cropTouch.lastX = e.touches[0].clientX;
+      cropTouch.lastY = e.touches[0].clientY;
+    }
+  }
+  cropStageEl.addEventListener('touchend', cropTouchend);
+  cropStageEl.addEventListener('touchcancel', cropTouchend);
+
+  cropOkBtn.addEventListener('click', confirmCrop);
+  $('crop-cancel').addEventListener('click', cancelCrop);
+  // 比例切换：1:1 / 4:3 / 16:9 / 原图（data-ratio 直读，orig=按图片实际宽高比）
+  document.addEventListener('click', function (e) {
+    var btn = e.target && e.target.closest ? e.target.closest('#crop-ratios .crop-ratio-btn') : null;
+    if (!btn) return;
+    if (!cropData) return;
+    var label = btn.dataset.ratio;
+    cropData.ratio = label === 'orig' ? 0 :
+      parseFloat(label.split(':')[0]) / parseFloat(label.split(':')[1]);
+    Array.prototype.forEach.call(document.querySelectorAll('#crop-ratios .crop-ratio-btn'), function (b) {
+      b.classList.toggle('active', b === btn);
+    });
+    layoutCropFrame();
+    clampCropPan(false);
+    applyCropTransform();
+  });
+
   /* ---------- 图片交互：放大查看 / 长按删除 ---------- */
 
   var viewerEl = $('img-viewer');
@@ -4169,6 +4574,12 @@
   var vLastX = 0, vLastY = 0;                  // 单指平移上一次位置
   var vStartX = 0, vStartY = 0;                // 本轮触摸起点，用于区分点击与拖动
   var pinchMode = false, vMoved = false;
+  var vGesture = 'idle';                       // 手势状态机：idle/pinching/dragging/doubletap-pending
+  var vTapTimer = null;                        // 双击等待定时器（300ms 无第二次则按单击处理）
+  var vLastTapT = 0, vLastTapX = 0, vLastTapY = 0; // 上一次点击的时间与位置
+  var vPendingClose = false;                   // 单击确认后关闭查看器（由 300ms 超时统一执行）
+  var vAnimating = false;                      // 双击缩放动画进行中（期间忽略新手势）
+  var vDblAnimTimer = null;                    // 动画锁兜底移除定时器
   var lpTimer = null, lpImg = null, lpX = 0, lpY = 0;
   var longPressFired = false; // 长按触发后抑制其后的 click，避免误放大
 
@@ -4178,6 +4589,11 @@
 
   function resetViewerTransform() {
     vScale = 1; vTx = 0; vTy = 0;
+    vGesture = 'idle';
+    clearTimeout(vTapTimer); vTapTimer = null;
+    clearTimeout(vDblAnimTimer); vDblAnimTimer = null;
+    vLastTapT = 0; vPendingClose = false; vAnimating = false; vMoved = false;
+    viewerImgEl.classList.remove('v-anim');
     applyViewerTransform();
   }
 
@@ -4369,6 +4785,8 @@
     if (!note || !isTodo(note)) { hideDuePop(); return; }
     note.dueAt = dueInput.value ? fromLocalInputValue(dueInput.value) : null;
     dbPut(note).catch(function () { /* 存储失败静默 */ });
+    if (note.dueAt) requestNotificationPermission(); // 首次设提醒时确保已授权
+    scheduleNoteNotification(note); // 设/改/清 dueAt → 按新时间重新调度或取消
     syncEditorTodoUI();
     renderList();
     hideDuePop();
@@ -4378,6 +4796,7 @@
     if (note && isTodo(note)) {
       note.dueAt = null;
       dbPut(note).catch(function () { /* 存储失败静默 */ });
+      scheduleNoteNotification(note); // 清除提醒 → 取消旧通知
       syncEditorTodoUI();
       renderList();
     }
@@ -4462,6 +4881,7 @@
       cancelText: '否'
     }).then(function (ok) {
       if (!ok) return;
+      ids.forEach(cancelNoteNotification); // 批量删除：取消对应系统通知
       dbDeleteNotesWithImages(ids).then(function (imgIds) {
         imgIds.forEach(function (id) {
           if (imgUrlCache[id]) {
@@ -4508,55 +4928,135 @@
     openImgMenu(img); // 桌面端右键等价于长按
   });
 
-  // 查看器手势：双指缩放（1–5 倍），放大后单指平移
+  // 查看器手势状态机：'idle' | 'pinching' | 'dragging' | 'doubletap-pending'
+  // 双击判定：两次点击 <300ms 且位移 <30px；双击缩放动画期间忽略新手势
   viewerEl.addEventListener('touchstart', function (e) {
+    if (vAnimating) return; // 双击动画进行中：忽略新手势（防第二次 touchend 误触发拖拽）
     vMoved = false;
     vStartX = e.touches[0].clientX;
     vStartY = e.touches[0].clientY;
     if (e.touches.length === 2) {
+      vGesture = 'pinching';
+      clearTimeout(vTapTimer); vTapTimer = null; // 捏合开始：取消双击等待
+      vLastTapT = 0; vPendingClose = false;
       pinchMode = true;
       pinchStartDist = touchDist(e.touches);
       pinchStartScale = vScale;
     } else {
       vLastX = e.touches[0].clientX;
       vLastY = e.touches[0].clientY;
+      if (vGesture === 'idle') vGesture = vScale > 1 ? 'dragging' : 'idle';
+      // 'doubletap-pending' 保持：第二指按下后若 touchmove 位移 >10px 会取消等待，up 时判定双击
     }
   }, { passive: false });
   viewerEl.addEventListener('touchmove', function (e) {
     e.preventDefault(); // touch-action:none 的兑底，确保页面不滚动
+    if (vAnimating) return;
     if (e.touches.length === 2) {
       vMoved = true;
       var s = pinchStartScale * touchDist(e.touches) / pinchStartDist;
       vScale = Math.min(5, Math.max(1, s));
       if (vScale === 1) { vTx = 0; vTy = 0; }
       applyViewerTransform();
-    } else if (!pinchMode && e.touches.length === 1 && vScale > 1) {
+    } else if (e.touches.length === 1) {
       var x = e.touches[0].clientX, y = e.touches[0].clientY;
-      if (Math.abs(x - vStartX) > 10 || Math.abs(y - vStartY) > 10) vMoved = true;
-      vTx += x - vLastX;
-      vTy += y - vLastY;
-      vLastX = x; vLastY = y;
-      applyViewerTransform();
+      if (vGesture === 'doubletap-pending') {
+        // 等第二次点击时手指动了（>10px）：取消双击等待，转拖拽（放大态）或闲置
+        if (Math.abs(x - vLastTapX) > 10 || Math.abs(y - vLastTapY) > 10) {
+          clearTimeout(vTapTimer); vTapTimer = null;
+          vPendingClose = false; vLastTapT = 0;
+          vGesture = vScale > 1 ? 'dragging' : 'idle';
+        } else {
+          return; // 轻微抖动不计
+        }
+      }
+      if (vGesture === 'dragging' && !pinchMode && vScale > 1) {
+        if (Math.abs(x - vStartX) > 10 || Math.abs(y - vStartY) > 10) vMoved = true;
+        vTx += x - vLastX;
+        vTy += y - vLastY;
+        vLastX = x; vLastY = y;
+        applyViewerTransform();
+      }
     }
   }, { passive: false });
   viewerEl.addEventListener('touchend', function (e) {
     if (e.touches.length < 2) pinchMode = false;
-    if (e.touches.length === 1) { // 双指抬起一根后继续单指平移
+    if (vGesture === 'pinching' && e.touches.length === 1) { // 双指抬起一根后继续单指平移
+      vGesture = vScale > 1 ? 'dragging' : 'idle';
       vLastX = e.touches[0].clientX;
       vLastY = e.touches[0].clientY;
       vStartX = vLastX; vStartY = vLastY;
+      return;
+    }
+    if (e.touches.length === 0 && vGesture !== 'pinching' && !vMoved) {
+      var ct = e.changedTouches[0];
+      var now = Date.now();
+      var tx = ct.clientX, ty = ct.clientY;
+      if (vGesture === 'doubletap-pending' && vLastTapT &&
+          now - vLastTapT < 300 &&
+          Math.abs(tx - vLastTapX) < 30 && Math.abs(ty - vLastTapY) < 30) {
+        // 双击：执行缩放动画；置 vMoved 消费随后的合成 click，防误关查看器
+        clearTimeout(vTapTimer); vTapTimer = null;
+        vPendingClose = false; vLastTapT = 0;
+        vGesture = 'idle';
+        vMoved = true;
+        toggleDoubleZoom(tx, ty);
+      } else {
+        // 第一次点击：进入等待第二次；300ms 内无第二次则按单击关闭查看器
+        vLastTapT = now; vLastTapX = tx; vLastTapY = ty;
+        vGesture = 'doubletap-pending';
+        vPendingClose = true;
+        clearTimeout(vTapTimer);
+        vTapTimer = setTimeout(function () {
+          vTapTimer = null;
+          vGesture = 'idle';
+          if (vPendingClose && !vMoved) closeViewer();
+          vPendingClose = false;
+        }, 300);
+      }
     }
   }, { passive: false });
 
-  // 点遮罩任意位置或 × 关闭；缩放/平移后的合成 click 不触发关闭
+  // 双击缩放动画：<1.5x → 放大到 2.5x（双击点保持原位）；>=1.5x → 缩回 1x 复位
+  function toggleDoubleZoom(tapX, tapY) {
+    if (vAnimating) return;
+    if (vScale < 1.5) {
+      var ns = 2.5;
+      vTx = tapX - (tapX - vTx) / vScale * ns;
+      vTy = tapY - (tapY - vTy) / vScale * ns;
+      vScale = ns;
+    } else {
+      vScale = 1; vTx = 0; vTy = 0;
+    }
+    viewerImgEl.classList.add('v-anim'); // 300ms 过渡曲线
+    vAnimating = true;
+    applyViewerTransform();
+    clearTimeout(vDblAnimTimer);
+    vDblAnimTimer = setTimeout(endViewerAnim, 320); // transitionend 兜底
+  }
+  function endViewerAnim() {
+    vAnimating = false;
+    viewerImgEl.classList.remove('v-anim'); // 必须尽快移除，避免拖累后续捏合/拖拽
+  }
+  // transitionend 优先触发则提前结束动画锁；transform 可能不变而不触发，320ms 定时器兜底
+  viewerImgEl.addEventListener('transitionend', function (e) {
+    if (e.propertyName === 'transform' && vAnimating) {
+      clearTimeout(vDblAnimTimer);
+      endViewerAnim();
+    }
+  });
+
+  // 点遮罩任意位置或 × 关闭；缩放/平移后的合成 click 不触发关闭；双击等待期间不关闭（由 300ms 超时判定）
   viewerEl.addEventListener('click', function (e) {
     if (vMoved) { vMoved = false; return; }
+    if (vGesture === 'doubletap-pending') return;
     if (e.target === viewerEl || e.target === viewerImgEl || e.target === viewerCloseEl) {
       closeViewer();
     }
   });
   document.addEventListener('keydown', function (e) {
     if (e.key === 'Escape' && viewerEl.classList.contains('open')) closeViewer();
+    if (e.key === 'Escape' && cropEl.classList.contains('open')) cancelCrop(); // 裁剪界面：Esc = 取消
   });
 
   $('img-btn').addEventListener('click', function () {
@@ -4772,7 +5272,176 @@
     try { sessionStorage.setItem('due-reminded', '1'); } catch (e) {}
   }
 
-  // 启动：打开数据库 → 迁移旧 localStorage 数据 → 加载 → 首次渲染 → 到期提醒
+  /* ---------- 待办系统通知（@capacitor/local-notifications）----------
+     仅 Capacitor 打包环境生效：浏览器里 Capacitor.Plugins 不存在或有缺项时整段静默跳过。
+     通知 id = djb2(note.id) 的 32 位正整数（同一便签稳定、非 0，符合 Android 要求）。 */
+  function getLocalNotifications() {
+    if (!(window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.LocalNotifications)) return null;
+    return window.Capacitor.Plugins.LocalNotifications;
+  }
+
+  function hashNoteId(str) {
+    var h = 5381;
+    for (var i = 0; i < str.length; i++) h = ((h << 5) + h + str.charCodeAt(i)) | 0;
+    return Math.abs(h) || 1;
+  }
+
+  function requestNotificationPermission() {
+    var ln = getLocalNotifications();
+    if (!ln) return Promise.resolve(false);
+    return ln.checkPermissions().then(function (perm) {
+      if (perm.display === 'granted') return true;
+      return ln.requestPermissions().then(function (p) { return p.display === 'granted'; });
+    }).catch(function () { return false; });
+  }
+
+  function checkExactAlarmSetting() {
+    var ln = getLocalNotifications();
+    if (!ln || !ln.checkExactNotificationSetting) return; // 插件/平台不支持则跳过
+    ln.checkExactNotificationSetting().then(function (s) {
+      if (s && s.exact_alarm && s.exact_alarm !== 'granted') {
+        console.log('[notify] 精确闹钟权限未授予，待办提醒可能延迟触发');
+      }
+    }).catch(function () { /* 静默 */ });
+  }
+
+  function cancelNoteNotification(noteId) {
+    var ln = getLocalNotifications();
+    if (!ln || !noteId) return;
+    ln.cancel({ notifications: [{ id: hashNoteId(noteId) }] }).catch(function () { /* 静默 */ });
+  }
+
+  function scheduleNoteNotification(note) {
+    var ln = getLocalNotifications();
+    if (!ln || !note) return;
+    // 非待办 / 无提醒时间 / 已完成 / 已过期 → 取消旧通知（不调度过期提醒）
+    if (!(isTodo(note) && note.dueAt && !isDone(note)) || note.dueAt <= Date.now()) {
+      cancelNoteNotification(note.id);
+      return;
+    }
+    ln.schedule({
+      notifications: [{
+        id: hashNoteId(note.id),
+        title: '待办提醒',
+        body: titleOf(note).slice(0, 50),
+        schedule: { at: new Date(note.dueAt) },
+        extra: { noteId: note.id },
+        ongoing: false,
+        autoCancel: true,
+        allowWhileIdle: true
+      }]
+    }).catch(function () { /* 静默 */ });
+  }
+
+  // 启动恢复：遍历全部便签逐条对齐通知（覆盖重启丢通知、导入数据等场景）
+  function resyncAllTodoNotifications() {
+    if (!getLocalNotifications()) return;
+    notes.forEach(scheduleNoteNotification);
+  }
+
+  /* ---------- 应用内更新（国内镜像；只 Capacitor 环境生效，浏览器静默跳过） ---------- */
+  var UPDATE_MODAL = $('update-modal');
+  var CURRENT_VERSION = '1.6.0'; // 与 android/app/build.gradle 的 versionName 保持一致
+  var UPDATE_URLS = [
+    'https://cdn.jsdelivr.net/gh/AIZIYOU466/ya-thoughts@main/version.json',
+    'https://gh-proxy.com/https://raw.githubusercontent.com/AIZIYOU466/ya-thoughts/main/version.json',
+    'https://ghfast.top/https://raw.githubusercontent.com/AIZIYOU466/ya-thoughts/main/version.json'
+  ];
+  var updateInfo = null; // 当前弹出的版本信息（供稍后/下载记录 dismiss）
+
+  // 版本号 '1.6.0' 风格逐位数字比较：a>b→1，a<b→-1，相等→0（1.10.0 > 1.9.0，非字典序）
+  function compareVersion(a, b) {
+    var pa = a.split('.'), pb = b.split('.');
+    var n = Math.max(pa.length, pb.length);
+    for (var i = 0; i < n; i++) {
+      var x = parseInt(pa[i] || 0, 10), y = parseInt(pb[i] || 0, 10);
+      if (x > y) return 1;
+      if (x < y) return -1;
+    }
+    return 0;
+  }
+
+  // 轮询 3 个国内镜像：逐个 fetch（5 秒超时），第一个成功即用；全部失败静默
+  function checkForUpdate() {
+    if (!(window.Capacitor && window.Capacitor.Plugins)) return; // 浏览器环境跳过
+    var i = 0;
+    (function next() {
+      if (i >= UPDATE_URLS.length) return; // 全部失败：静默
+      var url = UPDATE_URLS[i++];
+      var ctrl = new AbortController();
+      var timer = setTimeout(function () { ctrl.abort(); }, 5000);
+      fetch(url, { signal: ctrl.signal })
+        .then(function (r) {
+          if (!r.ok) throw new Error('http');
+          return r.json();
+        })
+        .then(function (info) {
+          clearTimeout(timer);
+          if (!info || !info.version) return;
+          if (compareVersion(CURRENT_VERSION, info.version) >= 0) return; // 不是新版本
+          // 同版本 24h 内已提醒过 → 不重复打扰
+          var dv = localStorage.getItem('update_dismissed_version');
+          var da = parseInt(localStorage.getItem('update_dismissed_at') || '0', 10);
+          if (dv === info.version && da && Date.now() - da < 24 * 3600 * 1000) return;
+          showUpdateDialog(info);
+        })
+        .catch(function () { clearTimeout(timer); next(); }); // 镜像失败：换下一个
+    })();
+  }
+
+  function showUpdateDialog(info) {
+    if (UPDATE_MODAL.classList.contains('open')) return;
+    updateInfo = info;
+    $('update-version').textContent = 'v' + info.version;
+    $('update-notes').textContent = info.notes || '';
+    UPDATE_MODAL.classList.add('open');
+    document.body.style.overflow = 'hidden'; // 弹窗期间禁止页面滚动
+  }
+
+  function closeUpdateModal() {
+    UPDATE_MODAL.classList.remove('open');
+    updateInfo = null;
+    document.body.style.overflow = '';
+  }
+
+  // 记录"已提醒过该版本"，24h 内不再打扰
+  function dismissUpdateFor(info) {
+    localStorage.setItem('update_dismissed_version', info.version);
+    localStorage.setItem('update_dismissed_at', String(Date.now()));
+  }
+  $('update-later').addEventListener('click', function () {
+    if (updateInfo) dismissUpdateFor(updateInfo);
+    closeUpdateModal();
+  });
+  $('update-download').addEventListener('click', function () {
+    if (!updateInfo) return;
+    dismissUpdateFor(updateInfo); // 先记录再打开，避免 WebView 切后台后状态丢失
+    window.open(updateInfo.apkUrl, '_blank'); // 真机点击无反应时改 window.location.href = info.apkUrl
+    closeUpdateModal();
+  });
+  UPDATE_MODAL.addEventListener('click', function (e) {
+    if (e.target !== UPDATE_MODAL) return; // 点卡片内部不处理
+    if (updateInfo) dismissUpdateFor(updateInfo);
+    closeUpdateModal();
+  });
+
+  // 点击通知 → 打开对应便签编辑页（启动时注册一次）
+  function registerNotificationTap() {
+    var ln = getLocalNotifications();
+    if (!ln) return;
+    ln.addListener('localNotificationActionPerformed', function (res) {
+      try {
+        var noteId = res && res.notification && res.notification.extra && res.notification.extra.noteId;
+        if (!noteId || !noteById(noteId)) return; // 便签已删除则忽略
+        if (document.getElementById('editor-view').classList.contains('active')) {
+          document.getElementById('back-btn').click(); // 先走正常返回（含离开便签延迟保存），再打开目标
+        }
+        openNote(noteId);
+      } catch (e) { /* 静默 */ }
+    });
+  }
+
+  // 启动：打开数据库 → 迁移旧 localStorage 数据 → 加载 → 首次渲染 → 到期提醒 → 恢复系统通知
   openDB()
     .then(migrateLegacy)
     .then(dbGetAll)
@@ -4782,6 +5451,11 @@
       updateSortMenu(); // 应用持久化的排序方式后再首次渲染
       renderList();
       checkDueReminders();
+      requestNotificationPermission(); // 启动时请求通知权限（Android 13+ 弹窗；浏览器静默跳过）
+      checkExactAlarmSetting();        // 启动时检查精确闹钟权限（Android 专用，未授权仅告警不打扰）
+      resyncAllTodoNotifications();    // 重启后恢复所有待办的系统通知
+      registerNotificationTap();       // 点击通知 → 打开对应便签
+      if (window.Capacitor) setTimeout(checkForUpdate, 2000); // 应用内更新检查（2 秒后；浏览器跳过）
     })
     .catch(function () {
       // 数据库打不开（极端隐私模式等）时显示空列表
@@ -4851,6 +5525,16 @@
   if (!(window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.App)) return;
   var App = window.Capacitor.Plugins.App;
   App.addListener('backButton', function () {
+    // 更新弹窗打开时 → 等同"稍后"（记录 dismiss 并关闭，不返回列表）
+    if (document.getElementById('update-modal').classList.contains('open')) {
+      document.getElementById('update-later').click();
+      return;
+    }
+    // 裁剪界面打开时 → 取消裁剪（不是返回列表）
+    if (document.getElementById('crop-overlay').classList.contains('open')) {
+      document.getElementById('crop-cancel').click();
+      return;
+    }
     // 编辑页 → 返回列表（复用 #back-btn 的现有处理 backToList）
     if (document.getElementById('editor-view').classList.contains('active')) {
       document.getElementById('back-btn').click();

@@ -1,0 +1,237 @@
+═══════════════════════════════════════
+技能调用检查（必读）
+═══════════════════════════════════════
+
+执行本任务前，请检查当前环境已安装的技能，判断哪些与本任务相关，并主动加载使用。
+
+当前已安装技能清单：
+- systematic-debugging：系统化调试
+- motion-web：动效设计规范
+- ponytail：精简输出
+- ui-ux-pro-max-skill：UI/UX 设计系统
+
+本任务预期加载：
+- ponytail（控制输出长度）
+- systematic-debugging（如果调试权限或调度问题）
+
+请先明确列出：本次任务你会加载哪几个技能，各自用来解决哪个问题。
+
+═══════════════════════════════════════
+执行方式
+═══════════════════════════════════════
+
+分两步执行：
+1. 先输出实施方案（列出要装什么插件、改哪些文件、加什么权限、写什么逻辑），等确认。
+2. 确认后再动手改代码。
+
+═══════════════════════════════════════
+任务目标
+═══════════════════════════════════════
+
+给 Ya thoughts 便签 App 添加"待办事项安卓系统通知"功能。
+
+用户场景：
+- 用户创建一条 type=todo 的便签，设置了 dueAt（提醒时间）。
+- 到达提醒时间，手机应该在系统通知栏弹出通知。
+- 通知标题："待办提醒"
+- 通知内容：该便签的标题（取正文第一行）
+- 用户点击通知 → 打开 App 并跳转到该便签的编辑页。
+- 如果用户修改了 dueAt，旧通知要取消，按新时间重新调度。
+- 如果用户删除了便签，其对应的通知也要取消。
+- 如果用户把待办标记为已完成（doneAt 非空），也要取消通知。
+
+═══════════════════════════════════════
+技术方案
+═══════════════════════════════════════
+
+【使用 Capacitor 官方插件】
+@capacitor/local-notifications
+
+不用第三方插件，用官方的（稳定、文档全、和 Capacitor 8 兼容）。
+
+═══════════════════════════════════════
+第一步：安装插件
+═══════════════════════════════════════
+
+在 /root/workspace/notes-app 目录执行：
+npm install @capacitor/local-notifications
+npx cap sync android
+
+安装后确认：
+- node_modules/@capacitor/local-notifications/ 存在
+- npx cap sync android 成功（会提示 Found 2 Capacitor plugins）
+
+═══════════════════════════════════════
+第二步：配置 Android 权限
+═══════════════════════════════════════
+
+修改 android/app/src/main/AndroidManifest.xml，在 <manifest> 下、<application> 之前添加：
+
+<!-- 通知权限（Android 13+ 必须） -->
+<uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+<!-- 精确闹钟权限（Android 12+ 必须，确保准时触发） -->
+<uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
+
+<!-- 开机后恢复闹钟（可选，让重启后通知不丢） -->
+<uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+
+检查 AndroidManifest.xml 是否已经有 <application> 标签，权限加在它之前。
+
+═══════════════════════════════════════
+第三步：配置 capacitor.config.json
+═══════════════════════════════════════
+
+在 capacitor.config.json 里添加 LocalNotifications 插件配置：
+
+{
+  "appId": "com.yathoughts.app",
+  "appName": "Ya thoughts",
+  "webDir": "www",
+  "plugins": {
+    "LocalNotifications": {
+      "smallIcon": "ic_stat_icon",
+      "iconColor": "#2E6BE6",
+      "sound": "beep.wav"
+    }
+  }
+}
+
+注意：
+- smallIcon 用的是资源文件名（不含扩展名）。
+- 如果暂时没有 ic_stat_icon 和 beep.wav，先不配置这两个字段，
+  用默认图标和默认声音。或者复制 ic_launcher 作为 smallIcon。
+
+推荐先不配置 smallIcon 和 sound，让插件用默认值。等通知能弹出后再优化图标。
+
+═══════════════════════════════════════
+第四步：写 JS 逻辑（index.html）
+═══════════════════════════════════════
+
+【4.1 引入插件】
+在 <script> 开头引入：
+const { LocalNotifications } = Capacitor.Plugins;
+
+注意：Capacitor 插件通过 Capacitor.Plugins 访问，不是 ES import。
+因为项目是纯原生 JS 单文件，不用打包工具。
+
+如果 Capacitor.Plugins.LocalNotifications 不存在（浏览器环境），
+所有通知相关的函数要静默跳过（用 if (!LocalNotifications) return;）。
+
+【4.2 请求通知权限】
+创建一个函数 requestNotificationPermission()：
+- 调用 LocalNotifications.checkPermissions() 检查权限。
+- 如果 display !== 'granted'，调用 LocalNotifications.requestPermissions()。
+- 返回布尔值表示是否获得权限。
+
+调用时机：
+- App 启动时（DOMContentLoaded 后）调用一次。
+- 用户第一次创建带 dueAt 的待办时，再调用一次（防止用户之前拒绝过）。
+
+【4.3 调度通知】
+创建函数 scheduleNoteNotification(note)：
+- 参数 note 是便签对象。
+- 检查：note.type === 'todo' 且 note.dueAt 且 !note.doneAt。
+- 如果条件不满足，调用 cancelNoteNotification(note.id) 取消旧通知，返回。
+- 如果 dueAt 已经过了（< now），跳过（不调度过期通知）。
+- 调用 LocalNotifications.schedule：
+  {
+    notifications: [{
+      id: note.id（数字，用 note 的 id 生成一个稳定的整数）,
+      title: '待办提醒',
+      body: note 的标题（取正文第一行，最多 50 字）,
+      schedule: { at: new Date(note.dueAt) },
+      smallIcon: 'ic_stat_icon'（可选）,
+      sound: null（用默认）,
+      extra: { noteId: note.id },
+      ongoing: false,
+      autoCancel: true
+    }]
+  }
+
+注意：通知 id 必须是整数。如果 note.id 是字符串（比如 UUID），
+需要写一个稳定的 hash 函数把它转成整数，或者用 note 的 createdAt 时间戳取模。
+最简单的方案：给每条 note 维护一个数字 id 字段，但为了不改数据结构，
+用 note.id 的字符串 hash 取 32 位整数。
+
+【4.4 取消通知】
+创建函数 cancelNoteNotification(noteId)：
+- 用相同的 hash 函数算出整数 id。
+- 调用 LocalNotifications.cancel({ notifications: [{ id: 整数id }] })。
+
+【4.5 触发时机】
+在以下操作后调用 scheduleNoteNotification 或 cancelNoteNotification：
+
+1. 保存便签（commit 函数）时：
+   - 如果 note.type === 'todo'，调用 scheduleNoteNotification(note)。
+
+2. 删除便签时：
+   - 调用 cancelNoteNotification(note.id)。
+
+3. 标记完成/取消完成时：
+   - 如果 doneAt 从 null 变成时间戳 → 取消通知。
+   - 如果 doneAt 从时间戳变回 null → 重新调度通知。
+
+4. 修改 dueAt 时：
+   - 取消旧通知，调度新通知。
+
+5. App 启动时（DOMContentLoaded）：
+   - 遍历所有 note，对所有 type=todo 且 dueAt 且 !doneAt 的便签，
+     调用 scheduleNoteNotification 重新调度（防止重启后通知丢失）。
+
+【4.6 点击通知跳转】
+监听 LocalNotifications.addListener('localNotificationActionPerformed', callback)：
+- callback 收到 { notification, actionId }。
+- 从 notification.extra.noteId 取出便签 id。
+- 调用 openNote(noteId) 打开该便签。
+
+这个监听器在 App 启动时注册一次即可。
+
+═══════════════════════════════════════
+第五步：浏览器兼容
+═══════════════════════════════════════
+
+在浏览器（非 Capacitor 环境）测试时：
+- Capacitor.Plugins 可能不存在或 LocalNotifications 不存在。
+- 所有通知相关函数要用 if (!LocalNotifications) return; 静默跳过。
+- 不要报错，不要弹窗。
+
+这样在浏览器里开发时不会因为通知问题干扰其他功能。
+
+═══════════════════════════════════════
+严格约束
+═══════════════════════════════════════
+
+- 只加通知功能，不改其他功能。
+- 不改布局宽度。
+- 保留液态玻璃视觉效果。
+- 保留编辑页不透明底板。
+- 保留滑入/滑出动画。
+- 保留所有上几轮修复的成果（数据不丢、卡顿修复等）。
+- 不改数据结构（note 对象不加新字段，用现有的 id/dueAt/doneAt/type）。
+- 纯原生 JS，不用 ES module import。
+- 通知 id 用稳定的字符串 hash 算法（比如 djb2），确保同一便签每次都得到相同整数。
+
+═══════════════════════════════════════
+输出要求
+═══════════════════════════════════════
+
+第一步（先输出）：
+- 实施方案：
+  a. 要安装的插件版本。
+  b. 要改的文件清单（AndroidManifest.xml、capacitor.config.json、index.html）。
+  c. 要新增的 JS 函数清单（requestNotificationPermission、
+     scheduleNoteNotification、cancelNoteNotification、hashString 等）。
+  d. 在哪些业务逻辑里调用这些函数（commit、删除、标记完成、启动时等）。
+  e. 你打算怎么处理浏览器环境下的兼容。
+  f. 通知 id 的生成方案（具体 hash 函数）。
+- 特别说明：这次改动是否影响现有的数据结构和导出/导入逻辑。
+
+第二步（等用户确认后再做）：
+- 实际修改所有文件。
+- 报告：
+  - 修改的文件清单和行号
+  - 新增的 JS 函数
+  - AndroidManifest.xml 里添加的权限
+  - capacitor.config.json 的插件配置
+  - 需要用户在真机上验证的清单（权限弹窗、通知准时、点击跳转、修改时间后旧通知取消等）
