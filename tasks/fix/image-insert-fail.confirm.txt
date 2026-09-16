@@ -1,0 +1,100 @@
+根因报告确认，但需要补充几条关键改动。
+
+═══════════════════════════
+补充 1：readImageElement 改用 createObjectURL
+═══════════════════════════
+当前用 FileReader.readAsDataURL，把整图转 base64 字符串
+（比原文件大 33%），Android WebView 解码大 dataURL 常静默失败。
+
+改为：
+1. 用 URL.createObjectURL(file) 生成 blob URL，不转 base64。
+2. new Image() 加载 blob URL。
+3. 加载完成后，用 canvas 压缩到长边 ≤ 1920px、质量 0.85，
+   再走后续流程。
+4. 处理完 revokeObjectURL，避免内存泄漏。
+5. 加 20s 超时：超时 reject('timeout')，保证 Promise 永不
+   pending。
+
+这一步同时解决"大图静默失败"和"老图未压缩"两个问题。
+
+═══════════════════════════
+补充 2：老图自动压缩（关键）
+═══════════════════════════
+用户手机里已有 v1.6.0 之前插入的全分辨率图。
+修复后新图会压缩，但老图还在库里，点击还是会卡死。
+
+处理方案：hydrateImages 时检测图片实际尺寸：
+1. 加载图片后，如果 naturalWidth > 1920 或 naturalHeight > 1920：
+   a. 用 canvas 压缩到长边 1920px，质量 0.85。
+   b. 用新 blob 更新 IndexedDB 里的记录。
+   c. 更新 img.src。
+2. 压缩过程静默执行，用户看不到。
+3. 压缩完成后，那张老图就被"治愈"了，之后点击不会卡。
+
+这是**一次性的**：第一次打开某条便签时压缩其中的大图，
+之后每次打开都快。
+
+═══════════════════════════
+补充 3：img 加 contenteditable="false"
+═══════════════════════════
+同意报告方案 2。插入 img 时加：
+- contenteditable="false"
+- draggable="false"（已有）
+- 现有 data-img-id、data-img-noteid 保留
+
+CSS 里 #editor img 补：
+- -webkit-user-drag: none
+- user-select: none
+- -webkit-user-select: none
+
+═══════════════════════════
+补充 4：openViewer 加尺寸防护
+═══════════════════════════
+同意报告方案 4，但要加一层兜底：
+在 openViewer 里，如果 src 是 blob URL 且对应的图还没压缩过，
+先做一次快速尺寸检查（用 createImageBitmap 的 width/height，
+不解码整图），超过 1920px 就先压缩再打开。
+
+如果 createImageBitmap 不可用（旧浏览器），退回到"直接打开 +
+在打开前弹一个短暂 loading"。但优先用 createImageBitmap。
+
+═══════════════════════════
+补充 5：cropBusy 自愈要更彻底
+═══════════════════════════
+报告方案 1 提到 catch 里重置 cropBusy。补充：
+1. App 启动时，cropBusy 强制重置为 false（防止上次会话残留）。
+2. 进入编辑页时（openNote），也重置 cropBusy = false。
+3. confirmCrop 的 setTimeout 回调加 try/catch/finally，
+   finally 里确保 cropBusy = false。
+4. 加一个"cropBusy 超时自愈"：如果 cropBusy 为 true 超过
+   30 秒，自动重置。
+
+═══════════════════════════
+补充 6：全局错误捕获
+═══════════════════════════
+同意报告方案 5。额外加：
+- window.addEventListener('error', ...) → toast + console
+- window.addEventListener('unhandledrejection', ...) → 同上
+- 这两个监听只在 Capacitor 环境启用，浏览器环境可用
+  console.log 避免打扰
+
+═══════════════════════════
+严格约束
+═══════════════════════════
+- 不弃用图片裁剪（先修完 bug，如果用户测试后仍不满意再考虑）。
+- 保留所有现有功能。
+- 只改图片相关代码。
+- 分两步实施：
+  第 1 步：修 readImageElement + cropBusy 自愈 + contenteditable
+         + 错误捕获
+  第 2 步：老图自动压缩 + openViewer 尺寸防护
+
+每步做完让用户测试，通过后再做下一步。
+
+═══════════════════════════
+输出要求
+═══════════════════════════
+第 1 步完成后：
+- 报告文件大小、关键行号。
+- 用户真机测试清单。
+- 暂停等测试，不要主动开始第 2 步。
