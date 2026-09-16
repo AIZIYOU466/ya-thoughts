@@ -4385,6 +4385,86 @@
     }).catch(function () { return null; });
   }
 
+  // 老图检测并压缩（一次性，静默执行）：解码 → 长边 >1920 则 canvas 压到 1920/0.85 →
+  // 更新 IndexedDB 记录、替换缓存 objectURL、刷新 img.src。小图也打 compressed 标记，
+  // 之后每次打开直接跳过，不再解码查尺寸。
+  function maybeShrinkOldImage(rec, img, id, myToken) {
+    if (!rec || !rec.blob) return Promise.resolve();
+    return loadBlobToImage(rec.blob).then(function (el) {
+      var w = el.naturalWidth, h = el.naturalHeight;
+      if (w <= 1920 && h <= 1920) {
+        rec.compressed = true; // 本就不大：标记一次，后续打开不重复解码
+        return dbPutImage(rec).catch(function () { /* 静默 */ });
+      }
+      var scale = 1920 / Math.max(w, h);
+      var canvas = document.createElement('canvas');
+      canvas.width = Math.round(w * scale);
+      canvas.height = Math.round(h * scale);
+      canvas.getContext('2d').drawImage(el, 0, 0, canvas.width, canvas.height);
+      return blobFromCanvas(canvas).then(function (newBlob) {
+        if (!newBlob) { // 编码失败不回退活：标记已尝试，避免每次打开都解码一遍
+          rec.compressed = true;
+          return dbPutImage(rec).catch(function () { /* 静默 */ });
+        }
+        rec.blob = newBlob;
+        rec.mime = 'image/jpeg';
+        rec.compressed = true;
+        return dbPutImage(rec).then(function () {
+          if (myToken !== openToken) return; // 已切笔记：库已更新，DOM 不换
+          if (imgUrlCache[id]) {
+            URL.revokeObjectURL(imgUrlCache[id]);
+            delete imgUrlCache[id];
+          }
+          return getImageURL(id).then(function (url) {
+            if (myToken !== openToken) return;
+            if (url && img.isConnected) img.src = url; // 换上新压缩图
+          });
+        });
+      });
+    });
+  }
+
+  // Blob → Image 元素（拿自然尺寸；老图压缩/尺寸检查共用）
+  function loadBlobToImage(blob) {
+    return new Promise(function (resolve, reject) {
+      var url = URL.createObjectURL(blob);
+      var img = new Image();
+      img.onload = function () { URL.revokeObjectURL(url); resolve(img); };
+      img.onerror = function () { URL.revokeObjectURL(url); reject(new Error('decode')); };
+      img.src = url;
+    });
+  }
+
+  // canvas → JPEG Blob（toBlob 优先，旧内核回退 toDataURL；失败返回 null）
+  function blobFromCanvas(canvas) {
+    return new Promise(function (resolve) {
+      if (canvas.toBlob) {
+        canvas.toBlob(function (b) { resolve(b || null); }, 'image/jpeg', 0.85);
+      } else {
+        try { resolve(dataURLtoBlob(canvas.toDataURL('image/jpeg', 0.85))); }
+        catch (e) { resolve(null); }
+      }
+    });
+  }
+
+  // Blob → 压缩到长边 ≤1920 / 0.85 的 JPEG Blob（openViewer 兜底用）
+  function compressBlobToBlob(blob) {
+    return loadBlobToImage(blob).then(function (el) {
+      var w = el.naturalWidth, h = el.naturalHeight;
+      var scale = 1920 / Math.max(w, h);
+      var cw = Math.round(w * scale), ch = Math.round(h * scale);
+      var canvas = document.createElement('canvas');
+      canvas.width = cw; canvas.height = ch;
+      canvas.getContext('2d').drawImage(el, 0, 0, cw, ch);
+      return blobFromCanvas(canvas);
+    });
+  }
+
+  // blob: URL → Blob（fetch 取回再查尺寸；失败返回 null）
+  function fetchBlobByUrl(url) {
+    return fetch(url).then(function (r) { return r.blob(); }).catch(function () { return null; });
+  }
+
   // 打开笔记时为每张 img 恢复 src 并复用 objectURL；旧记录缺 pos 时按 DOM 顺序补写
   // myToken：调用时的 openToken，回调回来后不一致说明已切笔记，直接丢弃
   function hydrateImages(container, myToken) {
@@ -4394,22 +4474,32 @@
       var id = img.dataset.imgId;
       if (!id) return;
       img.dataset.imgNoteId = currentId || ''; // 供重点标注写库时补 noteId
-      if (imgUrlCache[id]) { img.src = imgUrlCache[id]; return; }
+      if (imgUrlCache[id]) { img.src = imgUrlCache[id]; } // 命中缓存直接显示（不 return：老图压缩检查仍需走 dbGetImage）
       getImageURL(id).then(function (url) {
         if (myToken !== openToken) return; // 已切到别的笔记，丢弃过期结果
         if (url && img.isConnected) img.src = url;
       });
       dbGetImage(id).then(function (rec) {
         if (myToken !== openToken) return; // 过期结果不回写
-        if (rec && rec.pos === undefined) {
-          rec.pos = idx;
-          return dbPutImage(rec);
-        }
-        if (rec && rec.starred && img.isConnected) {
-          img.classList.add('starred'); // 库里标记了重点 → 恢复样式
-          renderImageStrip();
-        }
-      }).catch(function () { /* 补写失败静默 */ });
+        if (!rec) return;
+        // 老图一次性压缩（v1.6.0 前插入的全分辨率图）：首次打开解码查尺寸并压缩，
+        // 之后带 compressed 标记直接跳过；压缩失败也标记，避免每次打开重复解码
+        var chain = rec.compressed ? Promise.resolve() :
+          maybeShrinkOldImage(rec, img, id, myToken).catch(function () {
+            if (rec) { rec.compressed = true; dbPutImage(rec).catch(function () {}); }
+          });
+        chain.then(function () {
+          if (myToken !== openToken) return;
+          if (rec.pos === undefined) {
+            rec.pos = idx;
+            return dbPutImage(rec);
+          }
+          if (rec.starred && img.isConnected) {
+            img.classList.add('starred'); // 库里标记了重点 → 恢复样式
+            renderImageStrip();
+          }
+        }).catch(function () { /* 补写失败静默 */ });
+      }).catch(function () { /* 读取失败静默 */ });
     });
     renderImageStrip(myToken);
   }
@@ -4947,9 +5037,42 @@
     applyViewerTransform();
   }
 
+  var viewerChecked = {};      // blob src → 已做尺寸检查（会话级去重：同一 URL 只查一次）
+  var pendingViewerUrl = null; // 兜底压缩产生的临时 objectURL，关闭查看器时回收
+
   function openViewer(src) {
     if (!src) return;
     if (viewerEl.classList.contains('open') && viewerImgEl.getAttribute('src') === src) return; // 幂等：已开同图不重复
+    // 兜底尺寸防护：blob URL 且本会话未查过 → 快速尺寸检查，长边 > 1920 先压缩再打开
+    // （覆盖 hydrate 压缩尚未完成时点开大图的竞态；已压缩图查一次后置标，后续直接开）
+    if (src.indexOf('blob:') === 0 && !viewerChecked[src]) {
+      viewerChecked[src] = true;
+      if (typeof createImageBitmap === 'function') {
+        fetchBlobByUrl(src).then(function (blob) {
+          if (!blob) { revealViewer(src); return; }
+          return createImageBitmap(blob).then(function (bmp) {
+            var w = bmp.width, h = bmp.height;
+            if (bmp.close) bmp.close();
+            if (w <= 1920 && h <= 1920) { revealViewer(src); return; }
+            showUndoToast('加载中…', 3000);
+            return compressBlobToBlob(blob).then(function (newBlob) {
+              if (!newBlob) { revealViewer(src); return; }
+              pendingViewerUrl = URL.createObjectURL(newBlob); // 临时压缩图，仅本次查看
+              revealViewer(pendingViewerUrl);
+            });
+          });
+        }).catch(function () { revealViewer(src); });
+        return;
+      }
+      // 旧内核无 createImageBitmap：直接打开 + 短暂 loading 提示
+      showUndoToast('加载中…');
+      revealViewer(src);
+      return;
+    }
+    revealViewer(src);
+  }
+
+  function revealViewer(src) {
     viewerImgEl.src = src;
     resetViewerTransform();
     viewerEl.classList.add('open');
@@ -4962,6 +5085,7 @@
     viewerEl.classList.remove('open');
     viewerImgEl.removeAttribute('src');
     document.body.style.overflow = '';
+    if (pendingViewerUrl) { URL.revokeObjectURL(pendingViewerUrl); pendingViewerUrl = null; } // 回收临时压缩图
   }
 
   // 从事件目标向上找 <img>，只在自己所在的容器（编辑器/缩略图条）内找
@@ -5853,7 +5977,7 @@
 
   /* ---------- 应用内更新（国内镜像；只 Capacitor 环境生效，浏览器静默跳过） ---------- */
   var UPDATE_MODAL = $('update-modal');
-  var CURRENT_VERSION = '1.6.4'; // 与 android/app/build.gradle 的 versionName 保持一致
+  var CURRENT_VERSION = '1.6.5'; // 与 android/app/build.gradle 的 versionName 保持一致
   var UPDATE_URLS = [
     'https://cdn.jsdelivr.net/gh/AIZIYOU466/ya-thoughts@main/version.json',
     'https://gh-proxy.com/https://raw.githubusercontent.com/AIZIYOU466/ya-thoughts/main/version.json',
