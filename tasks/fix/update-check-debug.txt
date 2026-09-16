@@ -1,0 +1,91 @@
+技能：先加载 systematic-debugging、ponytail、ui-ux-pro-max-skill。
+先输出根因报告和方案，等确认后再动手。
+
+═══════════════════════
+背景
+═══════════════════════
+用户装了 1.6.0，Actions 已发布 1.6.1（version.json 远程显示 1.6.1）。
+手机浏览器能打开 version.json，但 App 打开 6 分钟后仍不弹更新提示。
+说明自动检查更新逻辑没有成功执行或没有触发弹窗。
+
+═══════════════════════
+任务 1（最优先）：排查自动检查为什么失败
+═══════════════════════
+请阅读 index.html 里的 checkForUpdate() 和它相关的所有函数，逐行分析：
+
+1. checkForUpdate 的执行时机是否正确？
+   - 检查 5458 行附近启动链：if (window.Capacitor) setTimeout(checkForUpdate, 2000)
+   - 确认这个 if 条件在 APK 里是否成立（window.Capacitor 是否存在？）
+   - 是否应该在 Capacitor 加载完成后再调用？Capacitor 可能比 window.onload 晚。
+
+2. checkForUpdate 里的 fetch 是否真的执行了？
+   - 是否可能被 try-catch 静默吞掉？
+   - AbortController 5s 超时是否真的生效？
+   - 三个 URL 依次尝试的代码逻辑是否正确？
+
+3. compareVersion(CURRENT_VERSION, info.version) 的比较逻辑：
+   - CURRENT_VERSION 是 1.6.0，info.version 是 1.6.1
+   - 应该返回 -1（当前版本小于远端），然后弹窗
+   - 但用户报告不弹，可能比较逻辑有 bug
+
+4. 弹窗显示的条件：
+   - dismissedVersion === info.version 且未超时 → 跳过
+   - 用户第一次装 1.6.0，localStorage 应该是空的，不应该被跳过
+   - 检查 localStorage 键名是否匹配
+
+5. 是否有任何 console.error 或静默 return 吞掉了错误？
+
+必须输出：
+- checkForUpdate 执行路径的逐行分析（带行号）
+- 最可能的失败点
+- 修复方案
+
+═══════════════════════
+任务 2：加手动检查更新入口
+═══════════════════════
+在 ⋯ 菜单里加一项"检查更新"：
+- 点击后立即调用 checkForUpdate()
+- 显示检查状态：
+  a. "正在检查..." （显示一个 loading）
+  b. 成功且已是最新 → toast "已是最新版本 v1.6.0"
+  c. 成功且有新版本 → 打开更新弹窗
+  d. 失败 → toast 显示具体原因（超时 / HTTP 4xx / 全部镜像失败）
+- 手动检查时不受"24 小时内不打扰"限制（用户主动点击，应该每次都显示结果）
+
+实现细节：
+- 修改 checkForUpdate(force) 函数，接受一个 force 参数
+- force=true 时跳过 dismiss 检查
+- force=true 时显示检查状态 UI
+- ⋯ 菜单里加菜单项
+
+═══════════════════════
+任务 3：让自动检查更可靠
+═══════════════════════
+1. 缩短超时：5s → 3s
+2. 加日志：每次 fetch 的开始/成功/失败都 console.log，方便真机调试
+3. 启动时机优化：
+   - 现在的 setTimeout(checkForUpdate, 2000) 可能早于 Capacitor 就绪
+   - 改成监听 Capacitor 就绪事件，或者在 window.onload + 3 秒后再调用
+   - 或者：先用 setTimeout 3 秒，再检查 window.Capacitor 是否存在，不存在再等 1 秒重试（最多重试 3 次）
+4. 加一个"启动后检查失败重试"机制：
+   - 如果第一次 fetch 全失败（可能是网络慢），2 秒后重试一次
+   - 最多重试 2 次
+
+═══════════════════════
+严格约束
+═══════════════════════
+- 只改更新检查相关代码。
+- 不动其他功能。
+- 保留液态玻璃、编辑页、通知、图片裁剪等。
+- 纯原生 JS。
+
+═══════════════════════
+输出要求
+═══════════════════════
+第一步（先输出）：
+- 自动检查失败的根因报告（必须给出具体行号和逻辑分析）。
+- 三个任务的实施方案。
+
+第二步（等确认后再做）：
+- 实际修改。
+- 报告文件大小、关键行号、验证方法。
