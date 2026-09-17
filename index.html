@@ -4723,17 +4723,20 @@
 
   // 核心导出：只导出 noteIds 里的笔记及其对应图片；filePrefix 决定文件名前缀
   function exportNotes(noteIds, filePrefix) {
-    var _d = 'Capacitor: ' + (window.Capacitor ? 'yes' : 'no');
+    var _d = 'Capacitor:' + (window.Capacitor ? 'yes' : 'no');
     if (window.Capacitor && window.Capacitor.Plugins) {
       var _keys = Object.keys(window.Capacitor.Plugins);
-      _d += '\n\nPlugins (' + _keys.length + '):';
-      _d += '\n' + _keys.join(', ');
-      _d += '\n\nShare: ' + typeof window.Capacitor.Plugins.Share;
-      _d += '\nFilesystem: ' + typeof window.Capacitor.Plugins.Filesystem;
+      _d += ' Plugins(' + _keys.length + '):' + _keys.join(',');
+      _d += ' | Share:' + typeof window.Capacitor.Plugins.Share;
+      _d += ' | FS:' + typeof window.Capacitor.Plugins.Filesystem;
     } else {
-      _d += '\n\nPlugins: undefined';
+      _d += ' Plugins:undefined';
     }
-    alert(_d);
+    var _b = document.createElement('div');
+    _b.style.cssText = 'position:fixed;top:0;left:0;right:0;background:#c00;color:#fff;padding:16px;font-size:13px;z-index:999999;word-break:break-all;line-height:1.4;';
+    _b.textContent = '[DIAG] ' + _d;
+    document.body.appendChild(_b);
+    console.log('[DIAG]', _d);
 
     var idSet = {};
     (noteIds || []).forEach(function (id) { idSet[id] = true; });
