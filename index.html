@@ -839,6 +839,29 @@
     transition: background 0.15s var(--ease);
   }
   #due-clear:active { background: rgba(229, 72, 77, 0.1); }
+  /* 截止时间输入（endAt）：与提醒时间同层 */
+  #end-input {
+    font-family: inherit;
+    font-size: 14px;
+    color: var(--text-primary);
+    background: var(--bg-page);
+    border: 1px solid var(--divider);
+    border-radius: 10px;
+    padding: 8px 10px;
+  }
+  #end-clear {
+    min-height: 36px;
+    margin-left: 8px;
+    padding: 0 12px;
+    font-size: 14px;
+    color: var(--danger);
+    border-radius: 10px;
+    transition: background 0.15s var(--ease);
+  }
+  #end-clear:active { background: rgba(229, 72, 77, 0.1); }
+  .end-row { display: none; align-items: center; gap: 8px; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--divider); }
+  .end-row.show { display: flex; }
+  .end-row label { font-size: 13px; color: var(--text-secondary); white-space: nowrap; }
 
   /* 操作反馈 toast（撤销/重做与置顶/复制/删除共用）：
      底部安全区上方 96px（避免与底部新建胶囊重叠），玻璃胶囊样式。
@@ -923,6 +946,77 @@
   #confirm-modal .confirm-cancel { background: var(--chip-bg); color: var(--text-primary); }
   #confirm-modal .confirm-ok { background: var(--danger); color: #fff; }
   #confirm-modal .confirm-btns button:active { transform: scale(0.97); filter: brightness(0.96); }
+  #confirm-modal .confirm-btns .confirm-alt {
+    flex: 1;
+    min-height: 40px;
+    padding: 0 14px;
+    font-size: 14px;
+    font-weight: 500;
+    border-radius: 12px;
+    background: var(--chip-bg);
+    color: var(--text-primary);
+  }
+  #confirm-modal .confirm-btns.has-alt { flex-wrap: wrap; }
+  #confirm-modal .confirm-btns.has-alt button { flex: 1 1 0; min-width: 0; }
+
+  /* 自启动引导弹窗（复用 confirm-modal 体系） */
+  #notify-guide-modal {
+    position: fixed;
+    inset: 0;
+    z-index: 9000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0,0,0,0.45);
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.15s, visibility 0.15s;
+  }
+  #notify-guide-modal.show { opacity: 1; visibility: visible; }
+  #notify-guide-modal .guide-card {
+    width: min(340px, 88vw);
+    padding: 28px 24px 20px;
+    background: var(--bg-card);
+    border-radius: 20px;
+    text-align: left;
+    transform: translateY(12px) scale(0.97);
+    transition: transform 0.18s var(--ease);
+  }
+  #notify-guide-modal.show .guide-card { transform: none; }
+  #notify-guide-modal .guide-title {
+    font-size: 17px;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin: 0 0 12px;
+  }
+  #notify-guide-modal .guide-msg {
+    font-size: 14px;
+    line-height: 1.6;
+    color: var(--text-secondary);
+    margin: 0 0 8px;
+    white-space: pre-wrap;
+  }
+  #notify-guide-modal .guide-path {
+    font-size: 13px;
+    color: var(--text-secondary);
+    background: var(--bg-page);
+    padding: 8px 12px;
+    border-radius: 10px;
+    margin: 0 0 20px;
+  }
+  #notify-guide-modal .guide-btns { display: flex; gap: 12px; }
+  #notify-guide-modal .guide-btns button {
+    flex: 1;
+    min-height: 40px;
+    padding: 0 14px;
+    font-size: 14px;
+    font-weight: 500;
+    border-radius: 12px;
+    transition: background 0.15s var(--ease), transform 0.1s var(--ease);
+  }
+  #notify-guide-modal .guide-btns button:active { transform: scale(0.97); filter: brightness(0.96); }
+  #notify-guide-modal .guide-later { background: var(--chip-bg); color: var(--text-primary); }
+  #notify-guide-modal .guide-ok { background: var(--primary, #2E6BE6); color: #fff; }
 
   /* 悬浮新建按钮 */
   /* 底部胶囊：新建笔记 / 新建待办（玻璃质感，固定在底部中央） */
@@ -2030,6 +2124,11 @@
   <div id="due-pop">
     <input type="datetime-local" id="due-input" aria-label="提醒时间">
     <button id="due-clear">清除</button>
+    <div class="end-row" id="end-row">
+      <label>截止时间（可选）</label>
+      <input type="datetime-local" id="end-input" aria-label="截止时间">
+      <button id="end-clear">清除</button>
+    </div>
   </div>
   <input type="file" id="img-input" accept="image/*" multiple hidden>
 </section>
@@ -2045,6 +2144,23 @@
     <div class="confirm-btns">
       <button type="button" class="confirm-cancel"></button>
       <button type="button" class="confirm-ok"></button>
+      <button type="button" class="confirm-alt" style="display:none"></button>
+    </div>
+  </div>
+</div>
+
+<!-- 自启动引导弹窗 -->
+<div id="notify-guide-modal" role="dialog" aria-modal="true" aria-label="通知引导">
+  <div class="guide-card" role="document">
+    <h3 class="guide-title">让待办提醒准时到达</h3>
+    <p class="guide-msg">手机为省电会限制后台 App。为了让你在待办时间准时收到
+铃声和顶部弹出通知，请把 Ya thoughts 加入：
+· 自启动（防止被系统清理）
+· 电池无限制（防止延迟触发）</p>
+    <p class="guide-path">路径参考：设置 → 应用 → Ya thoughts → 自启动 / 电池</p>
+    <div class="guide-btns">
+      <button type="button" class="guide-later">稍后再看</button>
+      <button type="button" class="guide-ok">我已设置好</button>
     </div>
   </div>
 </div>
@@ -2136,6 +2252,8 @@
   var dueBtn    = $('due-btn');
   var duePopEl  = $('due-pop');
   var dueInput  = $('due-input');
+  var endInput  = $('end-input');
+  var endClear  = $('end-clear');
 
   var notes = []; // 内存缓存，启动时从 IndexedDB 加载
   var currentId = null;
@@ -2171,6 +2289,9 @@
     if (n.deletedAt === undefined) n.deletedAt = null;    // 回收箱：null = 未删除
     if (n.deletedFrom === undefined) n.deletedFrom = null; // 回收箱：'manual' 手动 | 'auto' 自动清理
     if (n.order === undefined) n.order = null;         // 拖拽排序字段：null 时按 createdAt 兜底
+    if (n.endAt === undefined) n.endAt = null;              // 截止时间（可选）
+    if (n.overduePromptCount === undefined) n.overduePromptCount = 0; // 已询问过期次数（0-3）
+    if (n.overdueLastPromptAt === undefined) n.overdueLastPromptAt = null; // 上次询问时间戳
     return n;
   }
 
@@ -2360,9 +2481,11 @@
     return notes.filter(isBinNote).sort(function (a, b) { return b.deletedAt - a.deletedAt; });
   }
 
-  // 已过期：doneAt 为空 且已到截止时间（dueAt < now）；已完成优先，过期不回退
+  // 已过期：有 endAt 且 now > endAt 且未完成；无 endAt 则永不自动过期
   function isOverdue(note) {
-    return isTodo(note) && !isDone(note) && note.dueAt != null && note.dueAt < Date.now();
+    if (!isTodo(note) || isDone(note)) return false;
+    if (note.endAt != null) return note.endAt < Date.now();
+    return false;
   }
 
   // 待办卡片右上角倒计时文案（有 dueAt 且未完成才显示）
@@ -2486,7 +2609,7 @@
   function dueText(note) {
     if (!note.dueAt) return '';
     var diff = note.dueAt - Date.now();
-    if (diff <= 0) return '已过期';
+    if (diff <= 0) return note.endAt ? '已过期' : '进行中';
     var oneMin = 60 * 1000, oneHour = 60 * oneMin, oneDay = 24 * oneHour;
     var d = new Date(note.dueAt);
     var hm = pad(d.getHours()) + ':' + pad(d.getMinutes());
@@ -2886,7 +3009,7 @@
     var now = Date.now(); // 过期判定统一用同一时刻，保证一次渲染内排序稳定
     var rank = function (n) {
       if (isDone(n)) return 3;                                     // 已完成：沉底
-      if (isTodo(n) && n.dueAt != null && n.dueAt < now) return 1; // 已过期
+      if (isOverdue(n)) return 1;                              // 已过期（endAt 优先）
       if (isTodo(n)) return 0;                                     // 进行中
       return 2;                                                    // 普通笔记
     };
@@ -3570,7 +3693,7 @@
         li.classList.add('has-due');
         var due = document.createElement('div');
         var txt = dueText(note);
-        due.className = 'due-badge' + (txt === '已过期' ? ' overdue' : '');
+        due.className = 'due-badge' + (isOverdue(note) ? ' overdue' : '');
         due.textContent = txt;
         due.dataset.id = note.id; // 事件委托刷新倒计时文案
         face.appendChild(due);
@@ -3735,8 +3858,9 @@
     });
   }
 
-  // 可复用的确认对话框：confirmDialog({title,message,confirmText,cancelText}) → Promise<boolean>
-  // 遮罩淡入 150ms；点“是”resolve(true)，点“否”或遮罩 resolve(false)。
+  // 可复用的确认对话框：confirmDialog({title,message,confirmText,cancelText,altText}) → Promise
+  // 遮罩淡入 150ms；无 altText（两键）时点“是”resolve(true)，“否”/遮罩 resolve(false)；
+  // 有 altText（三键）时 resolve 'ok' / 'cancel' / 'alt'。
   // 同一时刻只允许一个对话；重复调用时后者立即拿到 false（防双开）。
   var confirmModalEl = null;
   var confirmOpen = false;
@@ -3750,8 +3874,14 @@
       confirmModalEl.querySelector('.confirm-msg').textContent = opts.message || '';
       var cancelBtn = confirmModalEl.querySelector('.confirm-cancel');
       var okBtn = confirmModalEl.querySelector('.confirm-ok');
+      var altBtn = confirmModalEl.querySelector('.confirm-alt');
+      var btnsWrap = confirmModalEl.querySelector('.confirm-btns');
+      var useAlt = !!opts.altText;
       cancelBtn.textContent = opts.cancelText || '否';
       okBtn.textContent = opts.confirmText || '是';
+      altBtn.style.display = useAlt ? '' : 'none';
+      btnsWrap.classList.toggle('has-alt', useAlt);
+      if (useAlt) altBtn.textContent = opts.altText;
       var settled = false;
       function finish(val) {
         if (settled) return;
@@ -3760,9 +3890,10 @@
         setTimeout(function () { confirmOpen = false; }, 160); // 等淡出结束再允许下一次
         resolve(val);
       }
-      cancelBtn.onclick = function () { finish(false); };
-      okBtn.onclick = function () { finish(true); };
-      confirmModalEl.onclick = function (e) { if (e.target === confirmModalEl) finish(false); }; // 点遮罩
+      cancelBtn.onclick = function () { finish(useAlt ? 'cancel' : false); };
+      okBtn.onclick = function () { finish(useAlt ? 'ok' : true); };
+      altBtn.onclick = function () { if (useAlt) finish('alt'); };
+      confirmModalEl.onclick = function (e) { if (e.target === confirmModalEl) finish(useAlt ? 'cancel' : false); }; // 点遮罩
       confirmModalEl.classList.add('show');
     });
   }
@@ -4084,6 +4215,10 @@
       dueBtn.classList.remove('overdue');
     }
     dueInput.value = note.dueAt ? toLocalInputValue(note.dueAt) : '';
+    // 截止时间（可选）：有提醒时间时显示截止行，同步当前值
+    var endRow = document.getElementById('end-row');
+    if (endRow) endRow.classList.toggle('show', !!(note.dueAt || note.endAt));
+    endInput.value = note.endAt ? toLocalInputValue(note.endAt) : '';
     hideDuePop();
   }
 
@@ -4196,7 +4331,7 @@
                 }
               }
               if (badge) {
-                badge.className = 'due-badge' + (dTxt === '已过期' ? ' overdue' : '');
+                badge.className = 'due-badge' + (isOverdue(noteLeft) ? ' overdue' : '');
                 badge.textContent = dTxt;
                 badge.dataset.id = nid;
               }
@@ -4828,6 +4963,9 @@
         // version 1 旧备份缺待办字段，按默认值补齐（dueAt/doneAt 为 null）
         var due = (payload.version >= 2 && typeof n.dueAt === 'number') ? n.dueAt : null;
         var done = (payload.version >= 2 && typeof n.doneAt === 'number') ? n.doneAt : null;
+        var end = (payload.version >= 2 && typeof n.endAt === 'number') ? n.endAt : null;
+        var opc = (payload.version >= 2 && typeof n.overduePromptCount === 'number') ? n.overduePromptCount : 0;
+        var olp = (payload.version >= 2 && typeof n.overdueLastPromptAt === 'number') ? n.overdueLastPromptAt : null;
         return normalizeNote({
           id: n.id,
           content: typeof n.content === 'string' ? n.content : '',
@@ -4836,6 +4974,9 @@
           type: n.type === 'todo' ? 'todo' : 'note',
           dueAt: due,
           doneAt: done,
+          endAt: end,
+          overduePromptCount: opc,
+          overdueLastPromptAt: olp,
           pinnedAt: (payload.version >= 2 && 'pinnedAt' in n && n.pinnedAt !== undefined) ? n.pinnedAt : null,
           color: (payload.version >= 2 && 'color' in n && n.color !== undefined) ? n.color : null,
           starred: (payload.version >= 2 && n.starred === true),
@@ -5438,6 +5579,27 @@
       note.dueAt = null;
       dbPut(note).catch(function () { /* 存储失败静默 */ });
       scheduleNoteNotification(note); // 清除提醒 → 取消旧通知
+      syncEditorTodoUI();
+      renderList();
+    }
+    hideDuePop();
+  });
+  endInput.addEventListener('change', function () {
+    var note = noteById(currentId);
+    if (!note || !isTodo(note)) { hideDuePop(); return; }
+    note.endAt = endInput.value ? fromLocalInputValue(endInput.value) : null;
+    dbPut(note).catch(function () { /* 存储失败静默 */ });
+    scheduleNoteNotification(note); // 设/改/清 endAt → 重新对齐通知（可能新增/取消 2h 确认通知）
+    syncEditorTodoUI();
+    renderList();
+    hideDuePop();
+  });
+  endClear.addEventListener('click', function () {
+    var note = noteById(currentId);
+    if (note && isTodo(note)) {
+      note.endAt = null;
+      dbPut(note).catch(function () { /* 存储失败静默 */ });
+      scheduleNoteNotification(note); // 清除截止时间 → 恢复 2h 确认通知
       syncEditorTodoUI();
       renderList();
     }
@@ -6235,10 +6397,11 @@
     }).catch(function () { /* 静默 */ });
   }
 
-  function cancelNoteNotification(noteId) {
+  function cancelNoteNotification(noteId, plus) {
     var ln = getLocalNotifications();
     if (!ln || !noteId) return;
-    ln.cancel({ notifications: [{ id: hashNoteId(noteId) }] }).catch(function () { /* 静默 */ });
+    // plus：1 = 待办确认通知（hash + 1），不传则取消主提醒
+    ln.cancel({ notifications: [{ id: hashNoteId(noteId) + (plus || 0) }] }).catch(function () { /* 静默 */ });
   }
 
   function ensureNotificationChannel() {
@@ -6263,6 +6426,7 @@
     // 非待办 / 无提醒时间 / 已完成 / 已过期 → 取消旧通知（不调度过期提醒）
     if (!(isTodo(note) && note.dueAt && !isDone(note)) || note.dueAt <= Date.now()) {
       cancelNoteNotification(note.id);
+      scheduleOverduePromptNotification(note); // 内部负责取消/重排 2h 确认通知
       return;
     }
     ln.schedule({
@@ -6281,6 +6445,41 @@
         allowWhileIdle: true
       }]
     }).catch(function () { /* 静默 */ });
+    // 无截止时间的待办：调度 dueAt + 2h 的"待办确认"通知（有 endAt 则不需要）
+    scheduleOverduePromptNotification(note);
+  }
+
+  // "待办确认"通知（id = hash + 1）：只适用于无 endAt 的待办
+  // 从未问过 → dueAt + 2h；问过（还需要时间/稍后再说）→ 上次询问 + 24h；问满 3 次不再问
+  function scheduleOverduePromptNotification(note) {
+    var ln = getLocalNotifications();
+    if (!ln || !note) return;
+    var cnt = note.overduePromptCount || 0;
+    // 非待办 / 已完成 / 已删除 / 有截止时间 / 已问满 3 次 → 取消确认通知
+    if (!isTodo(note) || isDone(note) || note.deletedAt != null || note.endAt || cnt >= 3) {
+      cancelNoteNotification(note.id, 1);
+      return;
+    }
+    var at = cnt > 0 && note.overdueLastPromptAt
+      ? note.overdueLastPromptAt + 24 * 60 * 60 * 1000 // 上次询问 + 24h
+      : note.dueAt + 2 * 60 * 60 * 1000;                // 首次：dueAt + 2h
+    if (at <= Date.now()) { cancelNoteNotification(note.id, 1); return; } // 过期窗口不补发，避免重启重复弹
+    ln.schedule({
+      notifications: [{
+        id: hashNoteId(note.id) + 1,
+        channelId: 'todo-reminders-v2',
+        title: '待办确认',
+        body: '「' + titleOf(note).slice(0, 30) + '」已进行 2 小时，点开确认状态',
+        schedule: { at: new Date(at) },
+        extra: { noteId: note.id },
+        sound: 'default',
+        smallIcon: 'ic_launcher',
+        iconColor: '#2E6BE6',
+        ongoing: false,
+        autoCancel: true,
+        allowWhileIdle: true
+      }]
+    }).catch(function () { /* 静默 */ });
   }
 
   // 启动恢复：遍历全部便签逐条对齐通知（覆盖重启丢通知、导入数据等场景）
@@ -6289,6 +6488,61 @@
     notes.forEach(function (n) {
       if (n.deletedAt == null) scheduleNoteNotification(n); // 回收箱里的不重新调度
     });
+  }
+
+  // 待办确认弹窗（点击"待办确认"通知进入编辑页后触发）：无 endAt 的待办 2h/24h 询问
+  function showOverduePrompt(noteId) {
+    var note = noteById(noteId);
+    if (!note || !isTodo(note) || isDone(note)) return;
+    if ((note.overduePromptCount || 0) >= 3) return; // 已问满 3 次不再询问
+    var title = titleOf(note);
+    confirmDialog({
+      title: '待办确认',
+      message: '「' + title + '」已进行 2 小时，是否已完成？',
+      confirmText: '我已完成',
+      altText: '还需要时间',
+      cancelText: '稍后再说'
+    }).then(function (r) {
+      var n = noteById(noteId);
+      if (!n) return;
+      if (r === 'ok') {
+        // 已完成：保留在列表（不进回收箱），取消后续确认通知
+        n.doneAt = Date.now();
+        n.updatedAt = Date.now();
+        dbPut(n).catch(function () { /* 静默 */ });
+        scheduleNoteNotification(n); // 内部取消 2h 确认通知
+        syncEditorTodoUI();
+        renderList();
+        showUndoToast('已标记为完成');
+      } else if (r === 'alt' || r === 'cancel') {
+        // 还需要时间 / 稍后再说：计数 +1，24 小时后再询问
+        n.overduePromptCount = (n.overduePromptCount || 0) + 1;
+        n.overdueLastPromptAt = Date.now();
+        n.updatedAt = Date.now();
+        dbPut(n).catch(function () { /* 静默 */ });
+        scheduleOverduePromptNotification(n); // 上次询问 + 24h 再问（满 3 次自动取消）
+      }
+    });
+  }
+
+  // 自启动 + 电池白名单引导：首次进入 2 秒后弹窗；确认过则不再弹
+  function showNotifyGuide() {
+    try {
+      if (localStorage.getItem('notify_guide_confirmed') === '1') return;
+    } catch (e) { return; }
+    var modal = document.getElementById('notify-guide-modal');
+    if (!modal || modal.classList.contains('show')) return;
+    modal.classList.add('show');
+    modal.querySelector('.guide-ok').onclick = function () {
+      try { localStorage.setItem('notify_guide_confirmed', '1'); } catch (e) {}
+      modal.classList.remove('show');
+    };
+    modal.querySelector('.guide-later').onclick = function () {
+      modal.classList.remove('show'); // 不记录，下次启动再弹
+    };
+    modal.onclick = function (e) {
+      if (e.target === modal) modal.classList.remove('show'); // 点遮罩同"稍后再看"
+    };
   }
 
   /* ---------- 应用内更新（国内镜像；只 Capacitor 环境生效，浏览器静默跳过） ---------- */
@@ -6429,10 +6683,13 @@
       try {
         var noteId = res && res.notification && res.notification.extra && res.notification.extra.noteId;
         if (!noteId || !noteById(noteId)) return; // 便签已删除则忽略
-    if (document.getElementById('editor-view').classList.contains('active')) {
+        // 确认通知（id = hash + 1）点击后需额外弹"是否已完成"询问
+        var isConfirm = res.notification && Number(res.notification.id) === hashNoteId(noteId) + 1;
+        if (document.getElementById('editor-view').classList.contains('active')) {
           document.getElementById('back-btn').click(); // 先走正常返回（含离开便签延迟保存），再打开目标
         }
         openNote(noteId);
+        if (isConfirm) showOverduePrompt(noteId); // 打开便签后弹确认
       } catch (e) { /* 静默 */ }
     });
   }
@@ -6454,6 +6711,7 @@
       checkExactAlarmSetting();        // 启动时检查精确闹钟权限（Android 专用，未授权仅告警不打扰）
       resyncAllTodoNotifications();    // 重启后恢复所有待办的系统通知
       registerNotificationTap();       // 点击通知 → 打开对应便签
+      setTimeout(showNotifyGuide, 2000); // 2 秒后弹自启动/电池白名单引导（已确认则内部跳过）
       if (window.Capacitor) setTimeout(checkForUpdate, 2000); // 应用内更新检查（2 秒后；浏览器跳过）
     })
     .catch(function () {

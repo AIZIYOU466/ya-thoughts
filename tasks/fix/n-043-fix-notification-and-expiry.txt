@@ -1,0 +1,155 @@
+# 任务：通知优化 + 待办过期逻辑改造（模块 A + B）
+
+## AI 行为规范（必读）
+1. 不要读整个 index.html。用 sed -n 按行号分段读。
+2. 先输出方案报告，等用户确认后再动手。
+3. 用精准 edit，禁止全量重写 index.html。
+4. 关键：改完 index.html 后，必须执行 cp index.html www/index.html。
+   项目 capacitor.config.json 的 webDir 是 www/，APK 打包用的是 www/index.html。
+   不 cp 的话所有改动都不会进 APK。（这是历史踩过的大坑）
+5. 涉及 AndroidManifest 的改动要一并做，并说明路径。
+6. 纯原生 JS，var + 具名 function + 单引号 + 中文注释。
+
+## 读取范围
+- 编辑页 UI: grep -n 'dueAt\|提醒时间' index.html | head -30
+- 通知函数: sed -n '6180,6280p' index.html
+- 启动初始化: sed -n '6400,6470p' index.html
+- 过期判断/回收箱: grep -n 'isDone\|isTodo\|过期\|expired\|deletedAt' index.html | head -30
+- Manifest: cat android/app/src/main/AndroidManifest.xml
+
+项目：Ya thoughts 便签 App，单文件 index.html（+ 同步的 www/index.html），Capacitor 8。
+
+---
+
+## 模块 A：通知优化
+
+### A1. AndroidManifest 加精确闹钟权限
+
+文件：android/app/src/main/AndroidManifest.xml
+
+在 <manifest> 下（和其他 <uses-permission> 一起）添加：
+    <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+
+说明：
+- USE_EXACT_ALARM：Android 13+ 自动授予（无需用户操作），用于闹钟/日历/待办类 App
+- SCHEDULE_EXACT_ALARM：Android 12 兼容
+- RECEIVE_BOOT_COMPLETED：开机后恢复通知
+
+### A2. App 内引导弹窗（自启动 + 电池白名单）
+
+需求：首次进入 App 时（或用户未确认过），弹窗引导用户去系统设置里开"自启动"和"电池无限制"。
+
+触发时机：
+- App 启动后 2 秒
+- localStorage 检查 notify_guide_confirmed，为 '1' 则跳过
+
+弹窗内容（用项目现有的 confirmDialog 或类似样式）：
+标题：让待办提醒准时到达
+
+正文：
+手机为省电会限制后台 App。为了让你在待办时间准时收到
+铃声和顶部弹出通知，请把 Ya thoughts 加入：
+· 自启动（防止被系统清理）
+· 电池无限制（防止延迟触发）
+
+路径参考：设置 → 应用 → Ya thoughts → 自启动 / 电池
+
+按钮：[我已设置好]  [稍后再看]
+
+点击"我已设置好"：
+- localStorage.setItem('notify_guide_confirmed', '1')
+- 关闭弹窗
+
+点击"稍后再看"：
+- 关闭弹窗（不记 localStorage，下次启动再弹）
+
+说明：App 无法直接跳系统设置页（Capacitor 无此能力），只显示文字路径。不要尝试调 window.open('app-settings:')。
+
+---
+
+## 模块 B：待办过期逻辑改造
+
+### B1. 数据字段变更
+
+现有：note.dueAt（提醒时间）、note.doneAt（完成时间）
+
+新增字段：
+- note.endAt（截止时间，可选，毫秒时间戳）
+- note.overduePromptCount（0-3，已询问次数）
+- note.overdueLastPromptAt（上次询问时间戳）
+
+兼容性：老数据没有这些字段 → undefined，视为"未设置"。
+
+### B2. 编辑页 UI
+
+在 dueAt（提醒时间）输入下方新增：
+- endAt（截止时间）输入，可选，清除按钮
+
+文案：截止时间（可选）
+说明：设置后到达此时间会自动标记为"已过期"。
+
+### B3. 行为逻辑
+
+情况 1：只设 dueAt，未设 endAt（用户没设截止时间）
+
+- dueAt 到 → 发通知（保持现状）
+- dueAt + 2 小时 → 再发一条系统通知：
+  - 标题：待办确认
+  - 内容：「<便签标题>」已进行 2 小时，点开确认状态
+  - id：hashNoteId(note.id) + 1（避免和原通知冲突）
+  - 用户点击 → 打开 App → 进入编辑该便签 → 弹窗确认：
+    「<标题>」已进行 2 小时，是否已完成？
+    [我已完成]  [还需要时间]  [稍后再说]
+  - 选"我已完成" → note.doneAt = now，保存，保留在列表（不进回收箱）
+  - 选"还需要时间" → overduePromptCount++，overdueLastPromptAt = now，24 小时后再发询问通知
+  - 选"稍后再说" → 同上
+  - overduePromptCount >= 3 → 不再询问
+
+情况 2：设有 endAt
+
+- dueAt 到 → 发通知（保持现状）
+- 不触发 dueAt + 2h 的询问（有明确截止时间，不需要）
+- now > endAt 且未完成 → 显示"已过期"（红色标记 chip）
+
+### B4. 过期判断规则
+
+- 有 endAt 且 now > endAt 且 !isDone(note) → 已过期
+- 无 endAt → 永不自动过期
+- 已过期的不进回收箱（回收箱只放"用户手动删除"的）
+
+### B5. UI 显示
+
+在便签卡片上，状态 chip 优先级：
+- doneAt 存在 → "已完成"（灰）
+- 有 endAt 且 now > endAt → "已过期"（红）
+- 有 dueAt 且未过期 → 显示倒计时（保持现状）
+- 无 endAt 且 dueAt 已过 → "进行中"（灰）
+
+---
+
+## 严格约束
+- 只改本任务相关代码。
+- 不动图片、导出、通知渠道 id（已在用 todo-reminders-v2）。
+- 不动 backButton 逻辑。
+- 改完 index.html 后必须 cp index.html www/index.html。
+- 必须报告 ls -la index.html www/index.html 两文件大小一致。
+
+## 输出要求
+第一步（先输出报告，不动代码）：
+- 当前编辑页 dueAt 输入的位置和代码（贴行号）
+- 当前过期/已完成判断逻辑（贴行号和代码）
+- 当前通知函数 scheduleNoteNotification 完整代码
+- 你计划的改动点清单（每处行号 + 改动内容）
+- AndroidManifest 改动位置
+- 是否有需要用户澄清的地方
+
+第二步（等用户确认后）：
+- 一次性改完 A+B
+- 报告：改动行号、index.html 和 www/index.html 大小、grep 验证结果
+- grep 验证：
+  · grep -c "USE_EXACT_ALARM" android/app/src/main/AndroidManifest.xml
+  · grep -c "endAt" index.html（应 >= 5）
+  · grep -c "notify_guide_confirmed" index.html（应 >= 2）
+  · ls -la index.html www/index.html（两个大小必须一致）
