@@ -1,0 +1,112 @@
+# 任务：修复 3 个 bug（导出 / 回收箱手势 / 通知）
+
+## AI 行为规范（必读）
+1. 不要读整个 index.html（280KB 会超上下文）。按下方"读取范围"用 sed 分段读。
+2. 先输出第一步报告，等用户确认后再动手改代码。
+3. 用精准 edit，禁止全量重写 index.html。
+4. 一次改完 3 个 bug，不要分次。
+5. 每个 bug 独立判断根因，若某个 bug 根因不在代码（如系统权限），明确说明并给排查步骤。
+
+## 读取范围
+- Bug 1: sed -n '4720,4790p' index.html
+- Bug 2: sed -n '1890,1910p' index.html && sed -n '5510,5610p' index.html && sed -n '6520,6570p' index.html
+- Bug 3: sed -n '6180,6270p' index.html && sed -n '6400,6440p' index.html
+- 权限: cat android/app/src/main/AndroidManifest.xml
+- 图标: ls android/app/src/main/res/drawable/
+
+项目：Ya thoughts 便签 App，单文件 index.html，Capacitor 8。
+
+---
+
+## Bug 1：多选卡片点导出无反应
+
+**现象**：多选模式选卡片 → 点导出 → UI 回非多选，无分享菜单无下载。
+
+**根因**：exportNotes()（4725 行）用 a.download + a.click()，Android WebView 不支持。
+
+**已改**：已用 @capacitor/share + @capacitor/filesystem（已装、已 cap sync）。现有逻辑：
+- 4763 行 Capacitor 环境守卫
+- 4768 行 FS.writeFile 写 CACHE
+- 4770 行 SH.share 分享
+
+**待补**：SH.share 后未清理临时文件。改为：
+return FS.writeFile({ path: tmpPath, data: jsonStr, directory: 'CACHE' })
+  .then(function (wr) {
+    return SH.share({ title: '导出便签', url: wr.uri, dialogTitle: '保存或分享便签备份' })
+      .finally(function () {
+        FS.deleteFile({ path: tmpPath, directory: 'CACHE' }).catch(function () {});
+      });
+  })
+  .catch(function () { alert('分享失败，请重试'); });
+若 .finally 不支持，用 .then(success, fail) 双回调。
+
+---
+
+## Bug 2：回收箱页面系统手势返回无效
+
+**现象**：打开回收箱 → 手机侧滑返回 → 无反应（不关箱、不退 App）。点左上角箭头正常。
+
+**现状**：backButton 监听器（6530 行附近）有判断：
+if (binMaskEl.classList.contains('open')) {
+  document.getElementById('bin-back').click();
+  return;
+}
+看起来对，但手势无效。
+
+**已知**：binMaskEl = $('bin-mask')（5518 行），#bin-mask（1896 行），#bin-back（1898 行），开关用 classList.add/remove('open')（5580/5604 行）。
+
+**排查方向**：
+1. backButton 监听器是否真被注册（Capacitor.Plugins.App ready 时机）
+2. 手势返回是否映射到 backButton（部分 ROM 差异）
+3. binMaskEl 是否同一引用
+4. 是否有其他 backButton 监听器覆盖
+
+**约束**：只改 backButton 相关；保留 return 顺序（更新弹窗→裁剪→编辑页→多选→回收箱→退出）。
+
+---
+
+## Bug 3：待办提醒无声音 + 无顶部弹出
+
+**现象**：待办到时无铃声、无 heads-up。
+
+**现状**：n-041 已实现（commit 58bc7a0）：
+- ensureNotificationChannel() 约 6218 行：id='todo-reminders', importance: 5, sound: 'default'
+- scheduleNoteNotification() 约 6234 行：带 channelId / sound / smallIcon:'ic_launcher' / iconColor / allowWhileIdle
+- 启动调用约 6427 行
+- 用户已装最新 APK
+
+**排查方向（按可能性）**：
+1. 通知权限未授予（Android 13+）— 查 requestNotificationPermission 返回值
+2. 通知渠道已存在且 importance 低（Android 渠道创建后不可改）— 检查系统设置里"待办提醒"渠道，可能需换 id 为 'todo-reminders-v2'
+3. smallIcon:'ic_launcher' 不对（Android 要单色小图标资源名，错误的 smallIcon 会导致通知完全不显示）— 查 drawable/ 里有哪些图标
+4. AndroidManifest 缺权限：POST_NOTIFICATIONS / SCHEDULE_EXACT_ALARM / USE_EXACT_ALARM
+5. checkExactNotificationSetting 未授权（Android 12+）
+
+**约束**：只改通知代码。channel id 若冲突用 'todo-reminders-v2' 并同步更新 scheduleNoteNotification。
+
+---
+
+## 输出格式（强制）
+
+### 第一步：报告（不动代码）
+## Bug 1
+- 读取到的相关代码（贴关键行）
+- 要补的 finally 清理（贴具体改动）
+- 风险
+
+## Bug 2
+- 当前 backButton 监听器完整代码
+- 根因候选（3 个按可能性排序）
+- 修复方案
+- 需要用户配合的测试步骤
+
+## Bug 3
+- AndroidManifest 权限声明（贴）
+- drawable/ 图标列表（贴）
+- 当前通知相关代码
+- 根因候选（3 个按可能性排序）
+- 修复方案 + 需要用户配合的步骤
+
+### 第二步（等用户确认"执行"后）
+- 一次性改完 3 个 bug
+- 报告：每个 bug 的改动行号、文件大小变化、grep 验证结果

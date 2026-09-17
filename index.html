@@ -4758,10 +4758,26 @@
         };
         var d = new Date();
         var stamp = d.getFullYear() + pad(d.getMonth() + 1) + pad(d.getDate());
-        var blob = new Blob([JSON.stringify(payload)], { type: 'application/json' });
+        var fileName = filePrefix + stamp + '.json';
+        var jsonStr = JSON.stringify(payload);
+        // Android (Capacitor)：写缓存 → 调系统分享菜单 → 清理临时文件
+        if (window.Capacitor && window.Capacitor.Plugins &&
+            window.Capacitor.Plugins.Share && window.Capacitor.Plugins.Filesystem) {
+          var FS = window.Capacitor.Plugins.Filesystem;
+          var SH = window.Capacitor.Plugins.Share;
+          var tmpPath = 'export_' + Date.now() + '.json';
+          var cleanup = function () { FS.deleteFile({ path: tmpPath, directory: 'CACHE' }).catch(function () {}); };
+          return FS.writeFile({ path: tmpPath, data: jsonStr, directory: 'CACHE' })
+            .then(function (wr) {
+              return SH.share({ title: '导出便签', url: wr.uri, dialogTitle: '保存或分享便签备份' });
+            })
+            .then(function () { cleanup(); }, function () { cleanup(); alert('分享失败，请重试'); });
+        }
+        // 浏览器：a.download 下载
+        var blob = new Blob([jsonStr], { type: 'application/json' });
         var a = document.createElement('a');
         a.href = URL.createObjectURL(blob);
-        a.download = filePrefix + stamp + '.json';
+        a.download = fileName;
         document.body.appendChild(a);
         a.click();
         a.remove();
@@ -6219,7 +6235,7 @@
     var ln = getLocalNotifications();
     if (!ln || !ln.createChannel) return;
     ln.createChannel({
-      id: 'todo-reminders',
+      id: 'todo-reminders-v2',
       name: '待办提醒',
       description: '待办事项到时提醒',
       importance: 5,
@@ -6242,7 +6258,7 @@
     ln.schedule({
       notifications: [{
         id: hashNoteId(note.id),
-        channelId: 'todo-reminders',
+        channelId: 'todo-reminders-v2',
         title: '待办提醒',
         body: titleOf(note).slice(0, 50),
         schedule: { at: new Date(note.dueAt) },
@@ -6403,7 +6419,7 @@
       try {
         var noteId = res && res.notification && res.notification.extra && res.notification.extra.noteId;
         if (!noteId || !noteById(noteId)) return; // 便签已删除则忽略
-        if (document.getElementById('editor-view').classList.contains('active')) {
+    if (document.getElementById('editor-view').classList.contains('active')) {
           document.getElementById('back-btn').click(); // 先走正常返回（含离开便签延迟保存），再打开目标
         }
         openNote(noteId);
@@ -6529,31 +6545,37 @@
   var App = window.Capacitor.Plugins.App;
   App.addListener('backButton', function () {
     // 更新弹窗打开时 → 等同"稍后"（记录 dismiss 并关闭，不返回列表）
+    console.log('[back] check 1: update-modal');
     if (document.getElementById('update-modal').classList.contains('open')) {
       document.getElementById('update-later').click();
       return;
     }
     // 裁剪界面打开时 → 取消裁剪（不是返回列表）
+    console.log('[back] check 2: crop-overlay');
     if (document.getElementById('crop-overlay').classList.contains('open')) {
       document.getElementById('crop-cancel').click();
       return;
     }
     // 编辑页 → 返回列表（复用 #back-btn 的现有处理 backToList）
+    console.log('[back] check 3: editor-view');
     if (document.getElementById('editor-view').classList.contains('active')) {
       document.getElementById('back-btn').click();
       return;
     }
     // 多选模式 → 退出多选（复用 #sel-cancel 的现有处理 exitMultiMode）
+    console.log('[back] check 4: list-view multi');
     if (document.getElementById('list-view').classList.contains('multi')) {
       document.getElementById('sel-cancel').click();
       return;
     }
     // 回收箱打开时 → 关闭回收箱
+    console.log('[back] check 5: binMaskEl open');
     if (binMaskEl.classList.contains('open')) {
       document.getElementById('bin-back').click();
       return;
     }
     // 列表页且非多选 → 允许退出 App
+    console.log('[back] check 6: exitApp');
     App.exitApp();
   });
 })();

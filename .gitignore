@@ -19,3 +19,4 @@ keystore-copy.html
 # ── 临时文件 ──
 *.tmp
 *.orig
+index.html.bak.*
