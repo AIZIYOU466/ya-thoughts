@@ -4723,6 +4723,18 @@
 
   // 核心导出：只导出 noteIds 里的笔记及其对应图片；filePrefix 决定文件名前缀
   function exportNotes(noteIds, filePrefix) {
+    var _d = 'Capacitor: ' + (window.Capacitor ? 'yes' : 'no');
+    if (window.Capacitor && window.Capacitor.Plugins) {
+      var _keys = Object.keys(window.Capacitor.Plugins);
+      _d += '\n\nPlugins (' + _keys.length + '):';
+      _d += '\n' + _keys.join(', ');
+      _d += '\n\nShare: ' + typeof window.Capacitor.Plugins.Share;
+      _d += '\nFilesystem: ' + typeof window.Capacitor.Plugins.Filesystem;
+    } else {
+      _d += '\n\nPlugins: undefined';
+    }
+    alert(_d);
+
     var idSet = {};
     (noteIds || []).forEach(function (id) { idSet[id] = true; });
     return openDB().then(function (db) {
