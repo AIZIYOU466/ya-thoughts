@@ -1,16 +1,18 @@
-# 任务文件模板（以后新任务照抄）
+# 任务模板（新任务照抄）
 
 技能加载：
-- systematic-debugging（bug 修复必用）
+- systematic-debugging（修 bug 必用）
+- ui-ux-pro-max-skill（界面/动画相关必用）
 - motion-web（动效相关必用）
-- ui-ux-pro-max-skill（界面相关必用）
 - ponytail（控制输出长度）
 
 项目背景：
 - 项目：Ya thoughts 便签 App
-- 位置：/root/workspace/notes-app/
-- 主文件：index.html（单文件）
+- 源码：/root/workspace/notes-app/
+- 主文件：index.html（纯 HTML/CSS/JS 单文件）
+- 构建：Capacitor 8 + Android APK
 - 任务文件命名前缀：n-
+- 任务分类：fix/ feature/ ui/
 
 本次任务：<一句话描述>
 
@@ -20,4 +22,10 @@
 严格约束：
 - 只改本任务相关代码
 - 不动其他功能
-- 纯原生 JS
+- 纯原生 JS（var + 具名 function + 单引号 + 中文注释）
+- 修改用精准 edit，不要全量重写 index.html
+- 完成后汇报改动行号和验证结果，不要执行其他任务
+
+验收标准：
+- <可验证的条件>
+- <如：真机打开 XX 页面，操作 XX，效果符合预期>

@@ -7,3 +7,5 @@ android/local.properties
 *.log
 .DS_Store
 *.bak
+tasks.bak.*
+_backup/
