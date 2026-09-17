@@ -31,15 +31,29 @@ jobs:
       - name: Sync Capacitor
         run: npx cap sync android
 
+      - name: Decode keystore from secrets
+        env:
+          KEYSTORE_B64: ${{ secrets.KEYSTORE_BASE64 }}
+        run: |
+          printf '%s' "$KEYSTORE_B64" | base64 -d > android/release.keystore
+
       - name: Build APK
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: |
           cd android
           chmod +x gradlew
           ./gradlew assembleRelease \
             -Pandroid.injected.signing.store.file=$(pwd)/release.keystore \
-            -Pandroid.injected.signing.store.password=***REMOVED*** \
-            -Pandroid.injected.signing.key.alias=yathoughts \
-            -Pandroid.injected.signing.key.password=***REMOVED***
+            -Pandroid.injected.signing.store.password="$KEYSTORE_PASSWORD" \
+            -Pandroid.injected.signing.key.alias="$KEY_ALIAS" \
+            -Pandroid.injected.signing.key.password="$KEY_PASSWORD"
+
+      - name: Cleanup keystore
+        if: always()
+        run: rm -f android/release.keystore
 
       - name: Extract version
         id: get_version
@@ -51,14 +65,14 @@ jobs:
         run: |
           V="${{ steps.get_version.outputs.version }}"
           R="AIZIYOU466/ya-thoughts"
-          cat > version.json << EOF
+          cat > version.json << VJSON_EOF
           {
             "version": "$V",
             "notes": "自动构建 $V",
             "apkUrl": "https://gh-proxy.com/https://github.com/$R/releases/download/v$V/app-release.apk",
             "apkUrlBackup": "https://ghfast.top/https://github.com/$R/releases/download/v$V/app-release.apk"
           }
-          EOF
+          VJSON_EOF
 
       - name: Commit version.json
         run: |
