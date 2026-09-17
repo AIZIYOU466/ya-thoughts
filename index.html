@@ -4768,7 +4768,7 @@
           var SH = window.Capacitor.Plugins.Share;
           var tmpPath = 'export_' + Date.now() + '.json';
           var cleanup = function () { FS.deleteFile({ path: tmpPath, directory: 'CACHE' }).catch(function () {}); };
-          return FS.writeFile({ path: tmpPath, data: jsonStr, directory: 'CACHE' })
+          return FS.writeFile({ path: tmpPath, data: jsonStr, directory: 'CACHE', encoding: 'utf8' })
             .then(function (wr) {
               return SH.share({ title: '导出便签', url: wr.uri, dialogTitle: '保存或分享便签备份' });
             })
