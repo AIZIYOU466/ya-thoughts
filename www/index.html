@@ -2175,11 +2175,12 @@
 铃声和顶部弹出通知，请把 Ya thoughts 加入：
 · 自启动（防止被系统清理）
 · 电池无限制（防止延迟触发）</p>
+    <p class="guide-status" style="font-size:13px;margin:8px 0 0;color:#666"></p>
     <p class="guide-path">路径参考：设置 → 应用 → Ya thoughts → 自启动 / 电池</p>
     <div class="guide-btns">
       <button type="button" class="guide-settings">去设置</button>
       <button type="button" class="guide-later">稍后再看</button>
-      <button type="button" class="guide-ok">我已设置好</button>
+      <button type="button" class="guide-dismiss">不需要</button>
     </div>
   </div>
 </div>
@@ -6612,29 +6613,50 @@
 
   // 自启动 + 电池白名单引导：首次进入 2 秒后弹窗；确认过则不再弹
   function showNotifyGuide() {
+    // 用户明确点过"不需要" → 永久不再弹
     try {
-      if (localStorage.getItem('notify_guide_confirmed') === '1') return;
+      if (localStorage.getItem('notify_guide_dismissed') === '1') return;
     } catch (e) { return; }
     var modal = document.getElementById('notify-guide-modal');
     if (!modal || modal.classList.contains('show')) return;
+
+    // 检测电池优化白名单状态，在卡片上显示
+    var AS = (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.AppSettings) || null;
+    if (AS && AS.isIgnoringBatteryOptimizations) {
+      AS.isIgnoringBatteryOptimizations().then(function (r) {
+        var statusEl = modal.querySelector('.guide-status');
+        if (!statusEl) return;
+        if (r && r.ignoring) {
+          statusEl.textContent = '✓ 电池已无限制';
+          statusEl.style.color = '#16a34a';
+        } else {
+          statusEl.textContent = '⚠ 电池未加入白名单';
+          statusEl.style.color = '#dc2626';
+        }
+      }).catch(function () { /* 静默 */ });
+    }
+
     modal.classList.add('show');
-    modal.querySelector('.guide-ok').onclick = function () {
-      try { localStorage.setItem('notify_guide_confirmed', '1'); } catch (e) {}
-      modal.classList.remove('show');
-    };
-    modal.querySelector('.guide-later').onclick = function () {
-      modal.classList.remove('show'); // 不记录，下次启动再弹
-    };
+
     modal.querySelector('.guide-settings').onclick = function () {
-      // 跳系统应用详情页；点击即视为已确认（避免清后台后重复弹）
-      localStorage.setItem('notify_guide_confirmed', '1');
-      if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.AppSettings) {
-        window.Capacitor.Plugins.AppSettings.open();
-      }
+      // 跳系统设置页；不写任何状态，让用户下次启动时再判断
+      if (AS && AS.open) AS.open();
       modal.classList.remove('show');
     };
+
+    modal.querySelector('.guide-later').onclick = function () {
+      // 稍后再看：不写状态，下次启动再弹
+      modal.classList.remove('show');
+    };
+
+    modal.querySelector('.guide-dismiss').onclick = function () {
+      // 明确不需要 → 永久不再弹
+      try { localStorage.setItem('notify_guide_dismissed', '1'); } catch (e) {}
+      modal.classList.remove('show');
+    };
+
     modal.onclick = function (e) {
-      if (e.target === modal) modal.classList.remove('show'); // 点遮罩同"稍后再看"
+      if (e.target === modal) modal.classList.remove('show');
     };
   }
 
