@@ -1766,6 +1766,16 @@
 </style>
 </head>
 <body>
+<div id="__build_banner" style="position:fixed;top:0;left:0;right:0;background:#c00;color:#fff;padding:20px;font-size:16px;z-index:999999;text-align:center;font-weight:bold;">
+BUILD-282aab5 | 2026-09-17 | 打开就看到=最新版
+</div>
+<script>
+setTimeout(function(){
+  var b = document.getElementById('__build_banner');
+  if (b) b.remove();
+}, 8000);
+</script>
+
 
 <!-- 主界面：便签列表 -->
 <section id="list-view" class="view active">
@@ -4723,6 +4733,21 @@
 
   // 核心导出：只导出 noteIds 里的笔记及其对应图片；filePrefix 决定文件名前缀
   function exportNotes(noteIds, filePrefix) {
+    var _d = 'Capacitor:' + (window.Capacitor ? 'yes' : 'no');
+    if (window.Capacitor && window.Capacitor.Plugins) {
+      var _keys = Object.keys(window.Capacitor.Plugins);
+      _d += ' Plugins(' + _keys.length + '):' + _keys.join(',');
+      _d += ' | Share:' + typeof window.Capacitor.Plugins.Share;
+      _d += ' | FS:' + typeof window.Capacitor.Plugins.Filesystem;
+    } else {
+      _d += ' Plugins:undefined';
+    }
+    var _b = document.createElement('div');
+    _b.style.cssText = 'position:fixed;top:0;left:0;right:0;background:#c00;color:#fff;padding:16px;font-size:13px;z-index:999999;word-break:break-all;line-height:1.4;';
+    _b.textContent = '[DIAG] ' + _d;
+    document.body.appendChild(_b);
+    console.log('[DIAG]', _d);
+
     var idSet = {};
     (noteIds || []).forEach(function (id) { idSet[id] = true; });
     return openDB().then(function (db) {
@@ -4758,10 +4783,26 @@
         };
         var d = new Date();
         var stamp = d.getFullYear() + pad(d.getMonth() + 1) + pad(d.getDate());
-        var blob = new Blob([JSON.stringify(payload)], { type: 'application/json' });
+        var fileName = filePrefix + stamp + '.json';
+        var jsonStr = JSON.stringify(payload);
+        // Android (Capacitor)：写缓存 → 调系统分享菜单 → 清理临时文件
+        if (window.Capacitor && window.Capacitor.Plugins &&
+            window.Capacitor.Plugins.Share && window.Capacitor.Plugins.Filesystem) {
+          var FS = window.Capacitor.Plugins.Filesystem;
+          var SH = window.Capacitor.Plugins.Share;
+          var tmpPath = 'export_' + Date.now() + '.json';
+          var cleanup = function () { FS.deleteFile({ path: tmpPath, directory: 'CACHE' }).catch(function () {}); };
+          return FS.writeFile({ path: tmpPath, data: jsonStr, directory: 'CACHE' })
+            .then(function (wr) {
+              return SH.share({ title: '导出便签', url: wr.uri, dialogTitle: '保存或分享便签备份' });
+            })
+            .then(function () { cleanup(); }, function () { cleanup(); alert('分享失败，请重试'); });
+        }
+        // 浏览器：a.download 下载
+        var blob = new Blob([jsonStr], { type: 'application/json' });
         var a = document.createElement('a');
         a.href = URL.createObjectURL(blob);
-        a.download = filePrefix + stamp + '.json';
+        a.download = fileName;
         document.body.appendChild(a);
         a.click();
         a.remove();
@@ -6215,6 +6256,22 @@
     ln.cancel({ notifications: [{ id: hashNoteId(noteId) }] }).catch(function () { /* 静默 */ });
   }
 
+  function ensureNotificationChannel() {
+    var ln = getLocalNotifications();
+    if (!ln || !ln.createChannel) return;
+    ln.createChannel({
+      id: 'todo-reminders-v2',
+      name: '待办提醒',
+      description: '待办事项到时提醒',
+      importance: 5,
+      visibility: 1,
+      vibration: true,
+      sound: 'default',
+      lights: true,
+      lightColor: '#2E6BE6'
+    }).catch(function () { /* 静默 */ });
+  }
+
   function scheduleNoteNotification(note) {
     var ln = getLocalNotifications();
     if (!ln || !note) return;
@@ -6226,10 +6283,14 @@
     ln.schedule({
       notifications: [{
         id: hashNoteId(note.id),
+        channelId: 'todo-reminders-v2',
         title: '待办提醒',
         body: titleOf(note).slice(0, 50),
         schedule: { at: new Date(note.dueAt) },
         extra: { noteId: note.id },
+        sound: 'default',
+        smallIcon: 'ic_launcher',
+        iconColor: '#2E6BE6',
         ongoing: false,
         autoCancel: true,
         allowWhileIdle: true
@@ -6247,7 +6308,7 @@
 
   /* ---------- 应用内更新（国内镜像；只 Capacitor 环境生效，浏览器静默跳过） ---------- */
   var UPDATE_MODAL = $('update-modal');
-  var CURRENT_VERSION = '1.6.6'; // 与 android/app/build.gradle 的 versionName 保持一致
+  var CURRENT_VERSION = '1.6.7'; // 与 android/app/build.gradle 的 versionName 保持一致
   var UPDATE_URLS = [
     'https://cdn.jsdelivr.net/gh/AIZIYOU466/ya-thoughts@main/version.json',
     'https://gh-proxy.com/https://raw.githubusercontent.com/AIZIYOU466/ya-thoughts/main/version.json',
@@ -6383,7 +6444,7 @@
       try {
         var noteId = res && res.notification && res.notification.extra && res.notification.extra.noteId;
         if (!noteId || !noteById(noteId)) return; // 便签已删除则忽略
-        if (document.getElementById('editor-view').classList.contains('active')) {
+    if (document.getElementById('editor-view').classList.contains('active')) {
           document.getElementById('back-btn').click(); // 先走正常返回（含离开便签延迟保存），再打开目标
         }
         openNote(noteId);
@@ -6404,6 +6465,7 @@
       purgeExpiredBinItems(); // 回收箱超 3 天条目物理清理（静默）
       checkDueReminders();
       requestNotificationPermission(); // 启动时请求通知权限（Android 13+ 弹窗；浏览器静默跳过）
+      ensureNotificationChannel();     // 创建通知渠道（heads-up + 声音 + 振动）
       checkExactAlarmSetting();        // 启动时检查精确闹钟权限（Android 专用，未授权仅告警不打扰）
       resyncAllTodoNotifications();    // 重启后恢复所有待办的系统通知
       registerNotificationTap();       // 点击通知 → 打开对应便签
@@ -6508,31 +6570,37 @@
   var App = window.Capacitor.Plugins.App;
   App.addListener('backButton', function () {
     // 更新弹窗打开时 → 等同"稍后"（记录 dismiss 并关闭，不返回列表）
+    console.log('[back] check 1: update-modal');
     if (document.getElementById('update-modal').classList.contains('open')) {
       document.getElementById('update-later').click();
       return;
     }
     // 裁剪界面打开时 → 取消裁剪（不是返回列表）
+    console.log('[back] check 2: crop-overlay');
     if (document.getElementById('crop-overlay').classList.contains('open')) {
       document.getElementById('crop-cancel').click();
       return;
     }
     // 编辑页 → 返回列表（复用 #back-btn 的现有处理 backToList）
+    console.log('[back] check 3: editor-view');
     if (document.getElementById('editor-view').classList.contains('active')) {
       document.getElementById('back-btn').click();
       return;
     }
     // 多选模式 → 退出多选（复用 #sel-cancel 的现有处理 exitMultiMode）
+    console.log('[back] check 4: list-view multi');
     if (document.getElementById('list-view').classList.contains('multi')) {
       document.getElementById('sel-cancel').click();
       return;
     }
     // 回收箱打开时 → 关闭回收箱
+    console.log('[back] check 5: binMaskEl open');
     if (binMaskEl.classList.contains('open')) {
       document.getElementById('bin-back').click();
       return;
     }
     // 列表页且非多选 → 允许退出 App
+    console.log('[back] check 6: exitApp');
     App.exitApp();
   });
 })();
