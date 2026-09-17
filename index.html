@@ -1766,15 +1766,6 @@
 </style>
 </head>
 <body>
-<div id="__build_banner" style="position:fixed;top:0;left:0;right:0;background:#c00;color:#fff;padding:20px;font-size:16px;z-index:999999;text-align:center;font-weight:bold;">
-BUILD-282aab5 | 2026-09-17 | 打开就看到=最新版
-</div>
-<script>
-setTimeout(function(){
-  var b = document.getElementById('__build_banner');
-  if (b) b.remove();
-}, 8000);
-</script>
 
 
 <!-- 主界面：便签列表 -->
@@ -4733,21 +4724,6 @@ setTimeout(function(){
 
   // 核心导出：只导出 noteIds 里的笔记及其对应图片；filePrefix 决定文件名前缀
   function exportNotes(noteIds, filePrefix) {
-    var _d = 'Capacitor:' + (window.Capacitor ? 'yes' : 'no');
-    if (window.Capacitor && window.Capacitor.Plugins) {
-      var _keys = Object.keys(window.Capacitor.Plugins);
-      _d += ' Plugins(' + _keys.length + '):' + _keys.join(',');
-      _d += ' | Share:' + typeof window.Capacitor.Plugins.Share;
-      _d += ' | FS:' + typeof window.Capacitor.Plugins.Filesystem;
-    } else {
-      _d += ' Plugins:undefined';
-    }
-    var _b = document.createElement('div');
-    _b.style.cssText = 'position:fixed;top:0;left:0;right:0;background:#c00;color:#fff;padding:16px;font-size:13px;z-index:999999;word-break:break-all;line-height:1.4;';
-    _b.textContent = '[DIAG] ' + _d;
-    document.body.appendChild(_b);
-    console.log('[DIAG]', _d);
-
     var idSet = {};
     (noteIds || []).forEach(function (id) { idSet[id] = true; });
     return openDB().then(function (db) {
@@ -4796,7 +4772,16 @@ setTimeout(function(){
             .then(function (wr) {
               return SH.share({ title: '导出便签', url: wr.uri, dialogTitle: '保存或分享便签备份' });
             })
-            .then(function () { cleanup(); }, function () { cleanup(); alert('分享失败，请重试'); });
+            .then(function () { cleanup(); })
+            .catch(function (err) {
+              cleanup();
+              var msg = (err && err.message) ? String(err.message) : String(err || '');
+              var low = msg.toLowerCase();
+              // 用户取消分享（cancel/canceled/cancelled/abort）不算失败，静默
+              if (low.indexOf('cancel') === -1 && low.indexOf('abort') === -1) {
+                alert('导出失败：' + (msg || '未知错误'));
+              }
+            });
         }
         // 浏览器：a.download 下载
         var blob = new Blob([jsonStr], { type: 'application/json' });
@@ -6570,37 +6555,31 @@ setTimeout(function(){
   var App = window.Capacitor.Plugins.App;
   App.addListener('backButton', function () {
     // 更新弹窗打开时 → 等同"稍后"（记录 dismiss 并关闭，不返回列表）
-    console.log('[back] check 1: update-modal');
     if (document.getElementById('update-modal').classList.contains('open')) {
       document.getElementById('update-later').click();
       return;
     }
     // 裁剪界面打开时 → 取消裁剪（不是返回列表）
-    console.log('[back] check 2: crop-overlay');
     if (document.getElementById('crop-overlay').classList.contains('open')) {
       document.getElementById('crop-cancel').click();
       return;
     }
     // 编辑页 → 返回列表（复用 #back-btn 的现有处理 backToList）
-    console.log('[back] check 3: editor-view');
     if (document.getElementById('editor-view').classList.contains('active')) {
       document.getElementById('back-btn').click();
       return;
     }
     // 多选模式 → 退出多选（复用 #sel-cancel 的现有处理 exitMultiMode）
-    console.log('[back] check 4: list-view multi');
     if (document.getElementById('list-view').classList.contains('multi')) {
       document.getElementById('sel-cancel').click();
       return;
     }
     // 回收箱打开时 → 关闭回收箱
-    console.log('[back] check 5: binMaskEl open');
     if (binMaskEl.classList.contains('open')) {
       document.getElementById('bin-back').click();
       return;
     }
     // 列表页且非多选 → 允许退出 App
-    console.log('[back] check 6: exitApp');
     App.exitApp();
   });
 })();
