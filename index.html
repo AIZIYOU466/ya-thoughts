@@ -6626,13 +6626,12 @@
       modal.classList.remove('show'); // 不记录，下次启动再弹
     };
     modal.querySelector('.guide-settings').onclick = function () {
-      // 跳系统应用详情页（原生插件，仅 Capacitor 环境）；跳转后弹窗保留，回来再点「我已设置好」
+      // 跳系统应用详情页；点击即视为已确认（避免清后台后重复弹）
+      localStorage.setItem('notify_guide_confirmed', '1');
       if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.AppSettings) {
         window.Capacitor.Plugins.AppSettings.open();
-      } else {
-        // 浏览器无原生设置页：等同「稍后再看」，不记录
-        modal.classList.remove('show');
       }
+      modal.classList.remove('show');
     };
     modal.onclick = function (e) {
       if (e.target === modal) modal.classList.remove('show'); // 点遮罩同"稍后再看"
