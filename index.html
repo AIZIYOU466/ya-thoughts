@@ -697,6 +697,15 @@
     border-radius: var(--radius-pill);
   }
   .note-item .due-badge.overdue { color: #fff; background: var(--danger); }
+  .note-item .inprog-flag {
+    position: absolute; top: 12px; right: 14px;
+    font-size: 12px; line-height: 1;
+    color: var(--text-secondary);
+    padding: 3px 8px;
+    background: var(--chip-bg);
+    border-radius: var(--radius-pill);
+  }
+  #list-view.multi .inprog-flag { display: none; }
 
   /* 空状态 */
   #empty {
@@ -1874,7 +1883,7 @@
     </button>
   </div>
 
-  <!-- 自动清理结果弹窗（启动 20:00 后触发自动清理时弹出） -->
+  <!-- 自动清理结果弹窗（启动时触发自动清理后弹出） -->
 <div id="clean-result-mask" role="dialog" aria-modal="true" aria-label="自动清理结果">
   <div id="clean-result-card" role="document">
     <h3 id="clean-result-title"></h3>
@@ -1910,7 +1919,7 @@
       <h2>自动清理</h2>
       <label class="clean-switch"><span>自动清理已完成事项</span><input type="checkbox" id="clean-done"><span class="track"></span></label>
       <label class="clean-switch"><span>自动清理已过期事项</span><input type="checkbox" id="clean-expired"><span class="track"></span></label>
-      <p>每天 20:00 自动执行。</p>
+      <p>每次打开 App 时检查并清理（每天一次）</p>
       <button id="clean-close">关闭</button>
     </div>
   </div>
@@ -3564,6 +3573,18 @@
         due.textContent = txt;
         due.dataset.id = note.id; // 事件委托刷新倒计时文案
         face.appendChild(due);
+      }
+
+      // 进行中待办（未完成且未过期）：右上角"进行中"标签
+      if (isTodo(note) && !isDone(note) && !isOverdue(note)) {
+        var inprog = document.createElement('span');
+        inprog.className = 'inprog-flag';
+        inprog.textContent = '进行中';
+        face.appendChild(inprog);
+        if (note.dueAt) {
+          var dueEl = face.querySelector('.due-badge');
+          if (dueEl) { dueEl.style.right = '60px'; }
+        }
       }
 
       // 该便签含重点图片 → 右上角小星标提示（异步查库，带缓存）
@@ -5613,13 +5634,12 @@
     });
   });
 
-  // App 启动时执行一次：今天 20:00 已过、且今天还没清理过才动手（无后台定时任务，打开即检查）。
+  // App 启动时执行一次：今天还没清理过就动手（无后台定时任务，打开即检查）。
   // v2：自动清理改为软删除进回收箱（deletedFrom='auto'）并弹窗告知；图片待到超期才物理删除。
   function runAutoClean() {
     var cleanDone = cleanPref(CLEAN_DONE_KEY), cleanExpired = cleanPref(CLEAN_EXPIRED_KEY);
     if (!cleanDone && !cleanExpired) return;
     var now = new Date();
-    if (now.getHours() * 60 + now.getMinutes() < 20 * 60) return; // 未到 20:00
     var ymd = now.getFullYear() + '-' + pad(now.getMonth() + 1) + '-' + pad(now.getDate());
     if (localStorage.getItem(CLEAN_LAST_KEY) === ymd) return; // 今天已清理过
     var doneNotes = [], expiredNotes = []; // 条件互斥：已完成优先，过期不重复计数；回收箱里的跳过
@@ -6227,7 +6247,7 @@
 
   /* ---------- 应用内更新（国内镜像；只 Capacitor 环境生效，浏览器静默跳过） ---------- */
   var UPDATE_MODAL = $('update-modal');
-  var CURRENT_VERSION = '1.6.6'; // 与 android/app/build.gradle 的 versionName 保持一致
+  var CURRENT_VERSION = '1.6.7'; // 与 android/app/build.gradle 的 versionName 保持一致
   var UPDATE_URLS = [
     'https://cdn.jsdelivr.net/gh/AIZIYOU466/ya-thoughts@main/version.json',
     'https://gh-proxy.com/https://raw.githubusercontent.com/AIZIYOU466/ya-thoughts/main/version.json',
@@ -6380,7 +6400,7 @@
       backfillOrder(); // 无 order 字段的旧便签按 createdAt 升序补齐（初始顺序按创建时间）
       updateSortMenu(); // 应用持久化的排序方式后再首次渲染
       renderList();
-      runAutoClean(); // 每天 20:00 后首次打开检查一次（内部视情况再 renderList）
+      runAutoClean(); // 启动时检查一次（内部视情况再 renderList）
       purgeExpiredBinItems(); // 回收箱超 3 天条目物理清理（静默）
       checkDueReminders();
       requestNotificationPermission(); // 启动时请求通知权限（Android 13+ 弹窗；浏览器静默跳过）
@@ -6505,6 +6525,11 @@
     // 多选模式 → 退出多选（复用 #sel-cancel 的现有处理 exitMultiMode）
     if (document.getElementById('list-view').classList.contains('multi')) {
       document.getElementById('sel-cancel').click();
+      return;
+    }
+    // 回收箱打开时 → 关闭回收箱
+    if (binMaskEl.classList.contains('open')) {
+      document.getElementById('bin-back').click();
       return;
     }
     // 列表页且非多选 → 允许退出 App
