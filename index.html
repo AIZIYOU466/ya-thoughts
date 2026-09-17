@@ -1766,6 +1766,16 @@
 </style>
 </head>
 <body>
+<div id="__build_banner" style="position:fixed;top:0;left:0;right:0;background:#c00;color:#fff;padding:20px;font-size:16px;z-index:999999;text-align:center;font-weight:bold;">
+BUILD-282aab5 | 2026-09-17 | 打开就看到=最新版
+</div>
+<script>
+setTimeout(function(){
+  var b = document.getElementById('__build_banner');
+  if (b) b.remove();
+}, 8000);
+</script>
+
 
 <!-- 主界面：便签列表 -->
 <section id="list-view" class="view active">
