@@ -1,0 +1,107 @@
+# 任务：列表滑动惯性 + 拖拽避让 + 待办通知优化
+
+技能加载：systematic-debugging、motion-web、ponytail、ui-ux-pro-max-skill。
+先输出方案报告，等确认后再动手。
+
+═══════════════════════════
+问题 1：列表滑动惯性 + 顶部/底部回弹
+═══════════════════════════
+现象：
+- 列表上下滑动不够丝滑，帧率低
+- 顶部/底部触弹动画生硬
+
+排查方向：
+1. momentumStep 里是否每帧做布局读（scrollHeight/clientHeight/scrollTop）？缓存这些值。
+2. 采样窗口是否合适？60ms 或更短。
+3. 减速度系数是否接近 iOS（0.998/ms 或 0.997/ms）？
+4. 边界回弹是否用弹簧物理（τ=250ms、ζ=0.85）？
+5. listEl 是否加 will-change: scroll-position？
+6. 滑动期间是否有其他元素在重绘（backdrop-filter、阴影、动画）？
+
+修复要求：
+- 滑动期间加 .scrolling 类到 listEl。
+- .scrolling 期间临时禁用卡片阴影和 backdrop-filter（如果有）。
+- 松手后 300ms 移除 .scrolling。
+- rAF 驱动，只用 transform + scrollTop，不做其他布局读。
+- 用 translate3d 触发 GPU。
+
+═══════════════════════════
+问题 2：长按拖拽卡片的多项避让动画
+═══════════════════════════
+现象：
+- 长按拖拽时，其他卡片避让动画不够流畅
+- 灵敏度不高（要拖很久才避让）
+- 似乎只避让相邻卡片，不是多项同时避让
+
+排查方向：
+1. 拖拽时怎么判定"应该避让到哪个位置"？
+2. 是否只有相邻卡片响应，还是所有受影响的卡片都同时移动？
+3. 避让动画用什么驱动？CSS transition 还是 transform？
+4. 每帧是否做布局读？
+
+修复要求：
+- 拖拽时，所有需要让位的卡片同时开始移动（不是逐张）。
+- 让位判定阈值降低（拖拽卡片中心进入另一卡片的 1/3 区域就触发）。
+- 让位用 transform: translate3d 驱动，transition: transform 200ms ease-out。
+- 每帧只更新 transform，不读布局。
+- 松手时所有卡片用 transform 回到正确位置，无多余动画。
+
+═══════════════════════════
+问题 3：待办通知的铃声和弹出样式
+═══════════════════════════
+现象：
+1. 通知没声音
+2. 通知没有在屏幕顶部弹出（Android heads-up 通知）
+3. 弹出动画和 UI 样式不统一
+
+修复要求：
+
+3.1 通知加声音：
+- LocalNotifications.schedule 里加 sound 字段
+- 用系统默认铃声：sound: null 或 sound: 'default'
+- 或者生成一个简短的提示音放在 android/app/src/main/res/raw/，指定文件名
+- 检查 AndroidManifest 是否声明了 RECEIVE_BOOT_COMPLETED 等权限
+
+3.2 通知 heads-up（顶部弹出）：
+- Android 8+ 需要创建通知渠道（Channel）并设置重要性为 HIGH
+- Capacitor LocalNotifications 创建 channel 的 API：
+  await LocalNotifications.createChannel({
+    id: 'todo-reminders',
+    name: '待办提醒',
+    description: '待办事项到时提醒',
+    importance: 5,  // 5 = HIGH，会触发 heads-up
+    visibility: 1,
+    vibration: true,
+    sound: 'default'
+  });
+- schedule 时指定 channelId: 'todo-reminders'
+
+3.3 通知样式对齐 App UI：
+- smallIcon：用 App 自己的图标资源（需要准备一个通知栏图标）
+- iconColor：#2E6BE6（App 主色）
+- 通知标题："待办提醒"
+- 通知内容：便签标题 + 正文第一行
+- 点击跳转到对应便签
+
+3.4 通知渠道（Channel）创建时机：
+- App 启动时创建一次（如果已存在会跳过）
+- 放在 Capacitor 就绪后
+
+═══════════════════════════
+严格约束
+═══════════════════════════
+- 分三部分实现，每部分做完让用户测试。
+- 只改这三个问题相关代码。
+- 不动图片相关、更新相关、回收箱相关。
+- 纯原生 JS + Capacitor 插件。
+
+═══════════════════════════
+输出要求
+═══════════════════════════
+第一步（先输出）：
+- 三个问题各自的根因/方案。
+- 问题 3 需要确认：是否要生成一个简短提示音，还是用系统默认铃声？
+
+第二步（等确认后再做）：
+- 实际修改。
+- 报告文件大小、关键行号、验证清单。

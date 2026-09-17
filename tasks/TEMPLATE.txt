@@ -1,0 +1,23 @@
+# 任务文件模板（以后新任务照抄）
+
+技能加载：
+- systematic-debugging（bug 修复必用）
+- motion-web（动效相关必用）
+- ui-ux-pro-max-skill（界面相关必用）
+- ponytail（控制输出长度）
+
+项目背景：
+- 项目：Ya thoughts 便签 App
+- 位置：/root/workspace/notes-app/
+- 主文件：index.html（单文件）
+- 任务文件命名前缀：n-
+
+本次任务：<一句话描述>
+
+详细要求：
+<具体到可执行>
+
+严格约束：
+- 只改本任务相关代码
+- 不动其他功能
+- 纯原生 JS
