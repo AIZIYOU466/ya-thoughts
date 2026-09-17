@@ -445,6 +445,12 @@
     padding: 12px 20px calc(110px + env(safe-area-inset-bottom));
     box-sizing: border-box;
   }
+  /* 内容恒比容器高（::after 高度=容器高）：任意张数（含 1 张）都有滚动行程 */
+  #note-list::after {
+    content: '';
+    display: block;
+    height: 100%;
+  }
   /* 左滑操作菜单 + 拖拽排序（手势层，纯 Touch Events）依赖的结构：
      li.note-item 是手势容器（touch-action: none 常驻，浏览器绝不接管任何手势，
      纵向滚动也由 JS 手动驱动 listEl.scrollTop）；
@@ -697,6 +703,17 @@
     border-radius: var(--radius-pill);
   }
   .note-item .due-badge.overdue { color: #fff; background: var(--danger); }
+  .note-item .end-badge {
+    position: absolute;
+    top: 38px; right: 14px;
+    font-size: 12px; line-height: 1;
+    color: var(--text-secondary);
+    padding: 3px 8px;
+    background: var(--chip-bg);
+    border-radius: var(--radius-pill);
+  }
+  .note-item .end-badge.overdue { color: #fff; background: var(--danger); }
+  .note-item:not(.has-due) .end-badge { top: 12px; } /* 无提醒角标时截止角标顶到首行 */
   .note-item .inprog-flag {
     position: absolute; top: 12px; right: 14px;
     font-size: 12px; line-height: 1;
@@ -1016,6 +1033,7 @@
   }
   #notify-guide-modal .guide-btns button:active { transform: scale(0.97); filter: brightness(0.96); }
   #notify-guide-modal .guide-later { background: var(--chip-bg); color: var(--text-primary); }
+  #notify-guide-modal .guide-settings { background: var(--chip-bg); color: var(--primary, #2E6BE6); }
   #notify-guide-modal .guide-ok { background: var(--primary, #2E6BE6); color: #fff; }
 
   /* 悬浮新建按钮 */
@@ -2159,6 +2177,7 @@
 · 电池无限制（防止延迟触发）</p>
     <p class="guide-path">路径参考：设置 → 应用 → Ya thoughts → 自启动 / 电池</p>
     <div class="guide-btns">
+      <button type="button" class="guide-settings">去设置</button>
       <button type="button" class="guide-later">稍后再看</button>
       <button type="button" class="guide-ok">我已设置好</button>
     </div>
@@ -2625,6 +2644,14 @@
     return (d.getMonth() + 1) + '月' + d.getDate() + '日 ' + hm;
   }
 
+  // 截止时间角标文案：固定「截止 M月D日 HH:mm」，不随剩余时间跳变
+  function endBadgeText(note) {
+    if (!note.endAt) return '';
+    var d = new Date(note.endAt);
+    return '截止 ' + (d.getMonth() + 1) + '月' + d.getDate() + '日 ' +
+      pad(d.getHours()) + ':' + pad(d.getMinutes());
+  }
+
   // 切换待办完成状态（列表复选框与编辑页复选框共用）
   function toggleTodoDone(id) {
     var note = noteById(id);
@@ -3064,6 +3091,7 @@
   var SWIPE_REVEAL = 120;   // 展开时露出的操作区宽度(px)
   var SWIPE_SNAP = 80;      // 松手后判定吸附展开的滑动距离(px)
   var SWIPE_REVEAL_TRIGGER = 40; // Bug2(B)：左滑越过该位移(px)后，菜单才从右侧滑入
+  var SWIPE_VEL_SNAP = 0.5;      // 松手时横向速度超过该值(px/ms) → 忽略位移阈值，速度决定展开/收回
   var DRAG_HOLD = 500;      // 长按多少毫秒进入拖拽
   var DRAG_JITTER = 10;     // 移动超过该值取消长按/不算点击
   var gesture = null;               // 当前进行中的手势（同时只有一个）
@@ -3138,8 +3166,11 @@
     }
     if (!li.isConnected) return; // 手势中被重渲染删掉：等待 up/cancel 清理
     if (g.mode === 'swipe') {
+      var sx = t.clientX - g.lastX;
       g.viewX = dx;
       if (Math.abs(dx) > DRAG_JITTER) g.suppressClick = true;
+      if (sx) sampleSwipeVx(sx, Date.now()); // 采样横向速度：惯性甩动判定用
+      g.lastX = t.clientX;
       applySwipe(g); // 跟手
     } else if (g.mode === 'drag') {
       g.dragShift = t.clientY - g.dragStartY;
@@ -3161,8 +3192,14 @@
     if (g.mode === 'swipe') {
       var body = li.querySelector('.swipe-body');
       li.classList.remove('swiping'); // 先恢复过渡，再清除内联位移 → 平滑弹回/展开
-      if (g.viewX <= -SWIPE_SNAP) {
-        li.classList.add('swipe-open'); // 滑过 80px → 吸附展开
+      // 惯性：横向末速度足够猛时覆盖位移阈值（向左猛甩→展开；向右猛甩→收回）
+      var snapOpen;
+      var svx = endSwipeVelocity();
+      if (svx < -SWIPE_VEL_SNAP) snapOpen = true;
+      else if (svx > SWIPE_VEL_SNAP) snapOpen = false;
+      else snapOpen = g.viewX <= -SWIPE_SNAP;
+      if (snapOpen) {
+        li.classList.add('swipe-open'); // 猛甩向左或滑过 80px → 吸附展开
       } else {
         closeOpenSwipe(li); // 否则弹回
       }
@@ -3245,6 +3282,27 @@
       v = sorted[sorted.length >> 1].v; // 中值
     }
     velSamples.length = 0; velSampleT = 0;
+    return v;
+  }
+
+  // 横向速度采样（卡片左滑甩动惯性）：与纵向滚动同一套「最近 ~100ms 取中值」防抖
+  var vxSamples = [];
+  var vxSampleT = 0;
+  function sampleSwipeVx(sx, now) {
+    if (!vxSampleT) { vxSampleT = now; return; }
+    var dt = now - vxSampleT;
+    vxSampleT = now;
+    if (dt <= 0 || dt > 120) { vxSamples.length = 0; return; }
+    vxSamples.push({ v: sx / dt, t: now });
+    while (vxSamples.length > 0 && now - vxSamples[0].t > 100) vxSamples.shift();
+  }
+  function endSwipeVelocity() {
+    var v = 0;
+    if (vxSamples.length) {
+      var sorted = vxSamples.slice().sort(function (a, b) { return a.v - b.v; });
+      v = sorted[sorted.length >> 1].v; // 中值
+    }
+    vxSamples.length = 0; vxSampleT = 0;
     return v;
   }
   function startMomentum(scroller, v) {
@@ -3341,6 +3399,7 @@
       startY: t.clientY,
       dragStartY: t.clientY,
       lastY: t.clientY,
+      lastX: t.clientX,
       viewX: 0,
       mode: 'pending',
       suppressClick: false,
@@ -3697,6 +3756,14 @@
         due.textContent = txt;
         due.dataset.id = note.id; // 事件委托刷新倒计时文案
         face.appendChild(due);
+      }
+
+      // 未完成待办且有截止时间：右上角第二个小胶囊（截止时间），已过期标红
+      if (isTodo(note) && !isDone(note) && note.endAt) {
+        var endBadge = document.createElement('div');
+        endBadge.className = 'end-badge' + (isOverdue(note) ? ' overdue' : '');
+        endBadge.textContent = endBadgeText(note);
+        face.appendChild(endBadge);
       }
 
       // 进行中待办（未完成且未过期）：右上角"进行中"标签
@@ -4217,7 +4284,7 @@
     dueInput.value = note.dueAt ? toLocalInputValue(note.dueAt) : '';
     // 截止时间（可选）：有提醒时间时显示截止行，同步当前值
     var endRow = document.getElementById('end-row');
-    if (endRow) endRow.classList.toggle('show', !!(note.dueAt || note.endAt));
+    if (endRow) endRow.classList.add('show'); // 提醒+截止两字段始终同屏显示
     endInput.value = note.endAt ? toLocalInputValue(note.endAt) : '';
     hideDuePop();
   }
@@ -4339,6 +4406,24 @@
             } else if (badge) {
               badge.remove();
               li.classList.remove('has-due');
+            }
+            // 更新截止角标（编辑器内可修改截止时间）
+            var endBadge = li.querySelector('.end-badge');
+            if (isTodo(noteLeft) && !isDone(noteLeft) && noteLeft.endAt) {
+              if (!endBadge) {
+                var endFace = li.querySelector('.swipe-body');
+                if (endFace) {
+                  endBadge = document.createElement('div');
+                  endBadge.className = 'end-badge';
+                  endFace.appendChild(endBadge);
+                }
+              }
+              if (endBadge) {
+                endBadge.className = 'end-badge' + (isOverdue(noteLeft) ? ' overdue' : '');
+                endBadge.textContent = endBadgeText(noteLeft);
+              }
+            } else if (endBadge) {
+              endBadge.remove();
             }
           } else if (!noteLeft && li) {
             // 空便签已被清理，移除卡片
@@ -6540,6 +6625,15 @@
     modal.querySelector('.guide-later').onclick = function () {
       modal.classList.remove('show'); // 不记录，下次启动再弹
     };
+    modal.querySelector('.guide-settings').onclick = function () {
+      // 跳系统应用详情页（原生插件，仅 Capacitor 环境）；跳转后弹窗保留，回来再点「我已设置好」
+      if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.AppSettings) {
+        window.Capacitor.Plugins.AppSettings.open();
+      } else {
+        // 浏览器无原生设置页：等同「稍后再看」，不记录
+        modal.classList.remove('show');
+      }
+    };
     modal.onclick = function (e) {
       if (e.target === modal) modal.classList.remove('show'); // 点遮罩同"稍后再看"
     };
@@ -6832,8 +6926,8 @@
       document.getElementById('sel-cancel').click();
       return;
     }
-    // 回收箱打开时 → 关闭回收箱
-    if (binMaskEl.classList.contains('open')) {
+    // 回收箱打开时 → 关闭回收箱（binMaskEl 在另一 IIFE 闭包内不可见，需现查 DOM）
+    if (document.getElementById('bin-mask').classList.contains('open')) {
       document.getElementById('bin-back').click();
       return;
     }

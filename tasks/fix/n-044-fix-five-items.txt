@@ -1,0 +1,143 @@
+# 任务：5 项优化（跳设置 / 编辑页时间 / 回收箱手势 / 列表滑动 / 惯性）
+
+## AI 行为规范（必读）
+1. 不要读整个 index.html。用 sed -n 按行号分段读。
+2. 先输出方案报告，等用户确认后再动手。
+3. 用精准 edit，禁止全量重写。
+4. 改完 index.html 后必须执行 cp index.html www/index.html。
+   （项目 capacitor.config.json 的 webDir 是 www/，APK 打包用 www/index.html。历史踩过大坑。）
+5. 涉及 Java 代码的改动要一并做，说明文件路径。
+6. 纯原生 JS。Java 用项目现有风格（看 MainActivity.java 判断 Java 还是 Kotlin）。
+7. 如果某模块根因不明，不要硬改，先在报告里列出诊断结论和建议。
+
+## 读取范围
+- 编辑页时间 UI: grep -n 'dueAt\|due-pop\|end-input\|endAt\|due-badge' index.html | head -40
+- 编辑页 backButton: sed -n '6520,6600p' index.html
+- 回收箱 backButton: 同上一段（在同一个监听器里）
+- 回收箱打开逻辑: grep -n 'bin-mask\|binMaskEl\|bin-back' index.html
+- 列表 CSS: grep -n 'list-view\|#list\|overflow\|-webkit-overflow' index.html | head -40
+- 卡片触摸/滑动: grep -n 'touchstart\|touchmove\|touchend\|swipe\|momentum' index.html | head -30
+- MainActivity: cat android/app/src/main/java/com/yathoughts/app/MainActivity.java
+
+项目：Ya thoughts 便签 App，Capacitor 8，单文件 index.html + www/index.html
+包名：com.yathoughts.app
+
+---
+
+## 模块 1：引导弹窗加"去设置"按钮（跳系统应用详情页）
+
+现状：引导弹窗（showNotifyGuide 函数）只有"稍后再看"和"我已设置好"两个按钮。
+
+用户需求：能真正跳到系统的"应用详情页"或"应用设置页"，让用户在那里开自启动/电池白名单。
+
+技术限制：Capacitor 官方 App 插件没有"打开系统设置" API。需要写原生代码。
+
+实现方案（推荐：写 Java 自定义方法）：
+1. 修改 android/app/src/main/java/com/yathoughts/app/MainActivity.java
+2. 通过 Capacitor 的 Bridge 暴露一个 JS 可调用的方法 openAppSettings
+3. 内部用：
+   Intent intent = new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS);
+   intent.setData(Uri.parse("package:" + getPackageName()));
+   startActivity(intent);
+4. JS 侧调用方式：在 AI 报告里说明清楚（Capacitor 8 支持的暴露方式）
+
+如果 Java 方案不可行（比如 Capacitor 8 的 Bridge API 限制），备选：
+- 装 npm 插件（如 capacitor-plugin-app-settings）——但要确认支持 Capacitor 8
+- 或者退回"复制包名"按钮，让用户自己去找
+
+弹窗改动：加一个按钮"去设置"，点了调上述方法。
+
+---
+
+## 模块 2：编辑页两个时间字段一起显示
+
+现状交互（用户原话）：
+1. 点"设置提醒" → 底部弹卡片 → 只有"提醒时间"字段
+2. 设置完成后关闭
+3. 再次点"设置提醒" → 卡片里同时有"提醒时间"和"截止时间"
+4. 点截止时间设置并关闭 → 只显示提醒时间的小胶囊，截止时间小胶囊没出现
+
+目标：
+- 点一次"设置提醒"就同时显示两个字段（提醒时间 + 截止时间）
+- 设完截止时间后，卡片上两个小胶囊都显示
+
+诊断方向：
+- 看 due-pop 面板里 end-row 的显隐逻辑（可能在 syncEditorTodoUI 或类似函数里）
+- 看小胶囊（due-badge）的渲染逻辑是否漏了 endAt
+
+---
+
+## 模块 3：回收箱手势返回
+
+现状：打开回收箱 → 侧滑返回 → 无反应（不关箱、不退 App）
+
+重要线索：编辑页的手势返回曾经有同样问题，但已修好。用户希望回收箱套用同样的逻辑。
+
+诊断方向：
+1. 先看编辑页手势返回是怎么修的——在 backButton 监听器（约 6520~6600）里
+2. 对比回收箱的处理
+3. 找出为什么编辑页好了而回收箱没好
+
+当前两处代码看起来一样：
+- 编辑页：if (editor-view.classList.contains('active')) { back-btn.click(); return; }
+- 回收箱：if (binMaskEl.classList.contains('open')) { bin-back.click(); return; }
+
+可能差异：
+- binMaskEl 引用在监听器注册时是 undefined
+- 回收箱打开时的 class 不是 'open'（比如是别的）
+- 或者回收箱在某个 DOM 里，被其他层拦截
+
+要求 AI：先诊断，贴出实际代码对比，找出差异再改。
+
+---
+
+## 模块 4：列表 4 张卡也能滑
+
+现状：4 张卡片时上下完全滑不了，5 张可以轻微滑动。
+
+目标：任何数量（包括 1 张）都能上下滚动。
+
+诊断方向：
+- 看列表容器 CSS（height/overflow/flex）
+- 可能是 min-height 或容器高度被内容撑开
+
+修改方向：
+- 确保容器高度固定/视口限制
+- overflow-y: auto 或 scroll
+- 可能需要给容器设置 height: 100% 之类
+
+---
+
+## 模块 5：列表惯性 + 卡片左右滑惯性
+
+用户需求：
+- A. 列表上下滚动的惯性（iOS 那种滑一下继续滚）
+- B. 卡片左右滑的惯性
+
+实现方向：
+- 列表惯性：CSS 加 -webkit-overflow-scrolling: touch;
+- 卡片左右滑：如果是自定义触摸事件，需要自己算速度衰减
+
+诊断方向：
+- 看列表滚动是原生 overflow 还是 JS 控制
+- 看卡片左右滑是谁实现的（哪段代码）
+
+---
+
+## 严格约束
+- 不动图片、导出、通知渠道 id（todo-reminders-v2）
+- 改完 index.html 后必须 cp index.html www/index.html
+- 报告 ls -la index.html www/index.html 两文件大小一致
+
+## 输出要求
+
+第一步（先输出报告，不动代码）：
+模块 1：Java 方案详细说明（贴 MainActivity 现有代码 + 修改方案），JS 侧调用方式
+模块 2：贴出编辑页时间字段的当前代码（due-pop 和 syncEditorTodoUI），诊断为什么截止时间小胶囊不显示
+模块 3：贴出 backButton 监听器完整代码，对比编辑页和回收箱两处，给出差异诊断
+模块 4：贴出列表容器 CSS，诊断为什么 4 张滑不动
+模块 5：贴出列表滚动和卡片滑动的相关代码，给方案
+
+第二步（等确认后）：
+- 一次性改完 5 个模块
+- 报告改动行号、grep 验证结果、两文件大小一致
