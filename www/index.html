@@ -364,19 +364,11 @@
   #sel-delete { color: var(--danger); }      /* #E5484D 红（沿用批量删除主色） */
   #sel-export { color: var(--primary); }     /* #2E6BE6 主色 */
 
-  /* 列表页第一行：条数小字提示（#note-count 由原 JS 继续写入，位置从顶栏移到这里） */
-  #note-count-bar {
-    flex: 0 0 auto;
-    margin: calc(env(safe-area-inset-top) + 68px) 20px 0;
-    font-size: 14px;
-    line-height: 1;
-    color: var(--count-color);
-  }
-  #list-view.multi #note-count-bar { visibility: hidden; }
 
   /* 搜索框：顶栏下方、分段控件上方 */
   #search-wrap {
     flex: 0 0 auto;
+    margin-top: calc(env(safe-area-inset-top) + 60px); /* 让出顶栏 (56px) + 4px 间距 */
     display: flex;
     align-items: center;
     gap: 8px;
@@ -390,6 +382,14 @@
     border-radius: 10px;
     transition: background 0.15s var(--ease), border-color 0.15s var(--ease);
     box-sizing: border-box;
+  }
+  #note-count {
+    margin-left: auto;
+    padding-right: 4px;
+    font-size: 13px;
+    line-height: 1;
+    color: var(--count-color);
+    align-self: center;
   }
   #search-wrap:focus-within { background: var(--input-focus-bg); border-color: var(--primary); }
   #search-icon { flex: 0 0 auto; color: #A8ADB7; }
@@ -435,25 +435,39 @@
     color: #8A8F99;
   }
 
-  /* 列表区与卡片 */
+  /* 列表滚动视口：裁切边界 + 弹性拉伸的可见范围；滚动由 JS 用 transform 驱动（见手势层） */
+  #list-viewport {
+    flex: 1;
+    min-height: 0;
+    position: relative;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    contain: layout paint; /* 视口内部变化不影响外部 */
+  }
+  /* 列表区与卡片：高度随内容（含 ::after 行程），translate3d 由 JS 控制 */
   #note-list {
     flex: 1;
-    overflow-y: auto;
-    -webkit-overflow-scrolling: touch;
     list-style: none;
     width: 100%; max-width: 100%; margin-left: 0; margin-right: 0;
     padding: 12px 20px calc(110px + env(safe-area-inset-bottom));
     box-sizing: border-box;
+    will-change: transform;
+    /* contain: 告诉浏览器列表内部变化不影响外部 → transform 时只需重绘自身 */
+    contain: layout style;
+    /* 强制合成层（配合 will-change 双保险，某些 WebView 单独 will-change 不够） */
+    transform: translate3d(0, 0, 0);
+    backface-visibility: hidden;
   }
-  /* 内容恒比容器高（::after 高度=容器高）：任意张数（含 1 张）都有滚动行程 */
+  /* 内容恒比视口高（ul 高度随内容，用 100vh 兜底）：任意张数（含 1 张）都有滚动行程 */
   #note-list::after {
     content: '';
     display: block;
-    height: 100%;
+    height: 60px; /* 少量兜底行程：少卡片时也能滑一点（顶部锁定由 listScrollY<0 阻尼保证，不靠此元素） */
   }
   /* 左滑操作菜单 + 拖拽排序（手势层，纯 Touch Events）依赖的结构：
      li.note-item 是手势容器（touch-action: none 常驻，浏览器绝不接管任何手势，
-     纵向滚动也由 JS 手动驱动 listEl.scrollTop）；
+     纵向滚动也由 JS 驱动列表 transform）；
      内部先放 .swipe-actions（右侧三个操作按钮），再放 .swipe-body（卡片本体）。
      位移动画只改 transform / opacity；平时放开 overflow 让阴影正常溢出，
      滑动/展开/拖拽期间裁剪左侧伸出部分 */
@@ -463,7 +477,8 @@
     border-radius: var(--radius-card);
     cursor: pointer;
     list-style: none;
-    touch-action: none; /* 常驻禁用浏览器手势：滚动/左滑/拖拽全走 JS（passive:false + preventDefault） */
+    touch-action: none;
+    contain: layout style; /* 每张卡片独立布局，不污染相邻卡片 */
   }
   .note-item.swiping, .note-item.swipe-open { overflow: hidden; }
   /* （旧 .gesturing { touch-action:none !important } 已随 Pointer Events 手势层一起删除：
@@ -477,7 +492,6 @@
     overflow: hidden;
     border-radius: var(--radius-card);
     z-index: 1;
-    will-change: transform;
   }
   .note-item.swipe-reveal .swipe-actions { transform: translateX(0); } /* 越过阈值：菜单从右侧滑入 */
   .note-item.swipe-open .swipe-actions { transform: translateX(0); }   /* 吸附后：恒全露（兜底） */
@@ -494,7 +508,6 @@
        不再『一直待命被卡片揭开』；左滑越过阈值（swipe-reveal）或吸附（swipe-open）才滑入 */
     transform: translateX(100%);
     transition: transform 0.25s var(--ease-swift);
-    will-change: transform; /* 与卡片同为合成层，按 z-index 稳定排序 */
   }
   .note-item .swipe-btn {
     pointer-events: auto; /* 任何时刻可点，永不被父级/手势禁用 */
@@ -532,8 +545,7 @@
     padding: 18px 20px;
     box-shadow: var(--shadow-card), var(--glass-highlight);
     transition: background 0.18s var(--ease), transform 0.25s var(--ease-swift), box-shadow 0.18s var(--ease);
-    will-change: transform;
-    z-index: 2; /* Bug2(B)：显式确立『卡片在上』；与 .swipe-clip 同为合成层，按 z-index 排序 */
+    z-index: 2; /* Bug2(B)：显式确立『卡片在上』；合成层在滑动期间动态提升（见 applySwipe） */
   }
   .note-item .swipe-body:active { background: var(--tap-press); }
   .note-item.swiping .swipe-body { transition: none; } /* 跟手时关过渡 */
@@ -660,7 +672,8 @@
   }
   #seg-bar .seg-item {
     min-height: 34px;
-    padding: 0 18px;
+    padding: 0 12px;
+    flex: 1 1 auto;
     font-size: 14px;
     color: var(--text-secondary);
     border-radius: var(--radius-pill);
@@ -1126,6 +1139,17 @@
     transition: background 0.15s var(--ease), transform 0.1s var(--ease);
   }
   #share-btn:active { background: var(--chip-bg); transform: scale(0.94); will-change: transform; }
+  /* 收藏按钮：默认次级色，收藏后主色高亮（图标淡填充） */
+  #star-btn {
+    width: 44px; height: 44px;
+    display: inline-flex; align-items: center; justify-content: center;
+    border-radius: 50%;
+    color: var(--text-secondary);
+    transition: background 0.15s var(--ease), transform 0.1s var(--ease), color 0.15s var(--ease);
+  }
+  #star-btn.on { color: var(--primary); }
+  #star-btn.on svg { fill: var(--primary); fill-opacity: 0.18; }
+  #star-btn:active { background: var(--chip-bg); transform: scale(0.94); will-change: transform; }
 
   /* 分享兜底 modal：剪贴板 API 不可用时手动复制 */
   #share-mask {
@@ -1882,7 +1906,6 @@
 
 <!-- 主界面：便签列表 -->
 <section id="list-view" class="view active">
-  <div id="note-count-bar" aria-live="polite"><span id="note-count"></span></div>
   <div id="search-wrap">
     <svg id="search-icon" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
       <circle cx="11" cy="11" r="7"/><path d="M16.5 16.5L21 21"/>
@@ -1897,8 +1920,10 @@
   <div id="search-empty"></div>
   <div id="seg-bar" role="tablist">
     <button class="seg-item on" data-seg="all">全部</button>
+    <button class="seg-item" data-seg="star">收藏</button>
     <button class="seg-item" data-seg="todo">待办</button>
     <button class="seg-item" data-seg="done">已完成</button>
+    <span id="note-count" aria-live="polite"></span>
   </div>
   <header id="list-header">
     <h1>便签</h1>
@@ -1940,6 +1965,12 @@
       </svg>
       <span>导入</span>
     </button>
+    <button id="menu-restore">
+      <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M21 12a9 9 0 1 1-2.64-6.36L21 8"/><path d="M21 3v5h-5"/>
+      </svg>
+      <span>恢复备份</span>
+    </button>
     <button id="menu-update-check">
       <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
         <path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/>
@@ -1970,6 +2001,7 @@
     <button class="menu-sort" data-sort="title"><span class="menu-sort-check"></span><span>按标题（A-Z）</span></button>
     <button class="menu-sort" data-sort="custom"><span class="menu-sort-check"></span><span>自定义排序</span></button>
   </div>
+  <div id="list-viewport">
   <div id="empty">
     <svg class="empty-icon" viewBox="0 0 64 64" width="64" height="64" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
       <rect x="12" y="8" width="30" height="46" rx="4"/>
@@ -1980,6 +2012,7 @@
     <p class="empty-hint">点下方「笔记」或「待办」开始记录</p>
   </div>
   <ul id="note-list"></ul>
+  </div>
   <!-- 底部胶囊：新建笔记 / 新建待办（玻璃质感，见 #new-bar CSS） -->
   <div id="new-bar">
     <button class="new-cap note" data-type="note">
@@ -2093,6 +2126,11 @@
           <path d="M4 12v7a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-7"/><path d="M16 6l-4-4-4 4"/><path d="M12 2v13"/>
         </svg>
       </button>
+      <button id="star-btn" title="收藏" aria-label="收藏">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01z"/>
+        </svg>
+      </button>
       <button id="delete-btn" title="删除此便签" aria-label="删除此便签">
         <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <path d="M3 6h18"/><path d="M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>
@@ -2171,12 +2209,14 @@
 <div id="notify-guide-modal" role="dialog" aria-modal="true" aria-label="通知引导">
   <div class="guide-card" role="document">
     <h3 class="guide-title">让待办提醒准时到达</h3>
-    <p class="guide-msg">手机为省电会限制后台 App。为了让你在待办时间准时收到
-铃声和顶部弹出通知，请把 Ya thoughts 加入：
-· 自启动（防止被系统清理）
-· 电池无限制（防止延迟触发）</p>
-    <p class="guide-status" style="font-size:13px;margin:8px 0 0;color:#666"></p>
-    <p class="guide-path">路径参考：设置 → 应用 → Ya thoughts → 自启动 / 电池</p>
+    <p class="guide-msg">手机省电会限制后台 App，待办提醒可能延迟或丢失。</p>
+    <p class="guide-msg" style="margin-top:8px">请给 Ya thoughts 开启以下权限：</p>
+    <ul class="guide-list" style="list-style:none;padding:0;margin:0 0 12px;font-size:14px;line-height:1.9;color:var(--text-secondary)">
+      <li style="padding-left:16px;position:relative"><span style="position:absolute;left:2px">·</span><b style="color:var(--text-primary);font-weight:600">自启动</b> — 防止后台被系统清理</li>
+      <li style="padding-left:16px;position:relative"><span style="position:absolute;left:2px">·</span><b style="color:var(--text-primary);font-weight:600">电池无限制</b> — 防止触发延迟</li>
+    </ul>
+    <p class="guide-status" style="font-size:13px;margin:0 0 8px;color:#666"></p>
+    <p class="guide-path" style="margin-top:8px">设置 → 应用 → Ya thoughts → 自启动 / 电池</p>
     <div class="guide-btns">
       <button type="button" class="guide-settings">去设置</button>
       <button type="button" class="guide-later">稍后再看</button>
@@ -2363,10 +2403,18 @@
     });
   }
 
+  // 写库失败统一提示：让所有静默 catch 的调用方用户也能看到，不改变调用方控制流
+  function notifySaveFail(err) {
+    try {
+      console.error('[save] 写库失败:', err);
+      showUndoToast('保存失败，请重试');
+    } catch (e) { /* 提示逻辑自身异常不再上报 */ }
+  }
+
   function dbPut(note) {
     return openDB().then(function (db) {
       return reqAsPromise(db.transaction(STORE, 'readwrite').objectStore(STORE).put(normalizeNote(note)));
-    });
+    }).catch(function (err) { notifySaveFail(err); throw err; });
   }
 
   /* 图片存取：Blob 直接入 IndexedDB，pos 记录在正文中的顺序 */
@@ -2374,7 +2422,7 @@
   function dbPutImage(rec) {
     return openDB().then(function (db) {
       return reqAsPromise(db.transaction(IMAGES, 'readwrite').objectStore(IMAGES).put(rec));
-    });
+    }).catch(function (err) { notifySaveFail(err); throw err; });
   }
 
   function dbGetImage(id) {
@@ -2386,7 +2434,7 @@
   function dbDeleteImage(id) {
     return openDB().then(function (db) {
       return reqAsPromise(db.transaction(IMAGES, 'readwrite').objectStore(IMAGES).delete(id));
-    });
+    }).catch(function (err) { notifySaveFail(err); throw err; });
   }
 
   // 批量删除：一个事务里同时删 notes 与其关联 images，要么全成功要么全失败
@@ -2925,6 +2973,7 @@
 
   function enterMultiMode(firstId) {
     stopMomentum(); // 进多选模式：停掉惯性
+    stopSwipeFling(); // 左滑惯性一并停
     multiMode = true;
     selectedIds = {};
     if (firstId) selectedIds[firstId] = true; // 被长按的那条自动选中
@@ -2990,6 +3039,15 @@
     renderList();
   }
 
+  // 收藏/取消收藏：写 starred（布尔，导出/导入已带该字段），不改动 updatedAt
+  function toggleStar(id) {
+    var note = noteById(id);
+    if (!note) return;
+    note.starred = !note.starred;
+    dbPut(note).catch(function () { /* 存储失败静默 */ });
+    renderList();
+  }
+
   // 最后一条置顶便签的下标（无置顶返回 -1），renderList 用它插分割线
   function lastPinnedIndex(sorted) {
     var last = -1;
@@ -3045,6 +3103,7 @@
       if (n.deletedAt != null) return false; // 回收箱：正常列表不显示
       if (filter === 'todo') return isTodo(n); // 全部待办：进行中→已过期→已完成（已完成不隐藏、沉底）
       if (filter === 'done') return isTodo(n) && isDone(n);
+      if (filter === 'star') return n.starred === true; // 收藏：只显示星标便签
       return true;
     }).sort(function (a, b) {
       var pa = isPinned(a), pb = isPinned(b);
@@ -3085,16 +3144,16 @@
        touchstart 起手势（.note-item 上，首行排除 .swipe-actions）→ 500ms 长按定时器；
        window touchmove（touchstart 注册 / touchend 移除，passive:false）判定方向：
          横向左移 > 10px 且 > 纵向 1.5 倍 → 左滑（preventDefault）；
-         纵向 > 10px 且 > 横向 1.5 倍 → JS 手动滚动（listEl.scrollTop，preventDefault）；
+         纵向 > 10px 且 > 横向 1.5 倍 → JS 手动滚动（列表 transform，preventDefault）；
          长按定时器到点且未移动超 10px → 进入拖拽（sortBy='title' 时禁用）。
        touchend/touchcancel：左滑按 80px 阈值吸附展开(120px)/弹回；拖拽按落点落位并写库。
      CSS 只改 transform 与 opacity 驱动动画；.note-item touch-action:none 常驻。 */
   var SWIPE_REVEAL = 120;   // 展开时露出的操作区宽度(px)
   var SWIPE_SNAP = 80;      // 松手后判定吸附展开的滑动距离(px)
   var SWIPE_REVEAL_TRIGGER = 40; // Bug2(B)：左滑越过该位移(px)后，菜单才从右侧滑入
-  var SWIPE_VEL_SNAP = 0.5;      // 松手时横向速度超过该值(px/ms) → 忽略位移阈值，速度决定展开/收回
+  var SWIPE_VEL_SNAP = 0.2;      // 松手时横向速度超过该值(px/ms) → 走惯性滑行（0.5→0.2：慢速滑动也有反馈）
   var DRAG_HOLD = 500;      // 长按多少毫秒进入拖拽
-  var DRAG_JITTER = 10;     // 移动超过该值取消长按/不算点击
+  var DRAG_JITTER = 3;      // 移动超过该值取消长按/不算点击（10→3：滚动更快跟手）
   var gesture = null;               // 当前进行中的手势（同时只有一个）
   var gestureSuppressClick = false; // 手势消费了本次点按 → 抑制随后的 click（防误开便签）
   var SWIPE_PIN_SVG = '<path d="M12 17v5"/><path d="M9 3h6l1 7 3 3H5l3-3z"/>';
@@ -3117,6 +3176,8 @@
     for (var i = 0; i < items.length; i++) {
       if (items[i] === excludeLi) continue;
       items[i].classList.remove('swipe-open', 'swiping', 'swipe-reveal');
+      var b = items[i].querySelector('.swipe-body');
+      if (b) b.style.willChange = ''; // 非手势路径收起展开态：顺带释放合成层
     }
   }
 
@@ -3150,17 +3211,20 @@
       var ax = Math.abs(dx), ay = Math.abs(dy);
       if (ax > DRAG_JITTER || ay > DRAG_JITTER) {
         if (g.longPressTimer) { clearTimeout(g.longPressTimer); g.longPressTimer = null; }
-        // 先判定方向：横向左移 > 10px 且 > 纵向 1.5 倍 → 左滑；纵向为主 → JS 手动滚动
-        if (dx < -DRAG_JITTER && ax > ay * 1.5) {
+        // 判定方向：横向占优（左滑）；否则纵向滚动（默认滚动的门槛更低，更跟手）
+        if (dx < -DRAG_JITTER && ax > ay * 1.2) {
           g.mode = 'swipe';
           g.suppressClick = true;
           li.classList.add('swiping');
           g.viewX = dx;
           applySwipe(g);
-        } else if (ay > DRAG_JITTER && ay > ax * 1.5) {
-          // touch-action:none 常驻，浏览器不会代滚，由 JS 把纵向位移 1:1 映射到 scrollTop
+        } else if (ay > ax * 1.2 || ay > DRAG_JITTER) {
+          // 立即进入滚动模式，并把**已累计的 dy** 一次性应用到列表
+          // 关键：不用 t.clientY 重置 lastY（否则吞掉前面位移）
           g.mode = 'scroll';
           g.lastY = t.clientY;
+          if (ay) { scrollListBy(dy); sampleVelocity(dy, Date.now()); }
+          g.suppressClick = true;
         }
       }
       return;
@@ -3178,7 +3242,7 @@
       scheduleDragMove(g); // rAF 节流：不每个 touchmove 都重排
     } else if (g.mode === 'scroll') {
       var sy = t.clientY - g.lastY;
-      if (sy) { listEl.scrollTop -= sy; sampleVelocity(sy, Date.now()); } // JS 手动滚动（touch-action:none + preventDefault 禁言浏览器）；顺带采样速度
+      if (sy) { scrollListBy(sy); sampleVelocity(sy, Date.now()); } // 阻尼映射滚动偏移（touch-action:none + preventDefault 禁言浏览器）；顺带采样速度
       g.lastY = t.clientY;
       g.suppressClick = true;
     }
@@ -3192,20 +3256,27 @@
     var li = g.li;
     if (g.mode === 'swipe') {
       var body = li.querySelector('.swipe-body');
-      li.classList.remove('swiping'); // 先恢复过渡，再清除内联位移 → 平滑弹回/展开
-      // 惯性：横向末速度足够猛时覆盖位移阈值（向左猛甩→展开；向右猛甩→收回）
-      var snapOpen;
       var svx = endSwipeVelocity();
-      if (svx < -SWIPE_VEL_SNAP) snapOpen = true;
-      else if (svx > SWIPE_VEL_SNAP) snapOpen = false;
-      else snapOpen = g.viewX <= -SWIPE_SNAP;
-      if (snapOpen) {
-        li.classList.add('swipe-open'); // 猛甩向左或滑过 80px → 吸附展开
+      if (Math.abs(svx) >= SWIPE_VEL_SNAP) {
+        // 速度达标：rAF 惯性滑行（速度衰减），滑停后再按位移吸附/弹回
+        // 注意：'swiping' 由 fling 保留（跟手期间无过渡），收尾由 finishSwipeFling 移除
+        startSwipeFling(g, svx);
+        if (g.suppressClick) gestureSuppressClick = true;
+        if (li.isConnected) li.classList.remove('dragging');
+        gesture = null;
+        return; // 提前返回：跳过末尾的 remove('swiping')
       } else {
-        closeOpenSwipe(li); // 否则弹回
+        // 慢速：直接按位移阈值吸附/弹回（CSS transition 平滑收尾）
+        li.classList.remove('swiping'); // 先恢复过渡，再清除内联位移 → 平滑弹回/展开
+        var snapOpen = g.viewX <= -SWIPE_SNAP;
+        if (snapOpen) {
+          li.classList.add('swipe-open'); // 滑过 80px → 吸附展开
+        } else {
+          closeOpenSwipe(li); // 否则弹回
+        }
+        if (body) { body.style.transform = ''; body.style.willChange = ''; }
+        if (g.suppressClick) gestureSuppressClick = true;
       }
-      if (body) body.style.transform = '';
-      if (g.suppressClick) gestureSuppressClick = true;
     } else if (g.mode === 'drag') {
       cancelScheduledDrag(); // 丢弃未执行的 rAF，随后同步补最后一次让位
       var movedAmt = Math.abs(g.dragShift) > DRAG_JITTER;
@@ -3220,9 +3291,15 @@
       if (g.suppressClick) gestureSuppressClick = true;
       finishDragReorder(g); // 落位 + 立即写 order
     } else if (g.mode === 'scroll') {
-      // 已进入 JS 手动滚动：消费本次点按，不打开便签；松手按末速度启动惯性滑行
+      // 已进入 JS 手动滚动：消费本次点按，不打开便签
       gestureSuppressClick = true;
-      startMomentum(listEl, endScrollVelocity());
+      var endV = endScrollVelocity();
+      // 松手时：顶部越界 → 弹簧回弹；否则 → 惯性滑行（底部不会越界）
+      if (listScrollY < -0.5) {
+        springSnapScroll(0);
+      } else {
+        startMomentum(endV);
+      }
     } else {
       // 未进入左滑/拖拽/滚动的简单点按：移动过才抑制 click
       var t = e.changedTouches[0];
@@ -3236,6 +3313,9 @@
   // window touchcancel：系统中断（来电、通知、浏览器抢占），全部复位不落位
   function onGestureCancel() {
     stopMomentum(); // 系统中断手势：惯性一并停下
+    stopSwipeFling();
+    // 中断时列表可能停在顶部越界位：弹簧弹回（底部不会越界）
+    if (listScrollY < -0.5) springSnapScroll(0);
     var g = gesture;
     if (!g) return;
     resetGesture(g);
@@ -3259,14 +3339,61 @@
     window.removeEventListener('touchcancel', onGestureCancel);
   }
 
+  /* ---------- 列表滚动（transform 驱动）：translate3d 走合成层不重排；滚动偏移是普通变量，
+     可越界（负 / 超 max）→ 顶部/底部弹性拉伸、松手弹簧回弹成为可能。touch-action:none 常驻，
+     浏览器不接管滚动，全部由本层映射手指位移 ---------- */
+  var LIST_OVER = 15;      // 顶部弹性上限(px)：极短暂细微；底部无弹性（硬 clamp）
+  var OVER_DAMP = 0.4;     // 顶部越界阻尼：0.4 表示手指拉 1px 只映射 0.4px（越拉越费力）
+  var listScrollY = 0;     // 当前滚动偏移(px)：0=顶部、max=底部；越界为负 / 超 max
+  var listMaxScroll = 0;   // 可滚动行程 = ul 内容高 - 视口高
+  // 渲染滚动位置：只改 transform（不触发重排）；空状态提示随列表一同位移（下拉时有可见反馈）
+  function applyListScroll() {
+    var y = -listScrollY;
+    listEl.style.transform = 'translate3d(0,' + y + 'px,0)';
+    // emptyEl 隐藏时（有卡片）跳过，避免每帧无用写 style
+    if (emptyEl && emptyEl.offsetParent !== null) {
+      emptyEl.style.transform = 'translate3d(0,' + y + 'px,0)';
+    }
+  }
+  // 手指位移 → 滚动偏移：界内 1:1 跟手；越界段 OVER_DAMP 阻尼 + LIST_OVER 硬限
+  function scrollListBy(dy) {
+    var delta = -dy; // 手指下移(dy>0) → 偏移减小（向上滚）
+    var next = listScrollY + delta;
+    if (next < 0) {
+      // 顶部越界：保留极短暂细微弹性
+      if (listScrollY >= 0) {
+        next = next * OVER_DAMP;               // 刚跨过：界内 1:1，越界部分阻尼
+      } else {
+        next = listScrollY + delta * OVER_DAMP; // 已在越界区：所有增量按阻尼
+        if (next > 0) next = 0;
+      }
+      if (next < -LIST_OVER) next = -LIST_OVER;
+    } else if (next > listMaxScroll) {
+      // 底部越界：无弹性，硬 clamp
+      next = listMaxScroll;
+    }
+    listScrollY = next;
+    applyListScroll();
+  }
+  // 重算可滚动行程并钳制偏移（渲染后 / 列表重新可见时调用；列表隐藏态 clientHeight=0 会偏大，
+  // 故 finishEditorAnim 显示列表后再补一次）
+  function updateListMetrics() {
+    if (!listEl || !listEl.isConnected) { listMaxScroll = 0; return; }
+    var vp = listEl.parentElement;
+    listMaxScroll = Math.max(0, listEl.scrollHeight - (vp ? vp.clientHeight : 0));
+    if (listScrollY > listMaxScroll) listScrollY = listMaxScroll;
+    if (listScrollY < 0) listScrollY = 0;
+    applyListScroll();
+  }
+
   /* ---------- 惯性滚动：JS 手动滚动无原生惯性，松手后按末速度 rAF 减速滑行，边界弹性回弹 ---------- */
   var momentumRaf = 0;     // 惯性 rAF 句柄
-  var momentumVel = 0;     // 当前惯性速度（scrollTop px/ms）
+  var momentumVel = 0;     // 当前惯性速度（px/ms）
   var momentumLastT = 0;   // 上一帧时间戳
   var velSamples = [];     // 抬手前速度采样窗口（最近 3 帧，取中值防抖）
   var velSampleT = 0;
 
-  // 采样 scrollTop 速度：手指下移(sy>0) → scrollTop 减小，所以存 -sy/dt
+  // 采样滚动速度：手指下移(sy>0) → 滚动偏移减小，所以存 -sy/dt
   function sampleVelocity(sy, now) {
     if (!velSampleT) { velSampleT = now; return; }
     var dt = now - velSampleT;
@@ -3306,9 +3433,9 @@
     vxSamples.length = 0; vxSampleT = 0;
     return v;
   }
-  function startMomentum(scroller, v) {
+  function startMomentum(v) {
     stopMomentum();
-    if (!scroller || !v || Math.abs(v) < 0.12) return; // 末速度太小：直接停
+    if (!v || Math.abs(v) < 0.05) return; // 末速度太小：直接停（0.12→0.05：轻滑也有惯性）
     momentumVel = v;
     momentumLastT = 0;
     momentumRaf = requestAnimationFrame(momentumStep);
@@ -3318,26 +3445,38 @@
     momentumVel = 0;
   }
   function momentumStep(ts) {
-    var el = listEl;
-    if (!el || !el.isConnected) { stopMomentum(); return; }
+    if (!listEl || !listEl.isConnected) { stopMomentum(); return; }
     var dt = momentumLastT ? Math.min(32, ts - momentumLastT) : 16.67;
     momentumLastT = ts;
-    var max = el.scrollHeight - el.clientHeight;
-    if (max <= 0) { stopMomentum(); return; } // 内容不满一屏：无滚动可滑
+    if (listMaxScroll <= 0) { stopMomentum(); return; } // 内容不满一屏：无滚动可滑
     var v = momentumVel;
-    var top = el.scrollTop;
-    var out = top < 0 ? top : (top > max ? top - max : 0); // 越界量：顶部负 / 底部正
+    var over = listScrollY < 0 ? listScrollY : (listScrollY > listMaxScroll ? listScrollY - listMaxScroll : 0); // 越界量：顶部负 / 底部正
     var applied = v;
-    if (out) {
+    if (over) {
       // 朝边界外继续推的方向：大幅拦截衰减；往回弹的方向：轻度作用（弹性手感）
-      if ((out > 0 && v < 0) || (out < 0 && v > 0)) applied = v * 0.3;
+      if ((over > 0 && v > 0) || (over < 0 && v < 0)) applied = v * 0.3;
       else applied *= 0.85;
     }
-    el.scrollTop = top + applied * dt;
-    momentumVel = v * Math.pow(0.997, dt); // 减速度 ~0.3%/ms，接近 iOS 原生（0.998/ms）
+    listScrollY += applied * dt;
+    // 顶部：细微微弹性上限；底部：硬 clamp（惯性到底自然停）
+    if (listScrollY < -LIST_OVER) listScrollY = -LIST_OVER;
+    else if (listScrollY > listMaxScroll) listScrollY = listMaxScroll;
+    applyListScroll();
+    // 惯性衰减：dt≈16.67ms 时系数固定 ≈ 0.9197；避免每帧 Math.pow
+    var _decay = dt <= 20 ? 0.9197 : Math.pow(0.995, dt);
+    momentumVel = v * _decay;
+    // 惯性接近底部（软着陆）：只在长列表触发（避免小列表被提前掐死）
+    // 条件：listMaxScroll > 300（足够长）；距底 < 100px 时按距离线性衰减
+    if (momentumVel > 0 && listMaxScroll > 300) {
+      var _distB = listMaxScroll - listScrollY;
+      if (_distB > 0 && _distB < 100) {
+        var _k = (100 - _distB) / 100;
+        momentumVel *= (1 - _k * 0.06);
+      }
+    }
     if (Math.abs(momentumVel) < 0.02) {
-      if (el.scrollTop < -0.5 || el.scrollTop > max + 0.5) {
-        springSnapScroll(el, el.scrollTop < 0 ? 0 : max); // 越界：弹簧回弹
+      if (listScrollY < -0.5) {
+        springSnapScroll(0); // 顶部越界：弹簧回弹
       } else {
         stopMomentum();
       }
@@ -3346,21 +3485,23 @@
     momentumRaf = requestAnimationFrame(momentumStep);
   }
   // 弹簧回弹：模拟弹簧物理，τ≈250ms 阻尼≈0.85，过冲后自然收敛
-  function springSnapScroll(el, target) {
+  function springSnapScroll(target) {
     stopMomentum();
-    var from = el.scrollTop;
+    var from = listScrollY;
     var startT = performance.now();
-    var tau = 250;   // 弹簧时间常数 ms
-    var zeta = 0.85; // 阻尼比（<1 欠阻尼 = 有过冲）
+    var tau = 110;   // 弹簧时间常数 ms（150→110：回弹更利落）
+    var zeta = 0.7;  // 阻尼比（<1 欠阻尼 = 有过冲）
     var omega = Math.sqrt(1 - zeta * zeta) / tau; // 角频率 rad/ms
     (function step(ts) {
-      if (!el.isConnected) return;
+      if (!listEl || !listEl.isConnected) return;
       var elapsed = ts - startT;
       // 位移 = A * e^(-ζt/τ) * cos(ωt)
       var disp = (from - target) * Math.exp(-zeta * elapsed / tau) * Math.cos(omega * elapsed);
-      el.scrollTop = target + disp;
-      if (Math.abs(el.scrollTop - target) < 0.3 && elapsed > 100) {
-        el.scrollTop = target;
+      listScrollY = target + disp;
+      applyListScroll();
+      if (Math.abs(listScrollY - target) < 0.3 && elapsed > 100) {
+        listScrollY = target;
+        applyListScroll();
         momentumRaf = 0;
         return;
       }
@@ -3372,7 +3513,10 @@
   // 记录起点、清掉上次残留定时器、启动 500ms 长按定时器、注册 window move/end/cancel。
   // 不 preventDefault：click 合成不受影响，按钮点击、卡片打开都走原生 click。
   function onGestureStart(e) {
-    stopMomentum(); // 新手指按下：立刻停掉惯性，跟手优先
+    stopMomentum(); // 新手指按下：立刻停掉惯性/弹簧动画，跟手优先
+    stopSwipeFling(); // 上一张卡的左滑惯性未结束：立即停，避免继续驱动
+    // 手指按下即接管：列表保持当前越界位置不动，等手指移动按 scrollListBy 跟手
+    // （不在此处 springSnapScroll，否则停掉后立刻又弹回，用户无法接管）
     var li = e.currentTarget;
     if (!li || !li.classList || !li.classList.contains('note-item')) return;
     // 关键修复：从左滑按钮上开始的触摸绝不触发卡片手势 → click 原样送达按钮
@@ -3427,26 +3571,75 @@
     if (li && li.isConnected) {
       li.classList.remove('swiping', 'dragging', 'swipe-reveal');
       var body = li.querySelector('.swipe-body');
-      if (body) body.style.transform = '';
+      if (body) { body.style.transform = ''; body.style.willChange = ''; }
       li.style.transform = '';
     }
     clearDragShifts();
     if (gesture === g) gesture = null;
   }
 
-  // 左滑跟手：只改 transform，超展开宽度带阻尼
-  function applySwipe(g) {
-    var x = g.viewX;
+  // 左滑跟手：只改 transform，超展开宽度带阻尼；滑动期间动态提升合成层（静止即释放，省层）
+  function applySwipe(g, x) {
+    if (x === undefined) x = g.viewX;
     var off = x < -SWIPE_REVEAL ? -SWIPE_REVEAL - (x + SWIPE_REVEAL) * 0.35 : x;
     if (off > 0) off = 0;
     var body = g.li.querySelector('.swipe-body');
-    if (body) body.style.transform = 'translate3d(' + off + 'px,0,0)';
+    if (body) {
+      body.style.willChange = 'transform';
+      body.style.transform = 'translate3d(' + off + 'px,0,0)';
+    }
     // Bug2(B)：位移越过阈值后才让菜单从右侧滑入（swipe-reveal）；回滑出阈值则滑回藏起。
     // 菜单的滑入/滑出由 .swipe-actions 的 transition 完成，这里只负责开关 class。
     var revealOn = x <= -SWIPE_REVEAL_TRIGGER;
     if (revealOn !== g.li.classList.contains('swipe-reveal')) {
       g.li.classList.toggle('swipe-reveal', revealOn);
     }
+  }
+
+  // 左滑松手惯性：从当前位移起按速度滑行（每帧约 8% 衰减），滑停后按位移吸附/弹回
+  var swipeRaf = 0;      // 左滑惯性 rAF 句柄
+  var swipeFlingLi = null; // fling 进行中的卡片（中断时清理用）
+  function startSwipeFling(g, vx) {
+    stopSwipeFling();
+    var x = g.viewX;
+    var lastT = 0;
+    swipeFlingLi = g.li;
+    (function step(ts) {
+      var li = g.li;
+      if (!li || !li.isConnected) { stopSwipeFling(); return; }
+      var dt = lastT ? Math.min(32, ts - lastT) : 16.67;
+      lastT = ts;
+      x += vx * dt;
+      vx *= Math.pow(0.92, dt / 16.67); // 每帧约 8% 衰减
+      applySwipe(g, x);
+      if (Math.abs(vx) < 0.15 || x < -SWIPE_REVEAL - 100) { // 滑停或滑过展开区过多：收尾吸附
+        finishSwipeFling(g, x);
+        return;
+      }
+      swipeRaf = requestAnimationFrame(step);
+    })(performance.now());
+  }
+  // 中断 fling（新手势 / touchcancel / 点按钮）：卡片回原位
+  function stopSwipeFling() {
+    if (swipeRaf) { cancelAnimationFrame(swipeRaf); swipeRaf = 0; }
+    if (swipeFlingLi && swipeFlingLi.isConnected) {
+      swipeFlingLi.classList.remove('swiping');
+      var b = swipeFlingLi.querySelector('.swipe-body');
+      if (b) { b.style.transform = ''; b.style.willChange = ''; }
+    }
+    swipeFlingLi = null;
+  }
+  // fling 收尾：恢复过渡，按最终位移吸附展开/弹回；先定 class 再清内联（同帧生效，不跳动）
+  function finishSwipeFling(g, x) {
+    if (swipeRaf) { cancelAnimationFrame(swipeRaf); swipeRaf = 0; }
+    swipeFlingLi = null;
+    var li = g.li;
+    if (!li || !li.isConnected) return;
+    li.classList.remove('swiping'); // 恢复过渡
+    if (x <= -SWIPE_SNAP) li.classList.add('swipe-open');
+    else closeOpenSwipe(li);
+    var body = li.querySelector('.swipe-body');
+    if (body) { body.style.transform = ''; body.style.willChange = ''; }
   }
 
   // 拖拽开始：长按 500ms 且未移动超过 10px（标题排序下不触发）
@@ -3648,6 +3841,7 @@
     b.innerHTML = '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + svg + '</svg><span>' + label + '</span>';
     b.addEventListener('click', function (e) {
       e.stopPropagation(); // 不触发卡片打开/多选
+      stopSwipeFling(); // 左滑惯性未结束就点按钮：先停，避免动画与动作打架
       var li = b.closest('.note-item');
       if (!li) return;
       var id = li.dataset.id;
@@ -3660,6 +3854,7 @@
 
   // 空白处点按：收拢展开的卡片（Touch Events 版，监听卡片手势同款事件）
   document.addEventListener('touchstart', function (e) {
+    stopSwipeFling(); // 左滑惯性未结束就点空白：先停
     var t = e.target;
     if (t && t.closest && t.closest('.note-item')) return;
     closeOpenSwipe();
@@ -3682,6 +3877,9 @@
       } else if (segFilter === 'done') {
         emptyTitleEl.textContent = '还没有完成的待办';
         emptyHintEl.textContent = '去「待办」里完成一个试试';
+      } else if (segFilter === 'star') {
+        emptyTitleEl.textContent = '还没有收藏的便签';
+        emptyHintEl.textContent = '打开便签点右上角星标收藏';
       } else {
         emptyTitleEl.textContent = '还没有便签';
         emptyHintEl.textContent = '点下方「笔记」或「待办」开始记录';
@@ -3855,6 +4053,7 @@
         listEl.appendChild(divider);
       }
     });
+    updateListMetrics(); // 内容高度已定：重算滚动行程并钳制偏移
   }
 
   /* ---------- 单条操作菜单已移除：置顶/复制/删除改为左滑露出，长按负责拖拽排序 ---------- */
@@ -4168,6 +4367,7 @@
       if (pendingListShow) {
         pendingListShow = false;
         listView.classList.add('active');
+        updateListMetrics(); // 列表刚可见：clientHeight 有效，重算行程（renderList 在隐藏态跑过会偏大）
       }
     }
   }
@@ -4247,6 +4447,7 @@
 
   function openNote(id) {
     stopMomentum(); // 离开列表进编辑页：停掉惯性
+    stopSwipeFling(); // 左滑惯性一并停
     resetCropBusy(); // 进入编辑页时重置 cropBusy（防止上次残留）
     var myToken = ++openToken; // 本次的入场号；后续在途异步都带着它校验
     var note = noteById(id);
@@ -4258,6 +4459,7 @@
     savedRange = null; // 换了笔记，旧选区作废；没点过光标则插入时落到末尾
     savedSelection = null; // 底部格式按钮的选区快照同样作废（避免对新笔记误用旧选区）
     syncEditorTodoUI();
+    refreshStarBtn();
     resetUndoHistory(); // 每次打开便签都清空撤销历史
     updateWordCount(); // 打开即显示本篇字数
     show('editor');
@@ -4289,6 +4491,24 @@
     endInput.value = note.endAt ? toLocalInputValue(note.endAt) : '';
     hideDuePop();
   }
+
+  // 编辑页星标按钮状态随当前便签刷新（收藏态高亮）
+  var starBtn = $('star-btn');
+  function refreshStarBtn() {
+    var note = noteById(currentId);
+    starBtn.classList.toggle('on', !!(note && note.starred));
+    starBtn.setAttribute('aria-pressed', note && note.starred ? 'true' : 'false');
+  }
+
+  // 星标按钮：收藏/取消收藏当前便签
+  starBtn.addEventListener('click', function () {
+    var note = noteById(currentId);
+    if (!note) return;
+    var on = !note.starred;
+    toggleStar(currentId);
+    starBtn.classList.toggle('on', on);
+    showUndoToast(on ? '已收藏' : '已取消收藏');
+  });
 
   function createNote(type) {
     var now = Date.now();
@@ -4943,8 +5163,8 @@
     });
   }
 
-  // 核心导出：只导出 noteIds 里的笔记及其对应图片；filePrefix 决定文件名前缀
-  function exportNotes(noteIds, filePrefix) {
+  // 构建备份 payload（v2 格式）：便签 + 图片 base64。手动导出与自动备份共用。
+  function buildBackupPayload(noteIds) {
     var idSet = {};
     (noteIds || []).forEach(function (id) { idSet[id] = true; });
     return openDB().then(function (db) {
@@ -4964,7 +5184,7 @@
           };
         });
       })).then(function (imgs) {
-        var payload = {
+        return {
           version: 2, // v2：包含待办字段；导入侧兼容 version 1
           exportedAt: new Date().toISOString(),
           notes: noteRecs.map(function (n) {
@@ -4978,6 +5198,12 @@
           }),
           images: imgs
         };
+      });
+    });
+  }
+
+  function exportNotes(noteIds, filePrefix) {
+    return buildBackupPayload(noteIds).then(function (payload) {
         var d = new Date();
         var stamp = d.getFullYear() + pad(d.getMonth() + 1) + pad(d.getDate());
         var fileName = filePrefix + stamp + '.json';
@@ -5013,8 +5239,8 @@
         a.click();
         a.remove();
         setTimeout(function () { URL.revokeObjectURL(a.href); }, 5000);
-      });
-    }).catch(function () { alert('导出失败，请重试'); });
+      })
+      .catch(function () { alert('导出失败，请重试'); });
   }
 
   // ⋮ 菜单「导出」= 导出全部
@@ -5028,6 +5254,52 @@
     importInput.click();
   }
 
+  // 从 app 私有 Documents 目录读回自动备份并合并（不存在或损坏时统一提示）
+  function doRestoreBackup() {
+    closeMenu();
+    var FS = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Filesystem;
+    if (!FS) {
+      alert('恢复备份仅支持 App 环境');
+      return;
+    }
+    FS.readFile({ path: 'notes-auto-backup.json', directory: 'DOCUMENTS' }).then(function (r) {
+      return importPayloadText(String(r.data));
+    }).catch(function () {
+      alert('没有找到自动备份文件或备份已损坏');
+    });
+  }
+
+  /* ---------- 自动备份：每天全量写一份到 app 私有 Documents，防 IndexedDB 被系统清理 ---------- */
+  var AUTO_BACKUP_KEY = 'ya-last-autobackup';
+  var AUTO_BACKUP_MS = 24 * 60 * 60 * 1000; // 距上次备份至少间隔 1 天
+
+  function writeAutoBackup() {
+    var FS = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Filesystem;
+    if (!FS) return Promise.resolve();
+    var ids = notes.filter(function (n) { return n.deletedAt == null; }).map(function (n) { return n.id; });
+    return buildBackupPayload(ids).then(function (payload) {
+      return FS.writeFile({
+        path: 'notes-auto-backup.json',
+        data: JSON.stringify(payload),
+        directory: 'DOCUMENTS',
+        encoding: 'utf8'
+      });
+    }).then(function () {
+      try { localStorage.setItem(AUTO_BACKUP_KEY, String(Date.now())); } catch (e) { /* 隐私模式等场景 */ }
+    }).catch(function (err) {
+      console.error('[backup] 自动备份失败:', err);
+    });
+  }
+
+  // 启动时调用：距上次备份超过间隔才写，避免每次启动都重写
+  function maybeAutoBackup() {
+    if (!(window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Filesystem)) return;
+    var last = 0;
+    try { last = Number(localStorage.getItem(AUTO_BACKUP_KEY)) || 0; } catch (e) {}
+    if (Date.now() - last < AUTO_BACKUP_MS) return;
+    writeAutoBackup();
+  }
+
   function validImportPayload(p) {
     return !!(p && typeof p === 'object' && (p.version === 1 || p.version === 2) &&
               Array.isArray(p.notes) &&
@@ -5036,75 +5308,78 @@
 
   function handleImportFile(file) {
     if (!file) return;
-    fileToText(file).then(function (text) {
-      var payload = JSON.parse(text); // 解析失败走 catch
-      if (!validImportPayload(payload)) {
-        alert('文件格式不正确，导入已取消');
-        return;
-      }
-      var now = Date.now();
-      var noteRecs = payload.notes.filter(function (n) {
-        return n && typeof n.id === 'string';
-      }).map(function (n) {
-        // version 1 旧备份缺待办字段，按默认值补齐（dueAt/doneAt 为 null）
-        var due = (payload.version >= 2 && typeof n.dueAt === 'number') ? n.dueAt : null;
-        var done = (payload.version >= 2 && typeof n.doneAt === 'number') ? n.doneAt : null;
-        var end = (payload.version >= 2 && typeof n.endAt === 'number') ? n.endAt : null;
-        var opc = (payload.version >= 2 && typeof n.overduePromptCount === 'number') ? n.overduePromptCount : 0;
-        var olp = (payload.version >= 2 && typeof n.overdueLastPromptAt === 'number') ? n.overdueLastPromptAt : null;
-        return normalizeNote({
-          id: n.id,
-          content: typeof n.content === 'string' ? n.content : '',
-          createdAt: Number(n.createdAt) || now,
-          updatedAt: Number(n.updatedAt) || Number(n.createdAt) || now,
-          type: n.type === 'todo' ? 'todo' : 'note',
-          dueAt: due,
-          doneAt: done,
-          endAt: end,
-          overduePromptCount: opc,
-          overdueLastPromptAt: olp,
-          pinnedAt: (payload.version >= 2 && 'pinnedAt' in n && n.pinnedAt !== undefined) ? n.pinnedAt : null,
-          color: (payload.version >= 2 && 'color' in n && n.color !== undefined) ? n.color : null,
-          starred: (payload.version >= 2 && n.starred === true),
-          deletedAt: (payload.version >= 2 && typeof n.deletedAt === 'number') ? n.deletedAt : null,
-          deletedFrom: (payload.version >= 2 && (n.deletedFrom === 'manual' || n.deletedFrom === 'auto')) ? n.deletedFrom : null,
-          order: typeof n.order === 'number' ? n.order : null // 拖拽排序字段（旧备份无则回退按创建时间）
-        });
-      });
-      var imgRecs = (payload.images || []).filter(function (g) {
-        return g && typeof g.id === 'string' && typeof g.dataBase64 === 'string';
-      }).map(function (g) {
-        return {
-          id: g.id,
-          noteId: typeof g.noteId === 'string' ? g.noteId : null,
-          mime: typeof g.mime === 'string' ? g.mime : 'application/octet-stream',
-          blob: base64ToBlob(g.dataBase64, g.mime),
-          pos: Number(g.pos) || 0,
-          createdAt: Number(g.createdAt) || now,
-          starred: g.starred === true // 保留重点标注（旧备份无此字段默认 false）
-        };
-      });
-      return openDB().then(function (db) {
-        // 同一事务写入两个 store；put 天然按 id 覆盖，新 id 直接新增
-        return new Promise(function (resolve, reject) {
-          var tx = db.transaction([STORE, IMAGES], 'readwrite');
-          var ns = tx.objectStore(STORE);
-          var is = tx.objectStore(IMAGES);
-          noteRecs.forEach(function (n) { ns.put(n); });
-          imgRecs.forEach(function (g) { is.put(g); });
-          tx.oncomplete = function () { resolve(); };
-          tx.onerror = function () { reject(tx.error); };
-        });
-      }).then(function () {
-        return dbGetAll().then(function (arr) {
-          notes = arr;
-          backfillOrder(); // 导入后补齐缺失的 order（旧备份/无 order 字段的记录）
-          renderList();
-          alert('导入了 ' + noteRecs.length + ' 条笔记，' + imgRecs.length + ' 张图片');
-        });
-      });
-    }).catch(function () {
+    fileToText(file).then(importPayloadText).catch(function () {
       alert('导入失败：文件不是合法的备份 JSON');
+    });
+  }
+
+  // 解析并合并导入 JSON（v1/v2 兼容），成功/失败自带提示。手动导入与「恢复备份」共用。
+  function importPayloadText(text) {
+    var payload = JSON.parse(text); // 解析失败抛错，由调用方 catch
+    if (!validImportPayload(payload)) {
+      alert('文件格式不正确，导入已取消');
+      return;
+    }
+    var now = Date.now();
+    var noteRecs = payload.notes.filter(function (n) {
+      return n && typeof n.id === 'string';
+    }).map(function (n) {
+      // version 1 旧备份缺待办字段，按默认值补齐（dueAt/doneAt 为 null）
+      var due = (payload.version >= 2 && typeof n.dueAt === 'number') ? n.dueAt : null;
+      var done = (payload.version >= 2 && typeof n.doneAt === 'number') ? n.doneAt : null;
+      var end = (payload.version >= 2 && typeof n.endAt === 'number') ? n.endAt : null;
+      var opc = (payload.version >= 2 && typeof n.overduePromptCount === 'number') ? n.overduePromptCount : 0;
+      var olp = (payload.version >= 2 && typeof n.overdueLastPromptAt === 'number') ? n.overdueLastPromptAt : null;
+      return normalizeNote({
+        id: n.id,
+        content: typeof n.content === 'string' ? n.content : '',
+        createdAt: Number(n.createdAt) || now,
+        updatedAt: Number(n.updatedAt) || Number(n.createdAt) || now,
+        type: n.type === 'todo' ? 'todo' : 'note',
+        dueAt: due,
+        doneAt: done,
+        endAt: end,
+        overduePromptCount: opc,
+        overdueLastPromptAt: olp,
+        pinnedAt: (payload.version >= 2 && 'pinnedAt' in n && n.pinnedAt !== undefined) ? n.pinnedAt : null,
+        color: (payload.version >= 2 && 'color' in n && n.color !== undefined) ? n.color : null,
+        starred: (payload.version >= 2 && n.starred === true),
+        deletedAt: (payload.version >= 2 && typeof n.deletedAt === 'number') ? n.deletedAt : null,
+        deletedFrom: (payload.version >= 2 && (n.deletedFrom === 'manual' || n.deletedFrom === 'auto')) ? n.deletedFrom : null,
+        order: typeof n.order === 'number' ? n.order : null // 拖拽排序字段（旧备份无则回退按创建时间）
+      });
+    });
+    var imgRecs = (payload.images || []).filter(function (g) {
+      return g && typeof g.id === 'string' && typeof g.dataBase64 === 'string';
+    }).map(function (g) {
+      return {
+        id: g.id,
+        noteId: typeof g.noteId === 'string' ? g.noteId : null,
+        mime: typeof g.mime === 'string' ? g.mime : 'application/octet-stream',
+        blob: base64ToBlob(g.dataBase64, g.mime),
+        pos: Number(g.pos) || 0,
+        createdAt: Number(g.createdAt) || now,
+        starred: g.starred === true // 保留重点标注（旧备份无此字段默认 false）
+      };
+    });
+    return openDB().then(function (db) {
+      // 同一事务写入两个 store；put 天然按 id 覆盖，新 id 直接新增
+      return new Promise(function (resolve, reject) {
+        var tx = db.transaction([STORE, IMAGES], 'readwrite');
+        var ns = tx.objectStore(STORE);
+        var is = tx.objectStore(IMAGES);
+        noteRecs.forEach(function (n) { ns.put(n); });
+        imgRecs.forEach(function (g) { is.put(g); });
+        tx.oncomplete = function () { resolve(); };
+        tx.onerror = function () { reject(tx.error); };
+      });
+    }).then(function () {
+      return dbGetAll().then(function (arr) {
+        notes = arr;
+        backfillOrder(); // 导入后补齐缺失的 order（旧备份/无 order 字段的记录）
+        renderList();
+        alert('导入了 ' + noteRecs.length + ' 条笔记，' + imgRecs.length + ' 张图片');
+      });
     });
   }
 
@@ -5574,9 +5849,13 @@
     if (!id) return;
     var on = !img.classList.contains('starred');
     img.classList.toggle('starred', on);
-    var patch = { id: id, starred: on };
-    if (img.dataset.imgNoteId) patch.noteId = img.dataset.imgNoteId;
-    dbPutImage(patch).then(function () {
+    // 先读完整记录再合并 starred：IndexedDB put 是整条替换，partial 会把 blob 清掉
+    dbGetImage(id).then(function (rec) {
+      if (!rec) return;
+      rec.starred = on;
+      if (img.dataset.imgNoteId) rec.noteId = img.dataset.imgNoteId;
+      return dbPutImage(rec);
+    }).then(function () {
       if (!on && imgMenuImg === img) closeImgMenu();
       renderImageStrip(); // 缩略图条同步星标
       invalidateStarFlagCache(img.dataset.imgNoteId); // 列表星标缓存失效
@@ -5596,9 +5875,8 @@
       var wanted = img.classList.contains('starred');
       jobs.push(dbGetImage(id).then(function (rec) {
         if (!rec || !!rec.starred === wanted) return;
-        var patch = { id: id, starred: wanted };
-        if (rec.noteId) patch.noteId = rec.noteId;
-        return dbPutImage(patch);
+        rec.starred = wanted; // 直接改完整记录：IndexedDB put 整条替换，partial 会丢 blob
+        return dbPutImage(rec);
       }).catch(function () { /* 存储失败静默 */ }));
     });
     return Promise.all(jobs);
@@ -5715,6 +5993,7 @@
   });
   $('menu-export').addEventListener('click', doExport);
   $('menu-import').addEventListener('click', doImport);
+  $('menu-restore').addEventListener('click', doRestoreBackup);
   $('menu-update-check').addEventListener('click', function () {
     closeMenu();
     if (!(window.Capacitor && window.Capacitor.Plugins)) {
@@ -6820,6 +7099,7 @@
       renderList();
       runAutoClean(); // 启动时检查一次（内部视情况再 renderList）
       purgeExpiredBinItems(); // 回收箱超 3 天条目物理清理（静默）
+      maybeAutoBackup(); // 每天自动备份到 Documents（距上次超 24h 才写）
       checkDueReminders();
       requestNotificationPermission(); // 启动时请求通知权限（Android 13+ 弹窗；浏览器静默跳过）
       ensureNotificationChannel();     // 创建通知渠道（heads-up + 声音 + 振动）

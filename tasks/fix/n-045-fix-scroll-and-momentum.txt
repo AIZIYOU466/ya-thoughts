@@ -1,0 +1,126 @@
+# 任务：列表滚动优化 + 惯性 + 卡片滑动惯性
+
+## AI 行为规范
+1. 不要读整个 index.html。用 sed -n 按行号分段读。
+2. 先输出方案报告，等用户确认后再动手。
+3. 用精准 edit，禁止全量重写。
+4. 改完 index.html 后必须执行 cp index.html www/index.html。
+5. 纯原生 JS，var + 具名 function + 单引号 + 中文注释。
+6. 如果某问题根因不明，先诊断再改，不要硬改。
+
+## 读取范围
+- 列表 CSS: grep -n '#note-list\|#list-view\|overflow' index.html | head -30
+- 触摸事件: grep -n 'touchstart\|touchmove\|touchend\|passive\|preventDefault' index.html | head -40
+- 滚动逻辑: grep -n 'requestAnimationFrame\|transform.*translate\|scrollTop' index.html | head -30
+- 卡片滑动: grep -n 'SWIPE_VEL\|swipe\|lastX\|swipeVel' index.html | head -30
+
+项目：Ya thoughts 便签 App，Capacitor 8，单文件 index.html + www/index.html
+
+---
+
+## 用户原话描述
+
+1. 列表滚动不跟手，动画帧率较低，惯性不符合手指移动速度
+   → 应该有加速度和衰减速度
+
+2. 卡片列表顶部加隐形阻隔控制第一张卡片不再往上，
+   但第一张卡片触碰到阻隔要有弹性幅度，动画要丝滑顺畅
+
+3. 有卡片时，手指下拉能拉出距离，松手弹回（顶部弹性）
+   无卡片时也能下拉（下拉刷新那种）
+   顶部加隐形边界，卡片不能超过，且有阻尼
+
+4. 卡片左右滑动的惯性和弹性，要手指滑动速度很快才看得到
+   → 应该降低速度阈值，让慢速滑动也有惯性反馈
+
+## 详细需求
+
+### 需求 1：列表滚动跟手 + 帧率 + 惯性
+- 现象：上下滑动不跟手，肉眼可见帧率低，惯性不符合手指移动速度
+- 期望：
+  - 手指移动时列表同步跟随（跟手）
+  - 动画帧率 60fps（无卡顿）
+  - 松手后的惯性符合手指移动速度（快滑滚很远，慢滑滚一点）
+  - 惯性有加速度和衰减
+
+### 需求 2：列表顶部弹性 + 阻尼
+- 现象：卡片碰到顶部就停住，没有弹性
+- 期望：
+  - 有卡片时：手指下拉能拉出距离（比如最多拉 60~80px），松手弹回
+  - 无卡片时：也能下拉，同上有弹性
+  - 顶部隐形边界：卡片不能超过边界，且触碰边界有阻尼（继续下拉阻力变大）
+  - 动画丝滑顺畅，无卡顿
+
+### 需求 3：卡片左右滑惯性（现有功能优化）
+- 现象：只有手指滑得很快才看到惯性，慢速滑动没反馈
+- 期望：
+  - 降低速度阈值，让慢速滑动也有惯性反馈
+  - 左右滑动松手后，卡片根据速度继续移动一段距离然后停下
+  - 动画帧率流畅
+
+---
+
+## 诊断方向
+
+### 列表滚动诊断
+1. 看现有列表是**原生 overflow 滚动**还是 **JS 控制 transform**
+2. 如果有 touchmove 监听，是否用了 `e.preventDefault()` 阻止原生滚动
+3. 如果有 touchmove，是否用了 `{ passive: true }`（性能优化）
+4. 检查滚动是否用 `transform: translate3d` 而非 `top/left`（避免重排）
+5. 检查是否有 `will-change: transform` 提示浏览器优化
+
+### 弹性/阻尼诊断
+1. 看是否有 overscroll 相关代码
+2. 看 CSS 是否有 `overscroll-behavior: contain` 或 `-webkit-overflow-scrolling: touch`
+3. 如果是 JS 控制，看拉伸距离和回弹动画怎么实现的
+
+### 卡片滑动诊断
+1. 看 SWIPE_VEL_SNAP 的值（之前设的 0.5）
+2. 看速度采样逻辑
+3. 看吸附/收回的阈值
+
+---
+
+## 技术建议（供 AI 参考，可用别的方案）
+
+### 列表滚动（如果要重写）
+- 用 `transform: translate3d(0, Ypx, 0)` 而非 `scrollTop` / `top`
+- touchmove 里算 deltaY，直接改 Y 值
+- 松手时：用 requestAnimationFrame 做动量滚动
+  - 初始速度 = 最近几次 touchmove 的平均速度
+  - 每帧 `velocity *= 0.95`（衰减系数）
+  - 速度 < 阈值时停止
+- 加 `will-change: transform` 到列表容器
+
+### 顶部弹性
+- touchstart 时记录 startY
+- touchmove 时如果 `Y > 0`（即下拉超顶），用阻尼公式：`Y = overscroll * 0.5`（越拉阻力越大）
+- touchend 时用 easing 动画回到 Y=0
+
+### 卡片左右滑
+- 降低 SWIPE_VEL_SNAP（比如 0.5 → 0.2）
+- 加入速度衰减：松手后 `x += v; v *= 0.92` 直到 |v| < 0.5
+- 用 requestAnimationFrame 平滑
+
+---
+
+## 严格约束
+- 不动图片、导出、通知、编辑页、回收箱相关代码
+- 改完 index.html 后必须 cp index.html www/index.html
+- 报告 ls -la index.html www/index.html 两文件大小一致
+- 如果改动导致性能变差或视觉回归，回滚
+
+## 输出要求
+
+第一步（先输出报告，不动代码）：
+- 贴出列表容器的 CSS（高度、overflow、transform 相关）
+- 贴出 touchstart/touchmove/touchend 的完整代码
+- 贴出卡片左右滑的相关代码（含 SWIPE_VEL_SNAP）
+- 诊断：当前列表滚动是原生还是 JS 控制？
+- 诊断：当前有没有顶部弹性？
+- 诊断：卡片滑动为什么只有快速滑动才有惯性？
+- 你计划的改动点（每处行号 + 改动内容 + 预期效果）
+
+第二步（等确认后）：
+- 一次性改完
+- 报告改动行号、grep 验证、两文件大小一致
