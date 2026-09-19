@@ -961,6 +961,7 @@
     font-size: 14px;
     line-height: 1.55;
     color: var(--text-secondary);
+    white-space: pre-line;
   }
   #confirm-modal .confirm-btns { display: flex; gap: 12px; }
   #confirm-modal .confirm-btns button {
@@ -2054,7 +2055,7 @@
 
   <div id="about-mask">
     <div id="about-card" role="dialog" aria-modal="true">
-      <h2>极简备忘录 v1.5.6</h2>
+      <h2>极简备忘录 <span id="about-version"></span></h2>
       <p>如果它帮到你，可以请我喝杯咖啡</p>
       <button id="about-close">关闭</button>
     </div>
@@ -4570,14 +4571,14 @@
           if (noteLeft && li) {
             // 更新标题（含搜索高亮）
             var tEl = li.querySelector('.title');
-            if (tEl) tEl.innerHTML = searchQuery ? highlightText(titleOf(noteLeft), searchQuery) : titleOf(noteLeft);
+            if (tEl) tEl.innerHTML = highlightText(titleOf(noteLeft), searchQuery);
             // 更新时间（创建于/编辑于两行）
             var tmEl = li.querySelector('.time');
             if (tmEl) renderNoteTime(tmEl, noteLeft);
             // 更新摘要（含搜索高亮，恢复展开态）
             var sEl = li.querySelector('.summary');
             if (sEl) {
-              sEl.innerHTML = searchQuery ? highlightText(excerptOf(noteLeft), searchQuery) : excerptOf(noteLeft);
+              sEl.innerHTML = highlightText(excerptOf(noteLeft), searchQuery);
               sEl.classList.toggle('expanded', !!expandedSummaries[nid]);
               // 重建摘要展开按钮（等编辑页完全滑出隐藏后再测量，避免滑出首帧在列表上做强制回流）
               var wrapEl = sEl.parentElement;
@@ -4645,6 +4646,22 @@
               }
             } else if (endBadge) {
               endBadge.remove();
+            }
+            // 更新「进行中」标签（编辑器内可修改完成状态/截止时间）
+            var inprog = li.querySelector('.inprog-flag');
+            var dueBadgeEl = li.querySelector('.due-badge');
+            if (isTodo(noteLeft) && !isDone(noteLeft) && !isOverdue(noteLeft)) {
+              if (!inprog) {
+                inprog = document.createElement('span');
+                inprog.className = 'inprog-flag';
+                inprog.textContent = '进行中';
+                var faceForInprog = li.querySelector('.swipe-body');
+                if (faceForInprog) faceForInprog.appendChild(inprog);
+              }
+              if (noteLeft.dueAt && dueBadgeEl) dueBadgeEl.style.right = '60px';
+            } else {
+              if (inprog) inprog.remove();
+              if (dueBadgeEl) dueBadgeEl.style.right = '';
             }
           } else if (!noteLeft && li) {
             // 空便签已被清理，移除卡片
@@ -4937,7 +4954,7 @@
         URL.revokeObjectURL(imgUrlCache[rec.id]);
         delete imgUrlCache[rec.id];
       }
-      alert('图片保存失败，请重试');
+      showUndoToast('图片保存失败，请重试');
       return false;
     });
   }
@@ -4948,7 +4965,7 @@
     Array.prototype.forEach.call(files, function (file) {
       if (!file || file.type.indexOf('image/') !== 0) return;
       if (file.size > 10 * 1024 * 1024) {
-        alert('图片「' + file.name + '」超过 10MB，已跳过');
+        showUndoToast('图片「' + file.name + '」超过 10MB，已跳过');
         return;
       }
       readImageElement(file).then(function (img) {
@@ -5226,7 +5243,7 @@
               var low = msg.toLowerCase();
               // 用户取消分享（cancel/canceled/cancelled/abort）不算失败，静默
               if (low.indexOf('cancel') === -1 && low.indexOf('abort') === -1) {
-                alert('导出失败：' + (msg || '未知错误'));
+                showUndoToast('导出失败：' + (msg || '未知错误'));
               }
             });
         }
@@ -5240,7 +5257,7 @@
         a.remove();
         setTimeout(function () { URL.revokeObjectURL(a.href); }, 5000);
       })
-      .catch(function () { alert('导出失败，请重试'); });
+      .catch(function () { showUndoToast('导出失败，请重试'); });
   }
 
   // ⋮ 菜单「导出」= 导出全部
@@ -5259,13 +5276,13 @@
     closeMenu();
     var FS = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Filesystem;
     if (!FS) {
-      alert('恢复备份仅支持 App 环境');
+      showUndoToast('恢复备份仅支持 App 环境');
       return;
     }
     FS.readFile({ path: 'notes-auto-backup.json', directory: 'DOCUMENTS' }).then(function (r) {
       return importPayloadText(String(r.data));
     }).catch(function () {
-      alert('没有找到自动备份文件或备份已损坏');
+      showUndoToast('没有找到自动备份文件或备份已损坏');
     });
   }
 
@@ -5309,7 +5326,7 @@
   function handleImportFile(file) {
     if (!file) return;
     fileToText(file).then(importPayloadText).catch(function () {
-      alert('导入失败：文件不是合法的备份 JSON');
+      showUndoToast('导入失败：文件不是合法的备份 JSON');
     });
   }
 
@@ -5317,7 +5334,7 @@
   function importPayloadText(text) {
     var payload = JSON.parse(text); // 解析失败抛错，由调用方 catch
     if (!validImportPayload(payload)) {
-      alert('文件格式不正确，导入已取消');
+      showUndoToast('文件格式不正确，导入已取消');
       return;
     }
     var now = Date.now();
@@ -5378,7 +5395,7 @@
         notes = arr;
         backfillOrder(); // 导入后补齐缺失的 order（旧备份/无 order 字段的记录）
         renderList();
-        alert('导入了 ' + noteRecs.length + ' 条笔记，' + imgRecs.length + ' 张图片');
+        showUndoToast('导入了 ' + noteRecs.length + ' 条笔记，' + imgRecs.length + ' 张图片');
       });
     });
   }
@@ -6005,6 +6022,7 @@
   });
   $('menu-about').addEventListener('click', function () {
     closeMenu();
+    $('about-version').textContent = 'v' + CURRENT_VERSION;
     $('about-mask').classList.add('open');
   });
   $('about-close').addEventListener('click', function () {
@@ -6183,7 +6201,7 @@
         binDirty = true;
         renderBin();
         showUndoToast('已清空');
-      }).catch(function () { alert('清空失败，请重试'); });
+      }).catch(function () { showUndoToast('清空失败，请重试'); });
     });
   });
 
@@ -6235,7 +6253,7 @@
   });
   $('sel-export').addEventListener('click', function () {
     var ids = Object.keys(selectedIds);
-    if (!ids.length) { alert('请先选择要导出的便签'); return; }
+    if (!ids.length) { showUndoToast('请先选择要导出的便签'); return; }
     exportNotes(ids, 'notes-selected-');
     exitMultiMode();
   });
@@ -6243,7 +6261,7 @@
   // 多选模式批量删除
   $('sel-delete').addEventListener('click', function () {
     var ids = Object.keys(selectedIds);
-    if (!ids.length) { alert('请先选择要删除的便签'); return; }
+    if (!ids.length) { showUndoToast('请先选择要删除的便签'); return; }
     // 多选批量删除：统一走自定义确认框（原生 confirm 按钮文字随系统语言变）
     confirmDialog({
       title: '删除便签',
@@ -6725,7 +6743,12 @@
     if (!due.length) return;
     var lines = due.slice(0, 5).map(function (n) { return '· ' + titleOf(n); });
     if (due.length > 5) lines.push('...还有 ' + (due.length - 5) + ' 条');
-    alert('你有 ' + due.length + ' 条待办已到期\n' + lines.join('\n'));
+    confirmDialog({
+      title: '待办已到期',
+      message: '你有 ' + due.length + ' 条待办已到期：\n' + lines.join('\n'),
+      confirmText: '知道了',
+      cancelText: '关闭'
+    });
     try { sessionStorage.setItem('due-reminded', '1'); } catch (e) {}
   }
 
@@ -6941,14 +6964,14 @@
 
   /* ---------- 应用内更新（国内镜像；只 Capacitor 环境生效，浏览器静默跳过） ---------- */
   var UPDATE_MODAL = $('update-modal');
-  var CURRENT_VERSION = '1.6.7'; // 与 android/app/build.gradle 的 versionName 保持一致
+  var CURRENT_VERSION = '1.7.3'; // 与 android/app/build.gradle 的 versionName 保持一致
   var UPDATE_URLS = [
     'https://cdn.jsdelivr.net/gh/AIZIYOU466/ya-thoughts@main/version.json',
     'https://gh-proxy.com/https://raw.githubusercontent.com/AIZIYOU466/ya-thoughts/main/version.json',
     'https://ghfast.top/https://raw.githubusercontent.com/AIZIYOU466/ya-thoughts/main/version.json'
   ];
   var updateInfo = null; // 当前弹出的版本信息（供稍后/下载记录 dismiss）
-  var UPDATE_TIMEOUT = 3000; // 单个镜像超时（毫秒）：5s 缩短为 3s
+  var UPDATE_TIMEOUT = 6000; // 单个镜像超时（毫秒）：并发请求各镜像，弱网更稳
   var autoRetriesLeft = 2;   // 自动检查全镜像失败后的重试次数（+首轮共 3 轮；手动检查不重试）
 
   // 版本号 '1.6.0' 风格逐位数字比较：a>b→1，a<b→-1，相等→0（1.10.0 > 1.9.0，非字典序）
@@ -6963,17 +6986,58 @@
     return 0;
   }
 
-  // 轮询 3 个国内镜像：逐个 fetch（3 秒超时），第一个成功即用；全部失败时
-  // 自动检查（force=false）会 2 秒后重试（最多 3 轮），手动检查（force=true）
-  // 不重试但始终 toast 反馈结果。全程 console.log 便于真机 adb logcat 定位。
+  // 并发请求所有镜像，各自独立超时；取返回中「版本号最大」者作为远端最新版。
+  // 关键：不再「第一个成功即用」——jsdelivr 对 GitHub 文件有 CDN 缓存，发版后可能
+  // 仍返回旧 version.json，若沿用旧逻辑会导致误判「已是最新」。取最大版本可让
+  // raw/gh-proxy/ghfast 等实时源覆盖掉 jsdelivr 的旧缓存。
+  // 全部失败时：手动检查 toast 反馈，自动检查 2 秒后重试（最多 3 轮）。
+  function fetchUpdateJson(url) {
+    var ctrl = new AbortController();
+    var timer = setTimeout(function () { ctrl.abort(); }, UPDATE_TIMEOUT);
+    return fetch(url, { signal: ctrl.signal, cache: 'no-store' })
+      .then(function (r) {
+        if (!r.ok) throw { kind: 'http', status: r.status, reason: 'HTTP ' + r.status };
+        return r.json();
+      })
+      .then(function (info) {
+        clearTimeout(timer);
+        if (!info || !info.version) throw { reason: '无效响应' };
+        return info;
+      })
+      .catch(function (err) {
+        clearTimeout(timer);
+        var reason = (err && err.name === 'AbortError') ? '超时'
+          : (err && err.reason) ? err.reason
+          : '网络错误';
+        throw { reason: reason };
+      });
+  }
+
   function checkForUpdate(force) {
     if (!(window.Capacitor && window.Capacitor.Plugins)) {
       if (force) showUndoToast('检查更新仅在 App 内可用'); // 浏览器网页点菜单项也给反馈
       return;
     }
-    var i = 0, failures = [];
-    (function next() {
-      if (i >= UPDATE_URLS.length) { // 全部镜像失败
+    var tasks = UPDATE_URLS.map(function (url) {
+      console.log('[update] 并发请求镜像：' + url);
+      return fetchUpdateJson(url).then(
+        function (info) { return { ok: true, info: info }; },
+        function (err) {
+          console.log('[update] 镜像失败：' + url + ' → ' + err.reason);
+          return { ok: false, reason: err.reason };
+        }
+      );
+    });
+    Promise.all(tasks).then(function (results) {
+      var best = null, failures = [];
+      results.forEach(function (r) {
+        if (r.ok && r.info && r.info.version) {
+          if (!best || compareVersion(r.info.version, best.version) > 0) best = r.info;
+        } else {
+          failures.push(r.reason || '未知错误');
+        }
+      });
+      if (!best) { // 全部镜像失败
         var reason = failures.length
           ? failures.filter(function (v, k) { return failures.indexOf(v) === k; }).join(' / ')
           : '未知错误';
@@ -6987,50 +7051,23 @@
         }
         return;
       }
-      var url = UPDATE_URLS[i++];
-      var ctrl = new AbortController();
-      var timer = setTimeout(function () { ctrl.abort(); }, UPDATE_TIMEOUT);
-      console.log('[update] 尝试镜像 ' + i + '/' + UPDATE_URLS.length + '：' + url);
-      fetch(url, { signal: ctrl.signal })
-        .then(function (r) {
-          if (!r.ok) throw { kind: 'http', status: r.status };
-          return r.json();
-        })
-        .then(function (info) {
-          clearTimeout(timer);
-          if (!info || !info.version) { // 200 但内容无效：当失败处理，继续换镜像
-            console.log('[update] 镜像返回无效版本信息');
-            failures.push('无效响应');
-            next();
-            return;
-          }
-          var cmp = compareVersion(CURRENT_VERSION, info.version);
-          if (cmp >= 0) { // 不是新版本（含版本同位：当前代码 == 已发布版本）
-            console.log('[update] 已是最新：本地 ' + CURRENT_VERSION + ' >= 远端 ' + info.version);
-            if (force) showUndoToast('已是最新版本 v' + CURRENT_VERSION);
-            return;
-          }
-          if (!force) { // 自动检查：同版本 24h 内已提醒过 → 不重复打扰；手动检查每次都查
-            var dv = localStorage.getItem('update_dismissed_version');
-            var da = parseInt(localStorage.getItem('update_dismissed_at') || '0', 10);
-            if (dv === info.version && da && Date.now() - da < 24 * 3600 * 1000) {
-              console.log('[update] 24h 内已提醒过 ' + info.version + '，跳过');
-              return;
-            }
-          }
-          console.log('[update] 发现新版本 ' + info.version + '，打开更新弹窗');
-          showUpdateDialog(info);
-        })
-        .catch(function (err) {
-          clearTimeout(timer);
-          var reason = (err && err.name === 'AbortError') ? '超时'
-            : (err && err.kind === 'http') ? 'HTTP ' + err.status
-            : '网络错误';
-          console.log('[update] 镜像失败：' + reason);
-          failures.push(reason);
-          next();
-        });
-    })();
+      var cmp = compareVersion(CURRENT_VERSION, best.version);
+      if (cmp >= 0) { // 不是新版本（含版本同位：当前代码 == 已发布版本）
+        console.log('[update] 已是最新：本地 ' + CURRENT_VERSION + ' >= 远端 ' + best.version);
+        if (force) showUndoToast('已是最新版本 v' + CURRENT_VERSION);
+        return;
+      }
+      if (!force) { // 自动检查：同版本 24h 内已提醒过 → 不重复打扰；手动检查每次都查
+        var dv = localStorage.getItem('update_dismissed_version');
+        var da = parseInt(localStorage.getItem('update_dismissed_at') || '0', 10);
+        if (dv === best.version && da && Date.now() - da < 24 * 3600 * 1000) {
+          console.log('[update] 24h 内已提醒过 ' + best.version + '，跳过');
+          return;
+        }
+      }
+      console.log('[update] 发现新版本 ' + best.version + '，打开更新弹窗');
+      showUpdateDialog(best);
+    });
   }
 
   function showUpdateDialog(info) {
