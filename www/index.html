@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content"> <!-- interactive-widget：输入法弹出时压缩视口，列表不被键盘遮挡 -->
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content, height=device-height"> <!-- interactive-widget：输入法弹出时压缩视口，列表不被键盘遮挡；height=device-height 确保设备高度包含状态栏 -->
 <title>便签 · 极简备忘录</title>
 <style>
   /* ============ 设计系统：颜色 / 圆角 / 阴影 / 缓动 ============ */
@@ -121,7 +121,7 @@
   /* ============ 基础 ============ */
   * { box-sizing: border-box; margin: 0; padding: 0; scrollbar-width: none; }
   *::-webkit-scrollbar { display: none; }
-  html, body { width: 100vw !important; max-width: 100vw !important; min-width: 0 !important; margin: 0 !important; padding: 0 !important; overflow-x: hidden !important; box-sizing: border-box !important; height: 100%; }
+  html, body { width: 100vw !important; max-width: 100vw !important; min-width: 0 !important; margin: 0 !important; padding: 0 !important; overflow-x: hidden !important; box-sizing: border-box !important; height: 100%; height: 100dvh; }
   body {
     font-family: -apple-system, "PingFang SC", "Helvetica Neue", sans-serif;
     /* 全局柔和渐变底 + 两团淡模糊光斑（radial-gradient 模拟，无外部图片） */
@@ -989,6 +989,45 @@
   }
   #confirm-modal .confirm-btns.has-alt { flex-wrap: wrap; }
   #confirm-modal .confirm-btns.has-alt button { flex: 1 1 0; min-width: 0; }
+
+  /* 每日好句模态框 */
+  #daily-quote-modal { position: fixed; top: 0; right: 0; bottom: 0; left: 0; z-index: 2000; background: rgba(0,0,0,0.4); display: none; align-items: center; justify-content: center; padding: 20px; }
+  #daily-quote-modal.open { display: flex; }
+  #daily-quote-card { background: var(--bg-card); border-radius: 16px; max-width: 500px; width: 100%; max-height: 80vh; overflow: hidden; box-shadow: 0 8px 32px rgba(0,0,0,0.2); }
+  #daily-quote-header { padding: 16px 20px; border-bottom: 1px solid var(--divider); display: flex; align-items: center; justify-content: space-between; }
+  #daily-quote-header h3 { margin: 0; font-size: 18px; font-weight: 600; color: var(--text-primary); }
+  #daily-quote-refresh { background: none; border: none; color: var(--primary); cursor: pointer; padding: 8px; border-radius: 8px; }
+  #daily-quote-refresh:active { background: var(--chip-bg); }
+  #daily-quote-list { max-height: calc(80vh - 56px); overflow-y: auto; padding: 12px; }
+  .daily-quote-card-item { background: var(--bg-page); border-radius: 12px; padding: 14px; margin-bottom: 10px; }
+  .daily-quote-sentence { font-size: 16px; line-height: 1.6; color: var(--text-primary); margin-bottom: 8px; }
+  .daily-quote-source { font-size: 13px; color: var(--text-secondary); }
+  .daily-quote-category { display: inline-block; font-size: 11px; padding: 2px 8px; background: var(--primary-soft); color: var(--primary); border-radius: 4px; margin-left: 8px; }
+  .daily-quote-actions { display: flex; justify-content: flex-end; margin-top: 10px; }
+  .daily-quote-copy { background: var(--chip-bg); border: none; color: var(--text-secondary); padding: 6px 12px; border-radius: 6px; font-size: 13px; cursor: pointer; }
+  .daily-quote-copy:active { background: var(--chip-press); }
+  #daily-quote-close { background: none; border: none; font-size: 20px; color: var(--text-secondary); cursor: pointer; padding: 4px; }
+
+  /* 时政分析模态框 */
+  #politics-modal { position: fixed; top: 0; right: 0; bottom: 0; left: 0; z-index: 2000; background: rgba(0,0,0,0.4); display: none; align-items: center; justify-content: center; padding: 20px; }
+  #politics-modal.open { display: flex; }
+  #politics-card { background: var(--bg-card); border-radius: 16px; max-width: 600px; width: 100%; max-height: 90vh; overflow: hidden; box-shadow: 0 8px 32px rgba(0,0,0,0.2); }
+  #politics-header { padding: 16px 20px; border-bottom: 1px solid var(--divider); display: flex; align-items: center; justify-content: space-between; }
+  #politics-header h3 { margin: 0; font-size: 18px; font-weight: 600; color: var(--text-primary); }
+  #politics-refresh { background: none; border: none; color: var(--primary); cursor: pointer; padding: 8px; border-radius: 8px; }
+  #politics-refresh:active { background: var(--chip-bg); }
+  #politics-content { max-height: calc(90vh - 56px); overflow-y: auto; padding: 16px; }
+  .politics-section { margin-bottom: 20px; }
+  .politics-section-title { font-size: 15px; font-weight: 600; color: var(--text-primary); margin-bottom: 8px; display: flex; align-items: center; }
+  .politics-section-title::before { content: '📝'; margin-right: 6px; }
+  .politics-material { background: var(--bg-page); padding: 12px; border-radius: 8px; margin-bottom: 8px; font-size: 14px; line-height: 1.6; color: var(--text-primary); }
+  .politics-material-label { font-size: 12px; color: var(--text-secondary); margin-bottom: 4px; font-weight: 500; }
+  .politics-kp { display: flex; flex-wrap: wrap; gap: 6px; }
+  .politics-kp-tag { background: var(--primary-soft); color: var(--primary); padding: 4px 10px; border-radius: 12px; font-size: 12px; }
+  .politics-answer { background: var(--bg-page); padding: 12px; border-radius: 8px; font-size: 14px; line-height: 1.6; color: var(--text-primary); }
+  .politics-answer-item { margin-bottom: 8px; }
+  .politics-answer-label { font-weight: 600; color: var(--primary); margin-bottom: 2px; }
+  #politics-close { background: none; border: none; font-size: 20px; color: var(--text-secondary); cursor: pointer; padding: 4px; }
 
   /* 自启动引导弹窗（复用 confirm-modal 体系） */
   #notify-guide-modal {
@@ -1900,6 +1939,77 @@
       transition-duration: 0.01ms !important;
     }
   }
+
+  /* ---- 鼓励弹窗 + 撒花 ---- */
+  #cheer-mask {
+    position: fixed; inset: 0; z-index: 10000;
+    display: flex; align-items: center; justify-content: center;
+    background: rgba(0,0,0,0.25); opacity: 0;
+    transition: opacity 0.2s ease;
+    pointer-events: none;
+  }
+  #cheer-mask.show { opacity: 1; pointer-events: auto; }
+  #cheer-card {
+    background: var(--card-bg, #fff); border-radius: 20px;
+    padding: 32px 40px 28px; text-align: center;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.18);
+    transform: scale(0.7); transition: transform 0.25s cubic-bezier(0.34,1.56,0.64,1);
+    max-width: 280px;
+  }
+  #cheer-mask.show #cheer-card { transform: scale(1); }
+  #cheer-emoji { font-size: 48px; line-height: 1; margin-bottom: 12px; }
+  #cheer-msg { font-size: 17px; font-weight: 600; color: var(--text-primary, #1a1a1a); margin: 0; line-height: 1.5; }
+  #confetti-layer {
+    position: fixed; inset: 0; z-index: 10001;
+    pointer-events: none; overflow: hidden;
+  }
+  .confetti {
+    position: absolute; top: -10px;
+    width: 8px; height: 14px;
+    border-radius: 2px;
+    animation: confetti-fall 1.5s ease-out forwards;
+  }
+  @keyframes confetti-fall {
+    0% { transform: translateY(0) rotate(0deg); opacity: 1; }
+    100% { transform: translateY(100vh) rotate(720deg); opacity: 0; }
+  }
+
+  /* ---- 心情设置 ---- */
+  #mood-badge {
+    display: inline-block; font-size: 22px; line-height: 1;
+    margin-left: 8px; vertical-align: middle; cursor: pointer;
+  }
+  #mood-mask {
+    position: fixed; inset: 0; z-index: 9999;
+    display: flex; align-items: center; justify-content: center;
+    background: rgba(0,0,0,0.35); opacity: 0;
+    transition: opacity 0.2s ease;
+    pointer-events: none;
+  }
+  #mood-mask.show { opacity: 1; pointer-events: auto; }
+  #mood-card {
+    background: var(--card-bg, #fff); border-radius: 16px;
+    padding: 28px 24px 20px; text-align: center; max-width: 320px; width: 90%;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.18);
+  }
+  #mood-card h2 { margin: 0 0 18px; font-size: 18px; color: var(--text-primary, #1a1a1a); }
+  #mood-grid {
+    display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px;
+    margin-bottom: 18px;
+  }
+  .mood-opt {
+    display: flex; flex-direction: column; align-items: center; gap: 4px;
+    border: 2px solid transparent; border-radius: 12px; padding: 10px 4px;
+    background: none; cursor: pointer; font-size: 12px; color: var(--text-secondary, #666);
+    transition: border-color 0.15s, background 0.15s;
+  }
+  .mood-opt .mood-e { font-size: 28px; line-height: 1; }
+  .mood-opt:active { background: rgba(0,0,0,0.06); }
+  .mood-opt.on { border-color: var(--todo-accent, #2BA88E); background: rgba(43,168,142,0.08); }
+  #mood-close {
+    border: none; background: none; color: var(--todo-accent, #2BA88E);
+    font-size: 15px; font-weight: 600; padding: 8px 24px; cursor: pointer;
+  }
 </style>
 </head>
 <body>
@@ -1923,11 +2033,12 @@
     <button class="seg-item on" data-seg="all">全部</button>
     <button class="seg-item" data-seg="star">收藏</button>
     <button class="seg-item" data-seg="todo">待办</button>
+    <button class="seg-item" data-seg="expired">已过期</button>
     <button class="seg-item" data-seg="done">已完成</button>
     <span id="note-count" aria-live="polite"></span>
   </div>
   <header id="list-header">
-    <h1>便签</h1>
+    <h1>便签<span id="mood-badge"></span></h1>
     <div class="hdr-actions">
       <button id="sel-enter" title="选择多条便签" aria-label="选择多条便签">
         <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -1990,11 +2101,29 @@
       </svg>
       <span>自动清理</span>
     </button>
+    <button id="menu-daily-quote">
+      <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/>
+      </svg>
+      <span>每日好句</span>
+    </button>
+    <button id="menu-politics">
+      <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M16 13H8"/><path d="M16 17H8"/>
+      </svg>
+      <span>时政分析</span>
+    </button>
     <button id="menu-about">
       <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
         <circle cx="12" cy="12" r="9"/><path d="M12 8h.01"/><path d="M12 11v5"/>
       </svg>
       <span>关于</span>
+    </button>
+    <button id="menu-mood">
+      <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/>
+      </svg>
+      <span>心情</span>
     </button>
     <div class="menu-sep"></div>
     <button class="menu-sort" data-sort="updated"><span class="menu-sort-check"></span><span>按修改时间</span></button>
@@ -2081,6 +2210,43 @@
       </div>
     </div>
   </div>
+
+  <!-- 每日好句模态框 -->
+  <div id="daily-quote-modal" role="dialog" aria-modal="true">
+    <div id="daily-quote-card">
+      <div id="daily-quote-header">
+        <h3>📖 每日好句</h3>
+        <div>
+          <button id="daily-quote-refresh" title="刷新今日好句">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 12a9 9 0 1 1-2.64-6.36L21 8"/><path d="M21 3v5h-5"/>
+            </svg>
+          </button>
+          <button id="daily-quote-close" title="关闭">✕</button>
+        </div>
+      </div>
+      <div id="daily-quote-list"></div>
+    </div>
+  </div>
+
+  <!-- 时政分析模态框 -->
+  <div id="politics-modal" role="dialog" aria-modal="true">
+    <div id="politics-card">
+      <div id="politics-header">
+        <h3>📋 时政分析练习</h3>
+        <div>
+          <button id="politics-refresh" title="换一题">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 12a9 9 0 1 1-2.64-6.36L21 8"/><path d="M21 3v5h-5"/>
+            </svg>
+          </button>
+          <button id="politics-close" title="关闭">✕</button>
+        </div>
+      </div>
+      <div id="politics-content"></div>
+    </div>
+  </div>
+
   <input type="file" id="import-input" accept=".json,application/json" hidden>
   <!-- 长按卡片操作菜单已移除：置顶/复制/删除改为左滑露出；长按负责拖拽排序 -->
 </section>
@@ -2206,6 +2372,24 @@
   </div>
 </div>
 
+<!-- 心情选择弹窗 -->
+<div id="mood-mask">
+  <div id="mood-card" role="dialog" aria-modal="true" aria-label="设置心情">
+    <h2>当前心情</h2>
+    <div id="mood-grid"></div>
+    <button id="mood-close">关闭</button>
+  </div>
+</div>
+
+<!-- 鼓励弹窗 + 撒花 -->
+<div id="cheer-mask" role="dialog" aria-modal="true" aria-label="鼓励">
+  <div id="cheer-card">
+    <div id="cheer-emoji">🎉</div>
+    <p id="cheer-msg"></p>
+  </div>
+</div>
+<div id="confetti-layer" aria-hidden="true"></div>
+
 <!-- 自启动引导弹窗 -->
 <div id="notify-guide-modal" role="dialog" aria-modal="true" aria-label="通知引导">
   <div class="guide-card" role="document">
@@ -2328,7 +2512,7 @@
 
   /* ---------- 待办清单状态 ---------- */
   var segFilter = 'all';            // 分段过滤：'all' | 'todo' | 'done'
-  var SEG_LABELS = { all: '全部', todo: '待办', done: '已完成' };
+  var SEG_LABELS = { all: '全部', todo: '待办', expired: '已过期', done: '已完成' };
   /* 排序方式：localStorage 持久化（ya-sort-by），置顶优先级始终最高 */
   var SORT_KEY = 'ya-sort-by';
   var SORT_VALUES = ['updated', 'created', 'title', 'custom']; /* custom：拖拽排序后写入 note.order */
@@ -2678,7 +2862,7 @@
   function dueText(note) {
     if (!note.dueAt) return '';
     var diff = note.dueAt - Date.now();
-    if (diff <= 0) return note.endAt ? '已过期' : '进行中';
+    if (diff <= 0) return isOverdue(note) ? '已过期' : '进行中';
     var oneMin = 60 * 1000, oneHour = 60 * oneMin, oneDay = 24 * oneHour;
     var d = new Date(note.dueAt);
     var hm = pad(d.getHours()) + ':' + pad(d.getMinutes());
@@ -2702,12 +2886,52 @@
       pad(d.getHours()) + ':' + pad(d.getMinutes());
   }
 
+  /* ---- 鼓励弹窗 + 撒花 ---- */
+  var CHEER_MSGS = [
+    '太棒了！又搞定一个', '保持节奏！', '干得漂亮', '效率满分',
+    '小目标达成！', '你真厉害', '又前进了一步', '完美！继续加油',
+    '不错不错', '一鼓作气！'
+  ];
+  var cheerTimer = null;
+
+  function showCheer() {
+    var msg = CHEER_MSGS[Math.floor(Math.random() * CHEER_MSGS.length)];
+    $('cheer-msg').textContent = msg;
+    $('cheer-mask').classList.add('show');
+    launchConfetti();
+    clearTimeout(cheerTimer);
+    cheerTimer = setTimeout(function () { $('cheer-mask').classList.remove('show'); }, 2000);
+  }
+
+  function launchConfetti() {
+    if (prefersReducedMotion()) return;
+    var layer = $('confetti-layer');
+    var colors = ['#E5484D','#F76B15','#FFC53D','#46A758','#3E63DD','#9F46D0','#F692CE'];
+    var items = [];
+    for (var i = 0; i < 24; i++) {
+      var c = document.createElement('div');
+      c.className = 'confetti';
+      c.style.left = (Math.random() * 100) + '%';
+      c.style.backgroundColor = colors[i % colors.length];
+      c.style.animationDuration = (1.2 + Math.random() * 0.6) + 's';
+      c.style.animationDelay = (Math.random() * 0.3) + 's';
+      c.style.transform = 'rotate(' + (Math.random() * 360) + 'deg)';
+      layer.appendChild(c);
+      items.push(c);
+    }
+    setTimeout(function () {
+      for (var j = 0; j < items.length; j++) items[j].remove();
+    }, 2200);
+  }
+
   // 切换待办完成状态（列表复选框与编辑页复选框共用）
   function toggleTodoDone(id) {
     var note = noteById(id);
     if (!note || !isTodo(note)) return;
-    note.doneAt = isDone(note) ? null : Date.now();
+    var wasDone = isDone(note);
+    note.doneAt = wasDone ? null : Date.now();
     note.updatedAt = Date.now();
+    if (!wasDone) showCheer(); // 刚完成：鼓励弹窗
     dbPut(note).catch(function () { /* 存储失败静默 */ });
     scheduleNoteNotification(note); // 完成 → 自动取消通知；取消完成 → 重新调度
     renderList();
@@ -3103,6 +3327,7 @@
     return notes.slice().filter(function (n) {
       if (n.deletedAt != null) return false; // 回收箱：正常列表不显示
       if (filter === 'todo') return isTodo(n); // 全部待办：进行中→已过期→已完成（已完成不隐藏、沉底）
+      if (filter === 'expired') return isTodo(n) && isOverdue(n); // 已过期：有截止时间且已过、未完成
       if (filter === 'done') return isTodo(n) && isDone(n);
       if (filter === 'star') return n.starred === true; // 收藏：只显示星标便签
       return true;
@@ -3118,7 +3343,7 @@
         if (b.dueAt != null) return 1;
         return b.updatedAt - a.updatedAt;
       }
-      if (ra === 1) return a.dueAt - b.dueAt; // 已过期：dueAt 升序（最久的最前）
+      if (ra === 1) return (a.dueAt || a.endAt || a.updatedAt) - (b.dueAt || b.endAt || b.updatedAt); // 已过期：dueAt 优先，无则 endAt，再无则 updatedAt（只设截止时间的待办 dueAt 为 null）
       if (ra === 3) return b.doneAt - a.doneAt; // 已完成：doneAt 倒序沉底
       return compareNotesBySort(a, b); // 普通区按当前排序方式
     });
@@ -3875,6 +4100,9 @@
       if (segFilter === 'todo') {
         emptyTitleEl.textContent = '没有待办事项';
         emptyHintEl.textContent = '点下方「待办」新建一个';
+      } else if (segFilter === 'expired') {
+        emptyTitleEl.textContent = '没有已过期的待办';
+        emptyHintEl.textContent = '过了截止时间的待办会出现在这里';
       } else if (segFilter === 'done') {
         emptyTitleEl.textContent = '还没有完成的待办';
         emptyHintEl.textContent = '去「待办」里完成一个试试';
@@ -4962,6 +5190,7 @@
   // 选图入口：读尺寸 → 过小(<100px)直接插入；否则进裁剪队列逐张裁剪
   function handleImageFiles(files) {
     if (!currentId || !files || !files.length) return;
+    var nid = currentId; // 捕获选图时的笔记：解码/裁剪期间用户可能已切换笔记
     Array.prototype.forEach.call(files, function (file) {
       if (!file || file.type.indexOf('image/') !== 0) return;
       if (file.size > 10 * 1024 * 1024) {
@@ -4969,10 +5198,11 @@
         return;
       }
       readImageElement(file).then(function (img) {
+        if (currentId !== nid) return; // 已切换笔记：放弃本次上传
         if (img.naturalWidth < 100 || img.naturalHeight < 100) {
           return insertImageBlob(file, file.type); // 小图：跳过裁剪直接插入原图
         }
-        cropQueue.push({ img: img, file: file, noteId: currentId });
+        cropQueue.push({ img: img, file: file, noteId: nid, url: img.src });
         if (!cropBusy) { cropBusy = true; cropSkipped = 0; armCropBusyTimer(); openCropUI(cropQueue[0]); }
       }).catch(function () {
         showUndoToast('图片加载失败');
@@ -5134,6 +5364,7 @@
         var img = document.createElement('img');
         img.src = url;
         img.alt = '便签图片';
+        img.dataset.imgId = id; // 查看器尺寸检查去重 key
 
         wrap.appendChild(img);
         stripEl.appendChild(wrap);
@@ -5446,11 +5677,11 @@
         clearTimeout(timer);
         var naturalW = img.naturalWidth, naturalH = img.naturalHeight;
         if (naturalW <= 1920 && naturalH <= 1920) {
-          URL.revokeObjectURL(blobUrl);
+          // 保留 blobUrl：裁剪界面 cropImgEl 要复用同一 URL 显示，过早 revoke 会空白/加载失败
           resolve(img);
           return;
         }
-        // 长边超 1920 → canvas 压缩到 1920，质量 0.85
+        // 长边超 1920 → canvas 压缩到 1920，质量 0.85；drawImage 已把位图拷进 canvas，原 URL 可安全释放
         var scale = 1920 / Math.max(naturalW, naturalH);
         var cw = Math.round(naturalW * scale);
         var ch = Math.round(naturalH * scale);
@@ -5463,7 +5694,7 @@
           var compUrl = URL.createObjectURL(blob);
           var compImg = new Image();
           compImg.onload = function () { resolve(compImg); };
-          compImg.onerror = function () { resolve(img); };
+          compImg.onerror = function () { URL.revokeObjectURL(compUrl); resolve(img); };
           compImg.src = compUrl;
         }, 'image/jpeg', 0.85);
       };
@@ -5544,6 +5775,7 @@
     cropEl.classList.remove('open');
     cropImgEl.removeAttribute('src');
     if (cropClipEl) cropClipEl.style.clipPath = ''; // 复位裁剪窗口，避免下次残留旧矩形
+    if (cropData && cropData.job && cropData.job.url) { URL.revokeObjectURL(cropData.job.url); cropData.job.url = null; }
     cropData = null;
     cropTouch = null;
     document.body.style.overflow = '';
@@ -5720,31 +5952,37 @@
     applyViewerTransform();
   }
 
-  var viewerChecked = {};      // blob src → 已做尺寸检查（会话级去重：同一 URL 只查一次）
+  var viewerChecked = {};      // imgId（无则 blob src）→ 已做尺寸检查（会话级去重：同一图只查一次）
   var pendingViewerUrl = null; // 兜底压缩产生的临时 objectURL，关闭查看器时回收
+  var viewerToken = 0;         // openViewer 令牌：异步压缩期间已关闭/重开则作废弹出
 
-  function openViewer(src) {
+  function openViewer(src, imgId) {
     if (!src) return;
     if (viewerEl.classList.contains('open') && viewerImgEl.getAttribute('src') === src) return; // 幂等：已开同图不重复
+    var myToken = ++viewerToken;
+    var checkedKey = imgId || src;
     // 兜底尺寸防护：blob URL 且本会话未查过 → 快速尺寸检查，长边 > 1920 先压缩再打开
     // （覆盖 hydrate 压缩尚未完成时点开大图的竞态；已压缩图查一次后置标，后续直接开）
-    if (src.indexOf('blob:') === 0 && !viewerChecked[src]) {
-      viewerChecked[src] = true;
+    if (src.indexOf('blob:') === 0 && !viewerChecked[checkedKey]) {
+      viewerChecked[checkedKey] = true;
       if (typeof createImageBitmap === 'function') {
         fetchBlobByUrl(src).then(function (blob) {
+          if (myToken !== viewerToken) return; // 期间已关闭/重开：丢弃
           if (!blob) { revealViewer(src); return; }
           return createImageBitmap(blob).then(function (bmp) {
+            if (myToken !== viewerToken) { if (bmp.close) bmp.close(); return; }
             var w = bmp.width, h = bmp.height;
             if (bmp.close) bmp.close();
             if (w <= 1920 && h <= 1920) { revealViewer(src); return; }
             showUndoToast('加载中…', 3000);
             return compressBlobToBlob(blob).then(function (newBlob) {
+              if (myToken !== viewerToken) return;
               if (!newBlob) { revealViewer(src); return; }
               pendingViewerUrl = URL.createObjectURL(newBlob); // 临时压缩图，仅本次查看
               revealViewer(pendingViewerUrl);
             });
           });
-        }).catch(function () { revealViewer(src); });
+        }).catch(function () { if (myToken === viewerToken) revealViewer(src); });
         return;
       }
       // 旧内核无 createImageBitmap：直接打开 + 短暂 loading 提示
@@ -5764,6 +6002,7 @@
   }
 
   function closeViewer() {
+    viewerToken++; // 作废在途的异步压缩回调，防止关闭后查看器又弹出
     resetViewerTransform(); // 关闭时彻底清理动画/手势状态，防止 vAnimating 卡死
     viewerEl.classList.remove('open');
     viewerImgEl.removeAttribute('src');
@@ -6032,6 +6271,58 @@
     if (e.target === $('about-mask')) $('about-mask').classList.remove('open');
   });
 
+  /* ============ 心情设置 ============ */
+  var MOODS = [
+    {e:'\u{1F60A}',n:'开心'}, {e:'\u{1F610}',n:'平静'}, {e:'\u{1F622}',n:'难过'},
+    {e:'\u{1F621}',n:'生气'}, {e:'\u{1F634}',n:'困倦'}, {e:'\u{1F914}',n:'思考'},
+    {e:'\u{1F389}',n:'兴奋'}, {e:'\u{1F4AA}',n:'加油'}, {e:'\u{1F60C}',n:'放松'},
+    {e:'\u{1F912}',n:'不适'}
+  ];
+  var MOOD_KEY = 'current_mood';
+  var moodMaskEl = $('mood-mask');
+  var moodGridEl = $('mood-grid');
+
+  function renderMoodBadge() {
+    var stored = '';
+    try { stored = localStorage.getItem(MOOD_KEY) || ''; } catch (e) {}
+    var badge = $('mood-badge');
+    if (badge) badge.textContent = stored;
+  }
+
+  function renderMoodGrid() {
+    var stored = '';
+    try { stored = localStorage.getItem(MOOD_KEY) || ''; } catch (e) {}
+    moodGridEl.innerHTML = '';
+    MOODS.forEach(function (m) {
+      var btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'mood-opt' + (m.e === stored ? ' on' : '');
+      btn.innerHTML = '<span class="mood-e">' + m.e + '</span><span>' + m.n + '</span>';
+      btn.addEventListener('click', function () {
+        try { localStorage.setItem(MOOD_KEY, m.e); } catch (e) {}
+        renderMoodBadge();
+        moodMaskEl.classList.remove('show');
+        showUndoToast('心情已更新');
+      });
+      moodGridEl.appendChild(btn);
+    });
+  }
+
+  function openMood() {
+    renderMoodGrid();
+    moodMaskEl.classList.add('show');
+  }
+
+  $('menu-mood').addEventListener('click', function () { closeMenu(); openMood(); });
+  $('mood-close').addEventListener('click', function () { moodMaskEl.classList.remove('show'); });
+  moodMaskEl.addEventListener('click', function (e) {
+    if (e.target === moodMaskEl) moodMaskEl.classList.remove('show');
+  });
+  var moodBadgeEl = $('mood-badge');
+  if (moodBadgeEl) moodBadgeEl.addEventListener('click', openMood);
+
+  renderMoodBadge(); // 启动时渲染
+
   /* ============ 自动清理设置：⋯ 菜单入口 + 弹窗 + 启动检查 ============ */
   var CLEAN_DONE_KEY = 'auto_clean_done';
   var CLEAN_EXPIRED_KEY = 'auto_clean_expired';
@@ -6084,6 +6375,252 @@
   });
   cleanDoneEl.addEventListener('change', function () { setCleanPref(CLEAN_DONE_KEY, cleanDoneEl.checked); });
   cleanExpiredEl.addEventListener('change', function () { setCleanPref(CLEAN_EXPIRED_KEY, cleanExpiredEl.checked); });
+
+  /* ============ 每日好句 ============ */
+  var dailyQuoteModal = $('daily-quote-modal');
+  var dailyQuoteList = $('daily-quote-list');
+  var dailyQuotesData = null;
+  var dailyQuoteIds = [];
+  var dailyQuoteDate = '';
+
+  // 加载好句数据
+  function loadDailyQuotes() {
+    return fetch('assets/daily-quotes.json')
+      .then(function (r) { return r.json(); })
+      .then(function (data) { dailyQuotesData = data.quotes || []; })
+      .catch(function (e) { console.warn('加载好句失败:', e); dailyQuotesData = []; });
+  }
+
+  // 获取今日好句 ids（localStorage 记录）
+  function getDailyQuoteIds() {
+    try {
+      var stored = localStorage.getItem('daily_quote_ids');
+      var date = localStorage.getItem('daily_quote_date');
+      var today = new Date().toISOString().split('T')[0];
+      if (stored && date === today) {
+        return JSON.parse(stored);
+      }
+    } catch (e) {}
+    return [];
+  }
+
+  // 设置今日好句 ids
+  function setDailyQuoteIds(ids) {
+    try {
+      localStorage.setItem('daily_quote_ids', JSON.stringify(ids));
+      localStorage.setItem('daily_quote_date', new Date().toISOString().split('T')[0]);
+    } catch (e) {}
+  }
+
+  // 随机抽取指定数量的 ids
+  function pickRandomQuotes(count) {
+    if (!dailyQuotesData || dailyQuotesData.length === 0) return [];
+    var ids = dailyQuotesData.map(function (q) { return q.id; });
+    // Fisher-Yates 洗牌
+    for (var i = ids.length - 1; i > 0; i--) {
+      var j = Math.floor(Math.random() * (i + 1));
+      var temp = ids[i]; ids[i] = ids[j]; ids[j] = temp;
+    }
+    return ids.slice(0, count);
+  }
+
+  // 渲染好句列表
+  function renderDailyQuoteList(ids) {
+    dailyQuoteList.innerHTML = '';
+    if (!dailyQuotesData) {
+      dailyQuoteList.innerHTML = '<p style="padding:20px;text-align:center;color:var(--text-secondary)">加载中...</p>';
+      return;
+    }
+    ids.forEach(function (id) {
+      var quote = null;
+      for (var i = 0; i < dailyQuotesData.length; i++) {
+        if (dailyQuotesData[i].id === id) { quote = dailyQuotesData[i]; break; }
+      }
+      if (!quote) return;
+      var item = document.createElement('div');
+      item.className = 'daily-quote-card-item';
+      item.innerHTML = '<div class="daily-quote-sentence">' + quote.sentence + '</div>' +
+        '<div><span class="daily-quote-source">' + quote.source + '</span>' +
+        '<span class="daily-quote-category">' + quote.category + '</span></div>' +
+        '<div class="daily-quote-actions"><button class="daily-quote-copy" data-id="' + id + '">复制</button></div>';
+      dailyQuoteList.appendChild(item);
+    });
+    // 绑定复制事件
+    dailyQuoteList.querySelectorAll('.daily-quote-copy').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        var id = btn.getAttribute('data-id');
+        var quote = null;
+        for (var i = 0; i < dailyQuotesData.length; i++) {
+          if (dailyQuotesData[i].id === id) { quote = dailyQuotesData[i]; break; }
+        }
+        if (quote) {
+          navigator.clipboard.writeText(quote.sentence + ' —— ' + quote.source)
+            .then(function () { showUndoToast('已复制'); })
+            .catch(function () { showUndoToast('复制失败'); });
+        }
+      });
+    });
+  }
+
+  // 打开好句模态框
+  function showDailyQuoteModal() {
+    loadDailyQuotes().then(function () {
+      var ids = getDailyQuoteIds();
+      if (ids.length < 10) {
+        ids = pickRandomQuotes(10);
+        setDailyQuoteIds(ids);
+      }
+      renderDailyQuoteList(ids);
+      dailyQuoteModal.classList.add('open');
+    });
+  }
+
+  $('menu-daily-quote').addEventListener('click', function () {
+    closeMenu();
+    showDailyQuoteModal();
+  });
+  $('daily-quote-close').addEventListener('click', function () {
+    dailyQuoteModal.classList.remove('open');
+  });
+  $('daily-quote-refresh').addEventListener('click', function () {
+    var ids = pickRandomQuotes(10);
+    setDailyQuoteIds(ids);
+    renderDailyQuoteList(ids);
+    showUndoToast('已刷新');
+  });
+  dailyQuoteModal.addEventListener('click', function (e) {
+    if (e.target === dailyQuoteModal) dailyQuoteModal.classList.remove('open');
+  });
+
+  /* ============ 时政分析 ============ */
+  var politicsModal = $('politics-modal');
+  var politicsContent = $('politics-content');
+  var politicsData = null;
+
+  // 加载时政数据
+  function loadPoliticsData() {
+    return fetch('assets/politics-practice.json')
+      .then(function (r) { return r.json(); })
+      .then(function (data) { politicsData = data.practices || []; })
+      .catch(function (e) { console.warn('加载时政数据失败:', e); politicsData = []; });
+  }
+
+  // 随机选取一个议题
+  function pickRandomPractice() {
+    if (!politicsData || politicsData.length === 0) return null;
+    var idx = Math.floor(Math.random() * politicsData.length);
+    return politicsData[idx];
+  }
+
+  // 渲染时政内容
+  function renderPoliticsContent(practice) {
+    politicsContent.innerHTML = '';
+    if (!practice) {
+      politicsContent.innerHTML = '<p style="padding:20px;text-align:center;color:var(--text-secondary)">加载中...</p>';
+      return;
+    }
+    
+    // 标题
+    var titleSection = document.createElement('div');
+    titleSection.className = 'politics-section';
+    titleSection.innerHTML = '<h4 style="margin:0 0 12px 0;font-size:16px;font-weight:600;color:var(--text-primary)">' + practice.title + '</h4>';
+    politicsContent.appendChild(titleSection);
+    
+    // 材料
+    var materialSection = document.createElement('div');
+    materialSection.className = 'politics-section';
+    materialSection.innerHTML = '<div class="politics-section-title">材料分析</div>';
+    practice.materials.forEach(function (m, i) {
+      var mat = document.createElement('div');
+      mat.className = 'politics-material';
+      mat.innerHTML = '<div class="politics-material-label">材料' + (i + 1) + '</div>' + m;
+      materialSection.appendChild(mat);
+    });
+    if (practice.combo_materials) {
+      var combo = document.createElement('div');
+      combo.className = 'politics-material';
+      combo.style.background = 'var(--primary-soft)';
+      combo.innerHTML = '<div class="politics-material-label">组合题</div>' + practice.combo_materials;
+      materialSection.appendChild(combo);
+    }
+    politicsContent.appendChild(materialSection);
+    
+    // 知识点
+    var kpSection = document.createElement('div');
+    kpSection.className = 'politics-section';
+    kpSection.innerHTML = '<div class="politics-section-title">相关知识点</div>';
+    var kpDiv = document.createElement('div');
+    kpDiv.className = 'politics-kp';
+    practice.knowledge_points.forEach(function (kp) {
+      var tag = document.createElement('span');
+      tag.className = 'politics-kp-tag';
+      tag.textContent = kp;
+      kpDiv.appendChild(tag);
+    });
+    kpSection.appendChild(kpDiv);
+    politicsContent.appendChild(kpSection);
+    
+    // 答案框架
+    var answerSection = document.createElement('div');
+    answerSection.className = 'politics-section';
+    answerSection.innerHTML = '<div class="politics-section-title">作答框架</div>';
+    var answerDiv = document.createElement('div');
+    answerDiv.className = 'politics-answer';
+    
+    // 立意
+    var intentItem = document.createElement('div');
+    intentItem.className = 'politics-answer-item';
+    intentItem.innerHTML = '<div class="politics-answer-label">🎯 立意</div>' + practice.answer_framework.立意;
+    answerDiv.appendChild(intentItem);
+    
+    // 论据
+    if (practice.answer_framework.论据) {
+      var evidenceItem = document.createElement('div');
+      evidenceItem.className = 'politics-answer-item';
+      evidenceItem.innerHTML = '<div class="politics-answer-label">📌 论据</div>';
+      practice.answer_framework.论据.forEach(function (ev) {
+        var p = document.createElement('p');
+        p.style.margin = '4px 0';
+        p.textContent = ev;
+        evidenceItem.appendChild(p);
+      });
+      answerDiv.appendChild(evidenceItem);
+    }
+    
+    // 金句
+    var quoteItem = document.createElement('div');
+    quoteItem.className = 'politics-answer-item';
+    quoteItem.innerHTML = '<div class="politics-answer-label">✨ 金句</div>' + practice.answer_framework.金句;
+    answerDiv.appendChild(quoteItem);
+    
+    answerSection.appendChild(answerDiv);
+    politicsContent.appendChild(answerSection);
+  }
+
+  // 打开时政模态框
+  function showPoliticsModal() {
+    loadPoliticsData().then(function () {
+      var practice = pickRandomPractice();
+      renderPoliticsContent(practice);
+      politicsModal.classList.add('open');
+    });
+  }
+
+  $('menu-politics').addEventListener('click', function () {
+    closeMenu();
+    showPoliticsModal();
+  });
+  $('politics-close').addEventListener('click', function () {
+    politicsModal.classList.remove('open');
+  });
+  $('politics-refresh').addEventListener('click', function () {
+    var practice = pickRandomPractice();
+    renderPoliticsContent(practice);
+    showUndoToast('已换题');
+  });
+  politicsModal.addEventListener('click', function (e) {
+    if (e.target === politicsModal) politicsModal.classList.remove('open');
+  });
 
   /* ============ 回收箱（⋯ 菜单进入；软删除便签保留 3 天，超期在启动时清理） ============ */
   var binMaskEl = $('bin-mask');
@@ -6281,11 +6818,11 @@
     var img = imgFromEvent(e, editorEl);
     if (!img) return;
     if (longPressFired) { longPressFired = false; return; }
-    openViewer(img.src);
+    openViewer(img.src, img.dataset.imgId || '');
   });
   stripEl.addEventListener('click', function (e) {
     var img = imgFromEvent(e, stripEl);
-    if (img) openViewer(img.src);
+    if (img) openViewer(img.src, img.dataset.imgId || '');
   });
 
   // 长按（500ms）正文图片 → 确认删除；桌面端右键等价
@@ -7252,6 +7789,17 @@
     // 裁剪界面打开时 → 取消裁剪（不是返回列表）
     if (document.getElementById('crop-overlay').classList.contains('open')) {
       document.getElementById('crop-cancel').click();
+      return;
+    }
+    // 图片查看器打开时 → 关闭查看器（不返回列表）
+    if (document.getElementById('img-viewer').classList.contains('open')) {
+      document.getElementById('viewer-close').click();
+      return;
+    }
+    // 图片长按菜单打开时 → 关闭菜单
+    if (document.getElementById('img-menu').classList.contains('open')) {
+      var sc = document.querySelector('#img-menu .sheet-cancel');
+      if (sc) sc.click();
       return;
     }
     // 编辑页 → 返回列表（复用 #back-btn 的现有处理 backToList）
