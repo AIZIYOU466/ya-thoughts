@@ -51,11 +51,22 @@ jobs:
         run: |
           cd android
           chmod +x gradlew
-          ./gradlew assembleRelease \
+          set -o pipefail
+          ./gradlew assembleRelease --stacktrace \
             -Pandroid.injected.signing.store.file=$(pwd)/release.keystore \
             -Pandroid.injected.signing.store.password="$KEYSTORE_PASSWORD" \
             -Pandroid.injected.signing.key.alias="$KEY_ALIAS" \
-            -Pandroid.injected.signing.key.password="$KEY_PASSWORD"
+            -Pandroid.injected.signing.key.password="$KEY_PASSWORD" \
+            2>&1 | tee build-apk.log
+
+      # 构建日志留档：失败时能从 artifact 看到 Gradle 报什么，不用管理员权限翻 Actions 日志
+      - name: Upload build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log
+          path: android/build-apk.log
+          if-no-files-found: ignore
 
       - name: Cleanup keystore
         if: always()
