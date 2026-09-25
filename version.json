@@ -1,11 +1,11 @@
 {
-  "version": "1.7.7",
-  "notes": "深色模式文字亮度提升：主/次/辅文字及输入框、图标按钮等10项颜色变量全面提亮，硬编码色值统一改用CSS变量;\n撒花动画升级：CSS矩形下落→Canvas 2D物理粒子系统，100粒子从中心爆发，含重力/阻力/风向/旋转，5种形状8色调色板;\n顶部标题替换：纯文字「便签」→ yathoughts品牌SVG字标，Y白渐变+a金黄渐变+thoughts主色蓝，底部水波纹装饰呼应图标",
-  "apkUrl": "https://gh-proxy.com/https://github.com/AIZIYOU466/ya-thoughts/releases/download/v1.7.7/app-release.apk",
+  "version": "1.7.8",
+  "notes": "性能优化 v1.7.8:\n启动加速：非关键任务（通知同步/清理/备份/更新检查）延迟到空闲时执行，不阻塞首屏；通知调度从逐条原生调用改为批量提交，100条便签从200次IPC降为2次；\n退出优化：beforeunload 改为轻量DB写入（跳过通知同步和图片同步），新增 visibilitychange 切后台立即保存，Android onPause 直接 evalJs 触发落盘，不等待 beforeunload；\n渲染优化：backdrop-filter 模糊半径从24px降至12px（GPU采样量降4倍）；禁用系统窗口转场动画消除退出卡顿；禁用启动窗口预览图。",
+  "apkUrl": "https://gh-proxy.com/https://github.com/AIZIYOU466/ya-thoughts/releases/download/v1.7.8/app-release.apk",
   "apkUrls": [
-    "https://gh-proxy.com/https://github.com/AIZIYOU466/ya-thoughts/releases/download/v1.7.7/app-release.apk",
-    "https://ghfast.top/https://github.com/AIZIYOU466/ya-thoughts/releases/download/v1.7.7/app-release.apk",
-    "https://github.com/AIZIYOU466/ya-thoughts/releases/download/v1.7.7/app-release.apk"
+    "https://gh-proxy.com/https://github.com/AIZIYOU466/ya-thoughts/releases/download/v1.7.8/app-release.apk",
+    "https://ghfast.top/https://github.com/AIZIYOU466/ya-thoughts/releases/download/v1.7.8/app-release.apk",
+    "https://github.com/AIZIYOU466/ya-thoughts/releases/download/v1.7.8/app-release.apk"
   ],
-  "releaseUrl": "https://github.com/AIZIYOU466/ya-thoughts/releases/tag/v1.7.7"
+  "releaseUrl": "https://github.com/AIZIYOU466/ya-thoughts/releases/tag/v1.7.8"
 }

@@ -54,7 +54,7 @@
     /* 液态玻璃 token（亮色）：半透明白 + 冷色渐变底 + 浅蓝阴影 */
     --page-grad-a: #EAF2FB;
     --page-grad-b: #D8E8F5;
-    --glass-blur: blur(24px) saturate(180%);
+    --glass-blur: blur(12px) saturate(160%);
     --glass-bg: rgba(255, 255, 255, 0.55);
     --glass-bg-strong: rgba(255, 255, 255, 0.78);
     --glass-border: rgba(255, 255, 255, 0.6);
@@ -7076,8 +7076,28 @@
     document.execCommand('insertText', false, text);
   });
 
+  // 退出优化：beforeunload 只做轻量 DB 写入，跳过通知同步和图片同步（非退出必需）
+  // 通知同步和图片同步在后台运行，不阻塞退出路径。
+  function commitSaveLight() {
+    var nid = currentId || pendingSaveId;
+    var note = noteById(nid);
+    if (!note) return;
+    // 仅写 DB，跳过 scheduleNoteNotification / syncImagesStars / invalidateStarFlagCache
+    dbPut(note).catch(function () { /* 静默 */ });
+  }
+
+  // 暴露给 Android onPause 调用（evalJs），确保手势退出时数据落盘
+  window._commitSaveLight = commitSaveLight;
+
   window.addEventListener('beforeunload', function () {
-    if (currentId || pendingSaveId) commitSave();
+    if (currentId || pendingSaveId) commitSaveLight();
+  });
+
+  // 手势退出 / 切后台：立即异步保存，不等 beforeunload（Android 可能直接杀进程）
+  document.addEventListener('visibilitychange', function () {
+    if (document.hidden && (currentId || pendingSaveId)) {
+      commitSaveLight();
+    }
   });
 
   // 应用内提醒：启动时检查已到期未完成的待办，alert 提示（最多列 5 条）
@@ -7219,12 +7239,58 @@
     }).catch(function () { /* 静默 */ });
   }
 
-  // 启动恢复：遍历全部便签逐条对齐通知（覆盖重启丢通知、导入数据等场景）
+  // 启动恢复：遍历全部便签批量对齐通知（覆盖重启丢通知、导入数据等场景）
+  // 性能优化：不再逐条调 ln.schedule，而是构建所有通知对象后一次批量提交，
+  // 避免 N 条便签产生 2N 次原生 IPC 调用（主要卡顿根因）。
   function resyncAllTodoNotifications() {
-    if (!getLocalNotifications()) return;
+    var ln = getLocalNotifications();
+    if (!ln) return;
+    var toCancel = [];
+    var toSchedule = [];
+    var now = Date.now();
     notes.forEach(function (n) {
-      if (n.deletedAt == null) scheduleNoteNotification(n); // 回收箱里的不重新调度
+      if (n.deletedAt != null) return; // 回收箱里的不重新调度
+      if (!isTodo(n) || !n.dueAt) { toCancel.push(hashNoteId(n.id)); toCancel.push(hashNoteId(n.id) + 1); return; }
+      if (isDone(n) || n.dueAt <= now) {
+        toCancel.push(hashNoteId(n.id));
+      } else {
+        toSchedule.push({
+          id: hashNoteId(n.id), channelId: 'todo-reminders-v2',
+          title: '待办提醒', body: titleOf(n).slice(0, 50),
+          schedule: { at: new Date(n.dueAt) }, extra: { noteId: n.id },
+          sound: 'default', smallIcon: 'ic_launcher', iconColor: '#2E6BE6',
+          ongoing: false, autoCancel: true, allowWhileIdle: true
+        });
+      }
+      // 待办确认通知（id = hash + 1）：仅无 endAt 且未问满 3 次的未完成待办
+      var cnt = n.overduePromptCount || 0;
+      if (!isDone(n) && n.dueAt > now && !n.endAt && cnt < 3) {
+        var at = cnt > 0 && n.overdueLastPromptAt
+          ? n.overdueLastPromptAt + 24 * 60 * 60 * 1000
+          : n.dueAt + 2 * 60 * 60 * 1000;
+        if (at > now) {
+          toSchedule.push({
+            id: hashNoteId(n.id) + 1, channelId: 'todo-reminders-v2',
+            title: '待办确认', body: '「' + titleOf(n).slice(0, 30) + '」已进行 2 小时，点开确认状态',
+            schedule: { at: new Date(at) }, extra: { noteId: n.id },
+            sound: 'default', smallIcon: 'ic_launcher', iconColor: '#2E6BE6',
+            ongoing: false, autoCancel: true, allowWhileIdle: true
+          });
+        } else {
+          toCancel.push(hashNoteId(n.id) + 1);
+        }
+      } else {
+        toCancel.push(hashNoteId(n.id) + 1);
+      }
     });
+    if (toCancel.length) {
+      var cancelNotifs = [];
+      for (var i = 0; i < toCancel.length; i++) cancelNotifs.push({ id: toCancel[i] });
+      ln.cancel({ notifications: cancelNotifs }).catch(function () {});
+    }
+    if (toSchedule.length) {
+      ln.schedule({ notifications: toSchedule }).catch(function () {});
+    }
   }
 
   // 待办确认弹窗（点击"待办确认"通知进入编辑页后触发）：无 endAt 的待办 2h/24h 询问
@@ -7313,7 +7379,7 @@
 
   /* ---------- 应用内更新（App 内下载 APK + 一键安装；浏览器静默跳过） ---------- */
   var UPDATE_MODAL = $('update-modal');
-  var FALLBACK_VERSION = '1.7.6'; // @capacitor/app 取不到 versionName 时的兜底值
+  var FALLBACK_VERSION = '1.7.8'; // @capacitor/app 取不到 versionName 时的兜底值
   var UPDATE_URLS = [
     'https://cdn.jsdelivr.net/gh/AIZIYOU466/ya-thoughts@main/version.json',
     'https://gh-proxy.com/https://raw.githubusercontent.com/AIZIYOU466/ya-thoughts/main/version.json',
@@ -7679,31 +7745,49 @@
     });
   }
 
-  // 启动：打开数据库 → 迁移旧 localStorage 数据 → 加载 → 首次渲染 → 到期提醒 → 恢复系统通知
+  // 启动：打开数据库 → 迁移旧 localStorage 数据 → 加载 → 首次渲染
+  // 性能优化：将非 UI 关键任务（通知同步/清理/备份/更新检查）推迟到空闲时执行，
+  // 避免启动路径阻塞首屏渲染。关键路径：DB→数据→渲染→通知权限。
   openDB()
     .then(migrateLegacy)
     .then(dbGetAll)
     .then(function (arr) {
       notes = arr;
-      backfillOrder(); // 无 order 字段的旧便签按 createdAt 升序补齐（初始顺序按创建时间）
+      backfillOrder(); // 无 order 字段的旧便签按 createdAt 升序补齐
       updateSortMenu(); // 应用持久化的排序方式后再首次渲染
       renderList();
       runAutoClean(); // 启动时检查一次（内部视情况再 renderList）
-      purgeExpiredBinItems(); // 回收箱超 3 天条目物理清理（静默）
-      maybeAutoBackup(); // 每天自动备份到 Documents（距上次超 24h 才写）
-      checkDueReminders();
-      requestNotificationPermission(); // 启动时请求通知权限（Android 13+ 弹窗；浏览器静默跳过）
-      ensureNotificationChannel();     // 创建通知渠道（heads-up + 声音 + 振动）
-      checkExactAlarmSetting();        // 启动时检查精确闹钟权限（Android 专用，未授权仅告警不打扰）
-      resyncAllTodoNotifications();    // 重启后恢复所有待办的系统通知
-      registerNotificationTap();       // 点击通知 → 打开对应便签
-      setTimeout(showNotifyGuide, 2000); // 2 秒后弹自启动/电池白名单引导（已确认则内部跳过）
-      if (window.Capacitor) setTimeout(checkForUpdate, 2000); // 应用内更新检查（2 秒后；浏览器跳过）
+      checkDueReminders(); // 到期提醒弹窗
+      // 通知权限与渠道（关键：缺了通知不响）
+      requestNotificationPermission();
+      ensureNotificationChannel();
+      registerNotificationTap();
+      // 非关键任务延迟到空闲时执行
+      deferNonCriticalTasks();
     })
     .catch(function () {
       // 数据库打不开（极端隐私模式等）时显示空列表
       renderList();
     });
+
+  // 将非 UI 关键任务推迟到浏览器空闲时执行，不阻塞首屏
+  // 优先级：通知恢复 > 清理 > 备份 > 权限检查 > 更新检查 > 引导弹窗
+  function deferNonCriticalTasks() {
+    var schedule = window.requestIdleCallback
+      ? function (fn) { return window.requestIdleCallback(fn, { timeout: 3000 }); }
+      : function (fn) { return setTimeout(fn, 150); };
+    // 通知同步（遍历全量便签，原生调用最多）——最大瓶颈，优先但可延迟
+    schedule(function () {
+      resyncAllTodoNotifications();
+      schedule(function () {
+        purgeExpiredBinItems(); // 回收箱超 3 天条目物理清理
+        maybeAutoBackup();      // 每天自动备份
+        checkExactAlarmSetting();
+      });
+    });
+    setTimeout(showNotifyGuide, 2500);
+    if (window.Capacitor) setTimeout(checkForUpdate, 3000);
+  }
 
 })();
 

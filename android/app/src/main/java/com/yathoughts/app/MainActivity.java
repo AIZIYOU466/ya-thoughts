@@ -30,6 +30,18 @@ public class MainActivity extends BridgeActivity {
         makeEdgeToEdge();
     }
 
+    // 手势退出 / 切后台：JS 层 visibilitychange 已覆盖，此处为额外保险
+    // 直接 evalJs 触发 commitSaveLight，确保数据在进程被杀前落盘
+    @Override
+    public void onPause() {
+        super.onPause();
+        try {
+            getBridge().evalJs(
+                "if(window._commitSaveLight)window._commitSaveLight()"
+            );
+        } catch (Exception e) { /* Bridge 已销毁则忽略 */ }
+    }
+
     /**
      * 全屏铺满，不留顶部/底部空带。
      *

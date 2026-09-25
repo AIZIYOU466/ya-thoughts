@@ -12,6 +12,11 @@
     <style name="AppTheme.NoActionBar" parent="Theme.AppCompat.DayNight.NoActionBar">
         <item name="windowActionBar">false</item>
         <item name="windowNoTitle">true</item>
+        <!-- 禁用系统默认窗口转场动画：手势退出时无滑动/缩放动画，直接消失，
+             消除「滑动中 WebView 还在重绘 backdrop-filter 导致卡顿」的竞态。 -->
+        <item name="android:windowAnimationStyle">@null</item>
+        <!-- 窗口背景设为透明，避免退出动画期间露出白屏底色 -->
+        <item name="android:windowBackground">@null</item>
         <!-- ⚠️ 不要把 windowTranslucentStatus / cutout / 窗口底色 写在这里：
              BridgeActivity.onCreate 会用库自带的 AppTheme_NoActionBar 覆盖掉本模块主题，
              这些配置写了也不生效。全屏逻辑在 MainActivity#makeEdgeToEdge 里用代码设置。 -->
