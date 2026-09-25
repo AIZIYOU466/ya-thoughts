@@ -36,7 +36,7 @@ public class MainActivity extends BridgeActivity {
     public void onPause() {
         super.onPause();
         try {
-            getBridge().evalJs(
+            bridge.evalJs(
                 "if(window._commitSaveLight)window._commitSaveLight()"
             );
         } catch (Exception e) { /* Bridge 已销毁则忽略 */ }
