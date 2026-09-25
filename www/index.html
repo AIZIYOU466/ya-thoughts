@@ -62,6 +62,7 @@
     --glass-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.7);
     --glass-card-bg: rgba(255, 255, 255, 0.72); /* 卡片：不模糊，仅半透明白 + 边框 + 高光 */
     --time-sub: #8A8F99;   /* 卡片时间小字（任务5） */
+    --logo-rest-color: #2E6BE6; /* yathoughts logo 文字色 */
     --todo-accent: #2BA88E; /* 待办青绿（任务4） */
   }
   /* 深色变量：由系统偏好驱动（已弃用手动切换，localStorage/data-theme 全部移除） */
@@ -70,9 +71,9 @@
       --bg-page: #0F1115;
       --bg-card: #1A1D21;
       --bg-toolbar: rgba(26, 29, 33, 0.92);
-      --text-primary: #E8EAED;
-      --text-secondary: #9AA0A6;
-      --text-tertiary: #6E747D;
+      --text-primary: #F0F2F5;
+      --text-secondary: #B0B4BB;
+      --text-tertiary: #8A8F99;
       --divider: #22262D;
       --primary: #2E6BE6;
       --primary-soft: #16233D;
@@ -87,23 +88,23 @@
       --shadow-card: 0 2px 8px rgba(0, 0, 0, 0.4);
       --shadow-pop: 0 8px 32px rgba(0, 0, 0, 0.5);
       --card-border: 1px solid rgba(255, 255, 255, 0.06);
-      --time-muted: #6E747D;
+      --time-muted: #8A8F99;
       --img-btn-bg: #252932;
       --img-btn-text: #C8CDD5;
-      --count-color: #6E747D;
-      --sel-count-color: #9AA0A6;
+      --count-color: #8A8F99;
+      --sel-count-color: #B0B4BB;
       /* 组件级语义颜色暗色分支（与 :root 同名 token 一一对应） */
       --input-bg: #252932;
       --input-focus-bg: #252932;
-      --input-placeholder: #6B7280;
-      --input-clear-color: #6B7280;
+      --input-placeholder: #8A8F99;
+      --input-clear-color: #8A8F99;
       --input-clear-bg: rgba(255, 255, 255, 0.08);
       --input-clear-bg-active: rgba(255, 255, 255, 0.08);
-      --icon-btn-color: #8A8F99;
+      --icon-btn-color: #A8ADB7;
       --icon-btn-bg: #252932;
       --icon-btn-bg-active: #30363F;
       --mark-bg: rgba(255, 243, 176, 0.28);
-      --pin-flag-color: #9AA0A6;
+      --pin-flag-color: #B0B4BB;
       /* 液态玻璃 token（深色）：半透明深灰 + 更深蓝渐变底 + 淡蓝内高光 */
       --page-grad-a: #14171F;
       --page-grad-b: #1A2030;
@@ -113,7 +114,8 @@
       --glass-shadow: 0 8px 32px rgba(0, 0, 0, 0.45);
       --glass-highlight: inset 0 1px 0 rgba(180, 200, 240, 0.12);
       --glass-card-bg: rgba(34, 38, 48, 0.72);
-      --time-sub: #9AA0A6;
+      --time-sub: #B0B4BB;
+      --logo-rest-color: #5B95F0;
       --todo-accent: #2BA88E;
     }
   }
@@ -263,7 +265,7 @@
   }
   /* 返回列表滑出时临时关闭顶栏模糊：避免与编辑页 transform 合成时的闪白（约束3） */
   #list-header.freeze-blur { -webkit-backdrop-filter: none; backdrop-filter: none; }
-  #list-header h1 { grid-column: 2; font-size: 17px; font-weight: 600; text-align: center; }
+  #list-header h1 { grid-column: 2; font-size: 17px; font-weight: 600; text-align: center; line-height: 1; }
   #list-header .count { display: none; } /* 计数已移到列表第一行 #note-count-bar */
 
   /* 顶栏图标按钮：统一 44×44 点击区 / 20×20 图标居中 / 按钮间距 4px。
@@ -394,7 +396,7 @@
     align-self: center;
   }
   #search-wrap:focus-within { background: var(--input-focus-bg); border-color: var(--primary); }
-  #search-icon { flex: 0 0 auto; color: #A8ADB7; }
+  #search-icon { flex: 0 0 auto; color: var(--text-tertiary); }
   #search-input {
     flex: 1;
     min-width: 0;
@@ -406,7 +408,7 @@
     font-size: 14px;
     color: var(--text-primary);
   }
-  #search-input::placeholder { color: #A8ADB7; }
+  #search-input::placeholder { color: var(--input-placeholder); }
   #search-input::-webkit-search-cancel-button { -webkit-appearance: none; appearance: none; } /* 用自定义 ×，隐藏原生清除按钮 */
   #search-clear {
     flex: 0 0 auto;
@@ -434,7 +436,7 @@
     padding: 80px 20px 0;
     text-align: center;
     font-size: 14px;
-    color: #8A8F99;
+    color: var(--text-secondary);
   }
 
   /* 列表滚动视口：裁切边界 + 弹性拉伸的可见范围；滚动由 JS 用 transform 驱动（见手势层） */
@@ -1348,7 +1350,7 @@
   #fs-pop .fs-opt.active { background: var(--primary); color: #fff; }
 
   /* 编辑器里手动高亮的颜色（搜索页 mark 是另一个作用域，互不影响） */
-  #editor mark { background: #FFF3B0; color: inherit; border-radius: 2px; }
+  #editor mark { background: var(--mark-bg); color: inherit; border-radius: 2px; }
   /* 列表卡片右上角“含重点图片”星标 */
   .note-item .star-flag {
     position: absolute;
@@ -1428,7 +1430,7 @@
   /* 编辑页字数统计：与图片按钮同行，靠右显示 */
   #word-count {
     font-size: 12px;
-    color: #A8ADB7;
+    color: var(--text-tertiary);
     padding-right: 8px;
     font-variant-numeric: tabular-nums; /* 数字宽度一致，防跳动 */
   }
@@ -1869,7 +1871,7 @@
   }
   .update-actions { margin-top: 18px; display: flex; gap: 12px; justify-content: flex-end; }
   #update-later {
-    font-size: 15px; color: #6B7280;
+    font-size: 15px; color: var(--text-secondary);
     padding: 9px 6px; min-height: 40px;
   }
   #update-download {
@@ -1940,7 +1942,7 @@
   }
   #cheer-mask.show { opacity: 1; pointer-events: auto; }
   #cheer-card {
-    background: var(--card-bg, #fff); border-radius: 20px;
+    background: var(--bg-card); border-radius: 20px;
     padding: 32px 40px 28px; text-align: center;
     box-shadow: 0 8px 32px rgba(0,0,0,0.18);
     transform: scale(0.7); transition: transform 0.25s cubic-bezier(0.34,1.56,0.64,1);
@@ -1949,19 +1951,9 @@
   #cheer-mask.show #cheer-card { transform: scale(1); }
   #cheer-emoji { font-size: 48px; line-height: 1; margin-bottom: 12px; }
   #cheer-msg { font-size: 17px; font-weight: 600; color: var(--text-primary, #1a1a1a); margin: 0; line-height: 1.5; }
-  #confetti-layer {
+  #confetti-canvas {
     position: fixed; inset: 0; z-index: 10001;
     pointer-events: none; overflow: hidden;
-  }
-  .confetti {
-    position: absolute; top: -10px;
-    width: 8px; height: 14px;
-    border-radius: 2px;
-    animation: confetti-fall 1.5s ease-out forwards;
-  }
-  @keyframes confetti-fall {
-    0% { transform: translateY(0) rotate(0deg); opacity: 1; }
-    100% { transform: translateY(100vh) rotate(720deg); opacity: 0; }
   }
 
   /* ---- 心情设置 ---- */
@@ -1978,7 +1970,7 @@
   }
   #mood-mask.show { opacity: 1; pointer-events: auto; }
   #mood-card {
-    background: var(--card-bg, #fff); border-radius: 16px;
+    background: var(--bg-card); border-radius: 16px;
     padding: 28px 24px 20px; text-align: center; max-width: 320px; width: 90%;
     box-shadow: 0 8px 32px rgba(0,0,0,0.18);
   }
@@ -2028,7 +2020,23 @@
     <span id="note-count" aria-live="polite"></span>
   </div>
   <header id="list-header">
-    <h1>便签<span id="mood-badge"></span></h1>
+    <h1>
+      <svg viewBox="0 0 260 44" height="26" style="display:inline-block;vertical-align:middle" aria-label="yathoughts">
+        <defs>
+          <linearGradient id="lgY" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stop-color="#FFFFFF"/><stop offset="1" stop-color="#E0EEFF"/>
+          </linearGradient>
+          <linearGradient id="lgA" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stop-color="#FFE599"/><stop offset="1" stop-color="#FFC93D"/>
+          </linearGradient>
+        </defs>
+        <text x="130" y="28" text-anchor="middle" font-family="-apple-system,'Helvetica Neue',sans-serif" font-weight="700" font-size="18" letter-spacing="0.5">
+          <tspan fill="url(#lgY)">y</tspan><tspan fill="url(#lgA)">a</tspan><tspan style="fill:var(--logo-rest-color)">thoughts</tspan>
+        </text>
+        <path d="M 68 38 Q 100 32, 132 38 T 196 38 T 196 38" stroke="rgba(123,184,224,0.3)" stroke-width="1.2" fill="none" stroke-linecap="round"/>
+      </svg>
+      <span id="mood-badge"></span>
+    </h1>
     <div class="hdr-actions">
       <button id="sel-enter" title="选择多条便签" aria-label="选择多条便签">
         <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -2329,7 +2337,7 @@
     <p id="cheer-msg"></p>
   </div>
 </div>
-<div id="confetti-layer" aria-hidden="true"></div>
+<canvas id="confetti-canvas" aria-hidden="true"></canvas>
 
 <!-- 自启动引导弹窗 -->
 <div id="notify-guide-modal" role="dialog" aria-modal="true" aria-label="通知引导">
@@ -2341,7 +2349,7 @@
       <li style="padding-left:16px;position:relative"><span style="position:absolute;left:2px">·</span><b style="color:var(--text-primary);font-weight:600">自启动</b> — 防止后台被系统清理</li>
       <li style="padding-left:16px;position:relative"><span style="position:absolute;left:2px">·</span><b style="color:var(--text-primary);font-weight:600">电池无限制</b> — 防止触发延迟</li>
     </ul>
-    <p class="guide-status" style="font-size:13px;margin:0 0 8px;color:#666"></p>
+    <p class="guide-status" style="font-size:13px;margin:0 0 8px;color:var(--text-secondary)"></p>
     <p class="guide-path" style="margin-top:8px">设置 → 应用 → Ya thoughts → 自启动 / 电池</p>
     <div class="guide-btns">
       <button type="button" class="guide-settings">去设置</button>
@@ -2883,23 +2891,95 @@
 
   function launchConfetti() {
     if (prefersReducedMotion()) return;
-    var layer = $('confetti-layer');
-    var colors = ['#E5484D','#F76B15','#FFC53D','#46A758','#3E63DD','#9F46D0','#F692CE'];
-    var items = [];
-    for (var i = 0; i < 24; i++) {
-      var c = document.createElement('div');
-      c.className = 'confetti';
-      c.style.left = (Math.random() * 100) + '%';
-      c.style.backgroundColor = colors[i % colors.length];
-      c.style.animationDuration = (1.2 + Math.random() * 0.6) + 's';
-      c.style.animationDelay = (Math.random() * 0.3) + 's';
-      c.style.transform = 'rotate(' + (Math.random() * 360) + 'deg)';
-      layer.appendChild(c);
-      items.push(c);
+    var canvas = $('confetti-canvas');
+    var ctx = canvas.getContext('2d');
+    var dpr = window.devicePixelRatio || 1;
+    var W = window.innerWidth;
+    var H = window.innerHeight;
+    canvas.width = W * dpr;
+    canvas.height = H * dpr;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+    var colors = ['#FF6B6B','#FFD93D','#6BCB77','#4D96FF','#FF6AC1','#7209B7','#4CC9F0','#FF9F1C'];
+    var shapes = ['rect','circle','triangle','streamer','ribbon'];
+    var particles = [];
+    var cx = W / 2;
+    var cy = H * 0.42;
+
+    for (var i = 0; i < 100; i++) {
+      var angle = (Math.PI * 2 * i / 100) + (Math.random() - 0.5) * 0.5;
+      var speed = 3 + Math.random() * 7;
+      particles.push({
+        x: cx + (Math.random() - 0.5) * 30,
+        y: cy + (Math.random() - 0.5) * 15,
+        vx: Math.cos(angle) * speed,
+        vy: Math.sin(angle) * speed - 2.5,
+        size: 3 + Math.random() * 5,
+        color: colors[Math.floor(Math.random() * colors.length)],
+        rot: Math.random() * Math.PI * 2,
+        angVel: (Math.random() - 0.5) * 0.25,
+        alpha: 1,
+        shape: shapes[Math.floor(Math.random() * shapes.length)],
+        scale: 0.6 + Math.random() * 0.4,
+        gravity: 0.1 + Math.random() * 0.06,
+        drag: 0.982 + Math.random() * 0.012,
+        wobble: Math.random() * 0.04
+      });
     }
-    setTimeout(function () {
-      for (var j = 0; j < items.length; j++) items[j].remove();
-    }, 2200);
+
+    var last = 0;
+    var running = true;
+
+    function frame(t) {
+      if (!running) return;
+      var dt = Math.min((t - last) / 16.67, 3);
+      last = t;
+      ctx.clearRect(0, 0, W, H);
+      var alive = false;
+      for (var i = 0; i < particles.length; i++) {
+        var p = particles[i];
+        if (p.alpha <= 0.01) continue;
+        alive = true;
+        p.vy += p.gravity * dt;
+        p.vx *= Math.pow(p.drag, dt);
+        p.vy *= Math.pow(p.drag, dt);
+        p.vx += Math.sin(t * p.wobble) * 0.12;
+        p.x += p.vx * dt;
+        p.y += p.vy * dt;
+        p.rot += p.angVel * dt;
+        p.alpha *= Math.pow(0.9955, dt);
+        p.scale += 0.003 * dt;
+        ctx.save();
+        ctx.translate(p.x, p.y);
+        ctx.rotate(p.rot);
+        ctx.scale(p.scale, p.scale);
+        ctx.globalAlpha = Math.max(0, p.alpha);
+        ctx.fillStyle = p.color;
+        var s = p.size;
+        switch (p.shape) {
+          case 'rect':
+            ctx.fillRect(-s/2, -s*0.4, s, s*0.8);
+            break;
+          case 'circle':
+            ctx.beginPath(); ctx.arc(0, 0, s/2, 0, 6.283); ctx.fill();
+            break;
+          case 'triangle':
+            ctx.beginPath(); ctx.moveTo(0, -s/2); ctx.lineTo(s/2, s/2); ctx.lineTo(-s/2, s/2); ctx.closePath(); ctx.fill();
+            break;
+          case 'streamer':
+            ctx.fillRect(-s*0.2, -s/2, s*0.4, s*2);
+            break;
+          case 'ribbon':
+            ctx.fillRect(-s/2, -s*0.2, s, s*0.4);
+            ctx.fillRect(-s*0.2, -s/2, s*0.4, s);
+            break;
+        }
+        ctx.restore();
+      }
+      if (alive) requestAnimationFrame(frame);
+      else { running = false; ctx.clearRect(0, 0, W, H); }
+    }
+    requestAnimationFrame(frame);
   }
 
   // 切换待办完成状态（列表复选框与编辑页复选框共用）

@@ -1,11 +1,11 @@
 {
-  "version": "1.7.6",
-  "notes": "修复启动白屏：删除无入口的每日好句/时政分析残留代码;真全屏铺满：窗口底色与页面一致，去掉顶部底部空白带;应用内更新：App 内下载安装包并直接唤起安装，不再跳到外部浏览器;多源加速：下载失败自动切换下一个镜像;更新弹窗可复制下载链接、可直达 GitHub Release 页",
-  "apkUrl": "https://gh-proxy.com/https://github.com/AIZIYOU466/ya-thoughts/releases/download/v1.7.6/app-release.apk",
+  "version": "1.7.7",
+  "notes": "深色模式文字亮度提升：主/次/辅文字及输入框、图标按钮等10项颜色变量全面提亮，硬编码色值统一改用CSS变量;\n撒花动画升级：CSS矩形下落→Canvas 2D物理粒子系统，100粒子从中心爆发，含重力/阻力/风向/旋转，5种形状8色调色板;\n顶部标题替换：纯文字「便签」→ yathoughts品牌SVG字标，Y白渐变+a金黄渐变+thoughts主色蓝，底部水波纹装饰呼应图标",
+  "apkUrl": "https://gh-proxy.com/https://github.com/AIZIYOU466/ya-thoughts/releases/download/v1.7.7/app-release.apk",
   "apkUrls": [
-    "https://gh-proxy.com/https://github.com/AIZIYOU466/ya-thoughts/releases/download/v1.7.6/app-release.apk",
-    "https://ghfast.top/https://github.com/AIZIYOU466/ya-thoughts/releases/download/v1.7.6/app-release.apk",
-    "https://github.com/AIZIYOU466/ya-thoughts/releases/download/v1.7.6/app-release.apk"
+    "https://gh-proxy.com/https://github.com/AIZIYOU466/ya-thoughts/releases/download/v1.7.7/app-release.apk",
+    "https://ghfast.top/https://github.com/AIZIYOU466/ya-thoughts/releases/download/v1.7.7/app-release.apk",
+    "https://github.com/AIZIYOU466/ya-thoughts/releases/download/v1.7.7/app-release.apk"
   ],
-  "releaseUrl": "https://github.com/AIZIYOU466/ya-thoughts/releases/tag/v1.7.6"
+  "releaseUrl": "https://github.com/AIZIYOU466/ya-thoughts/releases/tag/v1.7.7"
 }
