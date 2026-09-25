@@ -102,7 +102,7 @@ public class AppUpdaterPlugin extends Plugin {
                     return;
                 }
                 int totalIdx = columnSafe(cursor, DownloadManager.COLUMN_TOTAL_SIZE_BYTES);
-                int downloadedIdx = columnSafe(cursor, DownloadManager.COLUMN_BYTES_DOWNLOADED);
+                int downloadedIdx = columnSafe(cursor, "bytes_downloaded");
                 int statusIdx = columnSafe(cursor, DownloadManager.COLUMN_STATUS);
                 int status = (statusIdx >= 0) ? cursor.getInt(statusIdx) : DownloadManager.STATUS_FAILED;
                 int total = (totalIdx >= 0) ? cursor.getInt(totalIdx) : 0;
@@ -111,7 +111,7 @@ public class AppUpdaterPlugin extends Plugin {
                 if (status == DownloadManager.STATUS_SUCCESSFUL) {
                     ret.put("percent", 100);
                     ret.put("done", true);
-                } else if (status == DownloadManager.STATUS_FAILED || status == DownloadManager.STATUS_CANCELED) {
+                } else if (status == DownloadManager.STATUS_FAILED) {
                     ret.put("failed", true);
                 } else if (total > 0) {
                     ret.put("percent", Math.min(100, downloaded * 100 / total));
