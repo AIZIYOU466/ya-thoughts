@@ -123,3 +123,25 @@ jobs:
         with:
           name: YaThoughts-APK
           path: android/app/build/outputs/apk/release/app-release.apk
+
+      # 构建日志回写到仓库：失败时把报错落盘并提交，没管理员权限也能看到 Gradle 具体报什么。
+      # 成功时清掉上一次留下的。提交者是 bot，上面的 if 会跳过本次推送，不会自己跑自己。
+      - name: Commit build log
+        if: always()
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          if [ -f android/build-apk.log ] && ! grep -q "BUILD SUCCESSFUL" android/build-apk.log; then
+            {
+              echo "# 构建失败日志（自动回写）"
+              echo
+              # FAILURE 块在日志末尾，从这里开始截；没找到就退化成纯 tail
+              awk '/\* What went wrong:/{f=1} f' android/build-apk.log | head -300
+              if ! grep -q "What went wrong" android/build-apk.log; then tail -200 android/build-apk.log; fi
+            } > ci-build-log.md
+            git add ci-build-log.md
+          else
+            git rm -f ci-build-log.md --ignore-unmatch >/dev/null
+          fi
+          git commit -m "ci: build log [skip ci]" || echo "no changes"
+          git push
