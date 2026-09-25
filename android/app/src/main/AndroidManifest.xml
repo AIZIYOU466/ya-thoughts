@@ -42,4 +42,7 @@
 
     <!-- 开机后恢复闹钟（可选，让重启后通知不丢） -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+
+    <!-- 应用内更新：允许安装下载下来的新版 APK（首次安装时系统会弹授权） -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 </manifest>

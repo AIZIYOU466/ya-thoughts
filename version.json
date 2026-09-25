@@ -1,6 +1,11 @@
 {
-  "version": "1.7.5",
-  "notes": "全屏适配+每日好句+时政分析入口",
-  "apkUrl": "https://gh-proxy.com/https://github.com/AIZIYOU466/ya-thoughts/releases/download/v1.7.5/app-release.apk",
-  "apkUrlBackup": "https://ghfast.top/https://github.com/AIZIYOU466/ya-thoughts/releases/download/v1.7.5/app-release.apk"
+  "version": "1.7.6",
+  "notes": "修复启动白屏：删除无入口的每日好句/时政分析残留代码;真全屏铺满：窗口底色与页面一致，去掉顶部底部空白带;应用内更新：App 内下载安装包并直接唤起安装，不再跳到外部浏览器;多源加速：下载失败自动切换下一个镜像;更新弹窗可复制下载链接、可直达 GitHub Release 页",
+  "apkUrl": "https://gh-proxy.com/https://github.com/AIZIYOU466/ya-thoughts/releases/download/v1.7.6/app-release.apk",
+  "apkUrls": [
+    "https://gh-proxy.com/https://github.com/AIZIYOU466/ya-thoughts/releases/download/v1.7.6/app-release.apk",
+    "https://ghfast.top/https://github.com/AIZIYOU466/ya-thoughts/releases/download/v1.7.6/app-release.apk",
+    "https://github.com/AIZIYOU466/ya-thoughts/releases/download/v1.7.6/app-release.apk"
+  ],
+  "releaseUrl": "https://github.com/AIZIYOU466/ya-thoughts/releases/tag/v1.7.6"
 }

@@ -247,12 +247,14 @@
     position: absolute;
     top: 0; left: 0; right: 0;
     z-index: 5;
-    height: 56px;
+    /* edge-to-edge 后顶栏延伸到状态栏之下：高度和内边距一起加上顶部安全区，
+       否则 44px 高的按钮会溢出 56px 容器压到系统图标上 */
+    height: calc(56px + env(safe-area-inset-top));
     width: 100%; max-width: 100%; margin-left: 0; margin-right: 0;
     display: grid;
     grid-template-columns: 1fr auto 1fr;
     align-items: center;
-    padding: 0 10px 0 20px;
+    padding: env(safe-area-inset-top) 10px 0 20px;
     background: var(--glass-bg);
     -webkit-backdrop-filter: var(--glass-blur);
     backdrop-filter: var(--glass-blur);
@@ -1090,6 +1092,8 @@
 
   /* ============ 编辑页 ============ */
   .editor-bar {
+    /* 面板自身贴屏顶（无外边距），顶边距出状态栏安全区，避免返回按钮被系统图标压住 */
+    margin-top: env(safe-area-inset-top);
     height: 56px;
     width: 100%; max-width: 100%; margin-left: 0; margin-right: 0;
     display: grid;
@@ -1876,6 +1880,31 @@
     transition: transform 0.15s var(--ease);
   }
   #update-download:active { transform: scale(0.96); }
+  #update-download[disabled] { opacity: 0.7; }
+  /* 下载进度条：主链成功时隐藏（进度交给系统通知），失败时显示当前源进度 */
+  #update-progress {
+    margin-top: 14px; height: 6px; border-radius: var(--radius-pill);
+    background: var(--chip-bg); overflow: hidden;
+  }
+  #update-progress-bar {
+    height: 100%; width: 0; background: var(--primary);
+    border-radius: var(--radius-pill); transition: width 0.25s linear;
+  }
+  #update-status {
+    margin-top: 8px; min-height: 18px;
+    font-size: 12px; line-height: 1.5; color: var(--text-secondary);
+  }
+  /* 兜底入口：主链路（应用内下载）不可用时才显示，确保用户总能走到下载 */
+  #update-fallback {
+    margin-top: 14px; padding-top: 12px;
+    border-top: 1px solid var(--glass-border);
+    display: flex; flex-direction: column; gap: 4px;
+  }
+  #update-fallback button {
+    font-size: 13px; color: var(--primary); text-align: center;
+    padding: 8px 4px; min-height: 36px; border-radius: 10px;
+  }
+  #update-fallback button:active { background: var(--chip-bg); }
   @keyframes update-in {
     from { opacity: 0; transform: scale(0.95); }
     to { opacity: 1; transform: scale(1); }
@@ -2369,11 +2398,17 @@
 <div id="update-modal" role="dialog" aria-modal="true" aria-label="发现新版本">
   <div class="update-card">
     <div class="update-title">发现新版本</div>
-    <div class="update-version"></div>
-    <div class="update-notes"></div>
+    <div id="update-version" class="update-version"></div>
+    <div id="update-notes" class="update-notes"></div>
+    <div id="update-progress" hidden><div id="update-progress-bar"></div></div>
+    <div id="update-status"></div>
     <div class="update-actions">
       <button id="update-later" type="button">稍后</button>
       <button id="update-download" type="button">下载更新</button>
+    </div>
+    <div id="update-fallback" hidden>
+      <button id="update-copy-url" type="button">复制下载链接</button>
+      <button id="update-open-release" type="button">打开更新页面</button>
     </div>
   </div>
 </div>
@@ -2382,14 +2417,30 @@
 (function () {
   'use strict';
 
+  /* ---------- 全局错误捕获（必须在 IIFE 最前面注册：放在文件末尾时，前面的任何崩溃
+     都会让注册语句永远执行不到，用户只看到白屏） ---------- */
+  function reportFatalError(msg) {
+    try {
+      var text = String(msg).replace(/\s+/g, ' ').trim();
+      if (!text) text = '未知异常';
+      console.error('[global] 未捕获错误:', text);
+      if (!(window.Capacitor && window.Capacitor.Plugins)) return; // 浏览器网页静默
+      if (text.length > 40) text = text.slice(0, 40) + '…';
+      showUndoToast('出错了：' + text, 5000);
+    } catch (e) { /* 捕获逻辑自身异常不再上报，避免二次崩溃 */ }
+  }
+  window.addEventListener('error', function (ev) {
+    reportFatalError(ev && (ev.message || (ev.error && ev.error.message)));
+  });
+  window.addEventListener('unhandledrejection', function (ev) {
+    var r = ev && ev.reason;
+    reportFatalError(r && r.message ? r.message : r);
+  });
+
   // 全屏适配：动态设置视口高度，兼容旧版 WebView 不支持 100dvh 的情况
-  // 同时处理安全区域（状态栏、导航栏），确保内容不被遮挡
+  // 状态栏/导航栏的安全区域由 CSS 的 env(safe-area-inset-*) 处理，无需在 JS 里换算
   function setViewportHeight() {
-    var vh = window.innerHeight;
-    var safeTop = parseInt(window.getComputedStyle(document.documentElement).getPropertyValue('--safe-area-top') || '0', 10);
-    var safeBottom = parseInt(window.getComputedStyle(document.documentElement).getPropertyValue('--safe-area-bottom') || '0', 10);
-    // 设置 CSS 自定义属性，用于替代 100dvh
-    document.documentElement.style.setProperty('--app-height', vh + 'px');
+    document.documentElement.style.setProperty('--app-height', window.innerHeight + 'px');
   }
   window.addEventListener('resize', setViewportHeight);
   window.addEventListener('orientationchange', function() {
@@ -6188,7 +6239,7 @@
   });
   $('menu-about').addEventListener('click', function () {
     closeMenu();
-    $('about-version').textContent = 'v' + CURRENT_VERSION;
+    localVersion(function (v) { $('about-version').textContent = 'v' + v; });
     $('about-mask').classList.add('open');
   });
   $('about-close').addEventListener('click', function () {
@@ -6302,252 +6353,6 @@
   });
   cleanDoneEl.addEventListener('change', function () { setCleanPref(CLEAN_DONE_KEY, cleanDoneEl.checked); });
   cleanExpiredEl.addEventListener('change', function () { setCleanPref(CLEAN_EXPIRED_KEY, cleanExpiredEl.checked); });
-
-  /* ============ 每日好句 ============ */
-  var dailyQuoteModal = $('daily-quote-modal');
-  var dailyQuoteList = $('daily-quote-list');
-  var dailyQuotesData = null;
-  var dailyQuoteIds = [];
-  var dailyQuoteDate = '';
-
-  // 加载好句数据
-  function loadDailyQuotes() {
-    return fetch('assets/daily-quotes.json')
-      .then(function (r) { return r.json(); })
-      .then(function (data) { dailyQuotesData = data.quotes || []; })
-      .catch(function (e) { console.warn('加载好句失败:', e); dailyQuotesData = []; });
-  }
-
-  // 获取今日好句 ids（localStorage 记录）
-  function getDailyQuoteIds() {
-    try {
-      var stored = localStorage.getItem('daily_quote_ids');
-      var date = localStorage.getItem('daily_quote_date');
-      var today = new Date().toISOString().split('T')[0];
-      if (stored && date === today) {
-        return JSON.parse(stored);
-      }
-    } catch (e) {}
-    return [];
-  }
-
-  // 设置今日好句 ids
-  function setDailyQuoteIds(ids) {
-    try {
-      localStorage.setItem('daily_quote_ids', JSON.stringify(ids));
-      localStorage.setItem('daily_quote_date', new Date().toISOString().split('T')[0]);
-    } catch (e) {}
-  }
-
-  // 随机抽取指定数量的 ids
-  function pickRandomQuotes(count) {
-    if (!dailyQuotesData || dailyQuotesData.length === 0) return [];
-    var ids = dailyQuotesData.map(function (q) { return q.id; });
-    // Fisher-Yates 洗牌
-    for (var i = ids.length - 1; i > 0; i--) {
-      var j = Math.floor(Math.random() * (i + 1));
-      var temp = ids[i]; ids[i] = ids[j]; ids[j] = temp;
-    }
-    return ids.slice(0, count);
-  }
-
-  // 渲染好句列表
-  function renderDailyQuoteList(ids) {
-    dailyQuoteList.innerHTML = '';
-    if (!dailyQuotesData) {
-      dailyQuoteList.innerHTML = '<p style="padding:20px;text-align:center;color:var(--text-secondary)">加载中...</p>';
-      return;
-    }
-    ids.forEach(function (id) {
-      var quote = null;
-      for (var i = 0; i < dailyQuotesData.length; i++) {
-        if (dailyQuotesData[i].id === id) { quote = dailyQuotesData[i]; break; }
-      }
-      if (!quote) return;
-      var item = document.createElement('div');
-      item.className = 'daily-quote-card-item';
-      item.innerHTML = '<div class="daily-quote-sentence">' + quote.sentence + '</div>' +
-        '<div><span class="daily-quote-source">' + quote.source + '</span>' +
-        '<span class="daily-quote-category">' + quote.category + '</span></div>' +
-        '<div class="daily-quote-actions"><button class="daily-quote-copy" data-id="' + id + '">复制</button></div>';
-      dailyQuoteList.appendChild(item);
-    });
-    // 绑定复制事件
-    dailyQuoteList.querySelectorAll('.daily-quote-copy').forEach(function (btn) {
-      btn.addEventListener('click', function () {
-        var id = btn.getAttribute('data-id');
-        var quote = null;
-        for (var i = 0; i < dailyQuotesData.length; i++) {
-          if (dailyQuotesData[i].id === id) { quote = dailyQuotesData[i]; break; }
-        }
-        if (quote) {
-          navigator.clipboard.writeText(quote.sentence + ' —— ' + quote.source)
-            .then(function () { showUndoToast('已复制'); })
-            .catch(function () { showUndoToast('复制失败'); });
-        }
-      });
-    });
-  }
-
-  // 打开好句模态框
-  function showDailyQuoteModal() {
-    loadDailyQuotes().then(function () {
-      var ids = getDailyQuoteIds();
-      if (ids.length < 10) {
-        ids = pickRandomQuotes(10);
-        setDailyQuoteIds(ids);
-      }
-      renderDailyQuoteList(ids);
-      dailyQuoteModal.classList.add('open');
-    });
-  }
-
-  $('menu-daily-quote').addEventListener('click', function () {
-    closeMenu();
-    showDailyQuoteModal();
-  });
-  $('daily-quote-close').addEventListener('click', function () {
-    dailyQuoteModal.classList.remove('open');
-  });
-  $('daily-quote-refresh').addEventListener('click', function () {
-    var ids = pickRandomQuotes(10);
-    setDailyQuoteIds(ids);
-    renderDailyQuoteList(ids);
-    showUndoToast('已刷新');
-  });
-  dailyQuoteModal.addEventListener('click', function (e) {
-    if (e.target === dailyQuoteModal) dailyQuoteModal.classList.remove('open');
-  });
-
-  /* ============ 时政分析 ============ */
-  var politicsModal = $('politics-modal');
-  var politicsContent = $('politics-content');
-  var politicsData = null;
-
-  // 加载时政数据
-  function loadPoliticsData() {
-    return fetch('assets/politics-practice.json')
-      .then(function (r) { return r.json(); })
-      .then(function (data) { politicsData = data.practices || []; })
-      .catch(function (e) { console.warn('加载时政数据失败:', e); politicsData = []; });
-  }
-
-  // 随机选取一个议题
-  function pickRandomPractice() {
-    if (!politicsData || politicsData.length === 0) return null;
-    var idx = Math.floor(Math.random() * politicsData.length);
-    return politicsData[idx];
-  }
-
-  // 渲染时政内容
-  function renderPoliticsContent(practice) {
-    politicsContent.innerHTML = '';
-    if (!practice) {
-      politicsContent.innerHTML = '<p style="padding:20px;text-align:center;color:var(--text-secondary)">加载中...</p>';
-      return;
-    }
-    
-    // 标题
-    var titleSection = document.createElement('div');
-    titleSection.className = 'politics-section';
-    titleSection.innerHTML = '<h4 style="margin:0 0 12px 0;font-size:16px;font-weight:600;color:var(--text-primary)">' + practice.title + '</h4>';
-    politicsContent.appendChild(titleSection);
-    
-    // 材料
-    var materialSection = document.createElement('div');
-    materialSection.className = 'politics-section';
-    materialSection.innerHTML = '<div class="politics-section-title">材料分析</div>';
-    practice.materials.forEach(function (m, i) {
-      var mat = document.createElement('div');
-      mat.className = 'politics-material';
-      mat.innerHTML = '<div class="politics-material-label">材料' + (i + 1) + '</div>' + m;
-      materialSection.appendChild(mat);
-    });
-    if (practice.combo_materials) {
-      var combo = document.createElement('div');
-      combo.className = 'politics-material';
-      combo.style.background = 'var(--primary-soft)';
-      combo.innerHTML = '<div class="politics-material-label">组合题</div>' + practice.combo_materials;
-      materialSection.appendChild(combo);
-    }
-    politicsContent.appendChild(materialSection);
-    
-    // 知识点
-    var kpSection = document.createElement('div');
-    kpSection.className = 'politics-section';
-    kpSection.innerHTML = '<div class="politics-section-title">相关知识点</div>';
-    var kpDiv = document.createElement('div');
-    kpDiv.className = 'politics-kp';
-    practice.knowledge_points.forEach(function (kp) {
-      var tag = document.createElement('span');
-      tag.className = 'politics-kp-tag';
-      tag.textContent = kp;
-      kpDiv.appendChild(tag);
-    });
-    kpSection.appendChild(kpDiv);
-    politicsContent.appendChild(kpSection);
-    
-    // 答案框架
-    var answerSection = document.createElement('div');
-    answerSection.className = 'politics-section';
-    answerSection.innerHTML = '<div class="politics-section-title">作答框架</div>';
-    var answerDiv = document.createElement('div');
-    answerDiv.className = 'politics-answer';
-    
-    // 立意
-    var intentItem = document.createElement('div');
-    intentItem.className = 'politics-answer-item';
-    intentItem.innerHTML = '<div class="politics-answer-label">🎯 立意</div>' + practice.answer_framework.立意;
-    answerDiv.appendChild(intentItem);
-    
-    // 论据
-    if (practice.answer_framework.论据) {
-      var evidenceItem = document.createElement('div');
-      evidenceItem.className = 'politics-answer-item';
-      evidenceItem.innerHTML = '<div class="politics-answer-label">📌 论据</div>';
-      practice.answer_framework.论据.forEach(function (ev) {
-        var p = document.createElement('p');
-        p.style.margin = '4px 0';
-        p.textContent = ev;
-        evidenceItem.appendChild(p);
-      });
-      answerDiv.appendChild(evidenceItem);
-    }
-    
-    // 金句
-    var quoteItem = document.createElement('div');
-    quoteItem.className = 'politics-answer-item';
-    quoteItem.innerHTML = '<div class="politics-answer-label">✨ 金句</div>' + practice.answer_framework.金句;
-    answerDiv.appendChild(quoteItem);
-    
-    answerSection.appendChild(answerDiv);
-    politicsContent.appendChild(answerSection);
-  }
-
-  // 打开时政模态框
-  function showPoliticsModal() {
-    loadPoliticsData().then(function () {
-      var practice = pickRandomPractice();
-      renderPoliticsContent(practice);
-      politicsModal.classList.add('open');
-    });
-  }
-
-  $('menu-politics').addEventListener('click', function () {
-    closeMenu();
-    showPoliticsModal();
-  });
-  $('politics-close').addEventListener('click', function () {
-    politicsModal.classList.remove('open');
-  });
-  $('politics-refresh').addEventListener('click', function () {
-    var practice = pickRandomPractice();
-    renderPoliticsContent(practice);
-    showUndoToast('已换题');
-  });
-  politicsModal.addEventListener('click', function (e) {
-    if (e.target === politicsModal) politicsModal.classList.remove('open');
-  });
 
   /* ============ 回收箱（⋯ 菜单进入；软删除便签保留 3 天，超期在启动时清理） ============ */
   var binMaskEl = $('bin-mask');
@@ -7426,17 +7231,38 @@
     };
   }
 
-  /* ---------- 应用内更新（国内镜像；只 Capacitor 环境生效，浏览器静默跳过） ---------- */
+  /* ---------- 应用内更新（App 内下载 APK + 一键安装；浏览器静默跳过） ---------- */
   var UPDATE_MODAL = $('update-modal');
-  var CURRENT_VERSION = '1.7.5'; // 与 android/app/build.gradle 的 versionName 保持一致
+  var FALLBACK_VERSION = '1.7.6'; // @capacitor/app 取不到 versionName 时的兜底值
   var UPDATE_URLS = [
     'https://cdn.jsdelivr.net/gh/AIZIYOU466/ya-thoughts@main/version.json',
     'https://gh-proxy.com/https://raw.githubusercontent.com/AIZIYOU466/ya-thoughts/main/version.json',
     'https://ghfast.top/https://raw.githubusercontent.com/AIZIYOU466/ya-thoughts/main/version.json'
   ];
-  var updateInfo = null; // 当前弹出的版本信息（供稍后/下载记录 dismiss）
+  var updateInfo = null;   // 当前弹出的版本信息（供稍后/下载记录 dismiss）
+  var updateUrls = [];     // 候选 APK 直链，按顺序尝试
+  var updatePhase = 'idle'; // idle | downloading | done | perm
+  var downloadIdx = -1;    // 正在尝试的直链下标
+  var downloadExhausted = false; // 所有源都试过了：仍要把兜底入口留在屏上，否则用户无路可走
+  var downloadPercent = -1;// 当前源已下载百分比（<0 = 还没拿到总大小）
+  var updateTimer = null;  // 下载进度轮询定时器
   var UPDATE_TIMEOUT = 6000; // 单个镜像超时（毫秒）：并发请求各镜像，弱网更稳
   var autoRetriesLeft = 2;   // 自动检查全镜像失败后的重试次数（+首轮共 3 轮；手动检查不重试）
+
+  // 原生下载插件：插件没同步进 APK 时为 null，此时只剩外链兜底
+  function getAppUpdater() {
+    var p = window.Capacitor && window.Capacitor.Plugins;
+    return (p && p.AppUpdater) || null;
+  }
+
+  // 本地版本号直接读 build.gradle 的 versionName，前端不再维护一份会不同步的常量
+  function localVersion(done) {
+    var p = window.Capacitor && window.Capacitor.Plugins;
+    if (!(p && p.App && p.App.getInfo)) { done(FALLBACK_VERSION); return; }
+    p.App.getInfo().then(function (info) {
+      done((info && info.version) || FALLBACK_VERSION);
+    }, function () { done(FALLBACK_VERSION); });
+  }
 
   // 版本号 '1.6.0' 风格逐位数字比较：a>b→1，a<b→-1，相等→0（1.10.0 > 1.9.0，非字典序）
   function compareVersion(a, b) {
@@ -7448,6 +7274,12 @@
       if (x < y) return -1;
     }
     return 0;
+  }
+
+  // version.json 的 notes 用 ; 分隔多条说明，这里转成编号多行文本展示
+  function formatNotes(notes) {
+    var list = String(notes || '').split(/[;\n]/).map(function (s) { return s.trim(); }).filter(Boolean);
+    return list.map(function (s, i) { return (i + 1) + '. ' + s; }).join('\n');
   }
 
   // 并发请求所有镜像，各自独立超时；取返回中「版本号最大」者作为远端最新版。
@@ -7482,87 +7314,265 @@
       if (force) showUndoToast('检查更新仅在 App 内可用'); // 浏览器网页点菜单项也给反馈
       return;
     }
-    var tasks = UPDATE_URLS.map(function (url) {
-      console.log('[update] 并发请求镜像：' + url);
-      return fetchUpdateJson(url).then(
-        function (info) { return { ok: true, info: info }; },
-        function (err) {
-          console.log('[update] 镜像失败：' + url + ' → ' + err.reason);
-          return { ok: false, reason: err.reason };
-        }
-      );
-    });
-    Promise.all(tasks).then(function (results) {
-      var best = null, failures = [];
-      results.forEach(function (r) {
-        if (r.ok && r.info && r.info.version) {
-          if (!best || compareVersion(r.info.version, best.version) > 0) best = r.info;
-        } else {
-          failures.push(r.reason || '未知错误');
-        }
+    localVersion(function (current) {
+      var tasks = UPDATE_URLS.map(function (url) {
+        console.log('[update] 并发请求镜像：' + url);
+        return fetchUpdateJson(url).then(
+          function (info) { return { ok: true, info: info }; },
+          function (err) {
+            console.log('[update] 镜像失败：' + url + ' → ' + err.reason);
+            return { ok: false, reason: err.reason };
+          }
+        );
       });
-      if (!best) { // 全部镜像失败
-        var reason = failures.length
-          ? failures.filter(function (v, k) { return failures.indexOf(v) === k; }).join(' / ')
-          : '未知错误';
-        console.log('[update] 全部镜像检查失败：' + reason);
-        if (force) {
-          showUndoToast('检查更新失败：' + reason);
-        } else if (autoRetriesLeft > 0) {
-          autoRetriesLeft--;
-          console.log('[update] 2 秒后自动重试（剩余 ' + autoRetriesLeft + ' 次）');
-          setTimeout(function () { checkForUpdate(false); }, 2000);
-        }
-        return;
-      }
-      var cmp = compareVersion(CURRENT_VERSION, best.version);
-      if (cmp >= 0) { // 不是新版本（含版本同位：当前代码 == 已发布版本）
-        console.log('[update] 已是最新：本地 ' + CURRENT_VERSION + ' >= 远端 ' + best.version);
-        if (force) showUndoToast('已是最新版本 v' + CURRENT_VERSION);
-        return;
-      }
-      if (!force) { // 自动检查：同版本 24h 内已提醒过 → 不重复打扰；手动检查每次都查
-        var dv = localStorage.getItem('update_dismissed_version');
-        var da = parseInt(localStorage.getItem('update_dismissed_at') || '0', 10);
-        if (dv === best.version && da && Date.now() - da < 24 * 3600 * 1000) {
-          console.log('[update] 24h 内已提醒过 ' + best.version + '，跳过');
+      Promise.all(tasks).then(function (results) {
+        var best = null, failures = [];
+        results.forEach(function (r) {
+          if (r.ok && r.info && r.info.version) {
+            if (!best || compareVersion(r.info.version, best.version) > 0) best = r.info;
+          } else {
+            failures.push(r.reason || '未知错误');
+          }
+        });
+        if (!best) { // 全部镜像失败
+          var reason = failures.length
+            ? failures.filter(function (v, k) { return failures.indexOf(v) === k; }).join(' / ')
+            : '未知错误';
+          console.log('[update] 全部镜像检查失败：' + reason);
+          if (force) {
+            showUndoToast('检查更新失败：' + reason);
+          } else if (autoRetriesLeft > 0) {
+            autoRetriesLeft--;
+            console.log('[update] 2 秒后自动重试（剩余 ' + autoRetriesLeft + ' 次）');
+            setTimeout(function () { checkForUpdate(false); }, 2000);
+          }
           return;
         }
-      }
-      console.log('[update] 发现新版本 ' + best.version + '，打开更新弹窗');
-      showUpdateDialog(best);
+        var cmp = compareVersion(current, best.version);
+        if (cmp >= 0) { // 不是新版本（含版本同位：当前代码 == 已发布版本）
+          console.log('[update] 已是最新：本地 ' + current + ' >= 远端 ' + best.version);
+          if (force) showUndoToast('已是最新版本 v' + current);
+          return;
+        }
+        if (!force) { // 自动检查：同版本 24h 内已提醒过 → 不重复打扰；手动检查每次都查
+          var dv = localStorage.getItem('update_dismissed_version');
+          var da = parseInt(localStorage.getItem('update_dismissed_at') || '0', 10);
+          if (dv === best.version && da && Date.now() - da < 24 * 3600 * 1000) {
+            console.log('[update] 24h 内已提醒过 ' + best.version + '，跳过');
+            return;
+          }
+        }
+        console.log('[update] 发现新版本 ' + best.version + '，打开更新弹窗');
+        showUpdateDialog(best);
+      });
     });
   }
 
   function showUpdateDialog(info) {
     if (UPDATE_MODAL.classList.contains('open')) return;
     updateInfo = info;
+    // version.json 的 apkUrls 按顺序尝试；没有该字段时回落到单个 apkUrl
+    updateUrls = (info.apkUrls && info.apkUrls.length)
+      ? info.apkUrls.slice()
+      : (info.apkUrl ? [info.apkUrl] : []);
+    updatePhase = 'idle';
+    downloadIdx = -1;
+    downloadExhausted = false;
+    downloadPercent = -1;
+    stopProgressPoll();
     $('update-version').textContent = 'v' + info.version;
-    $('update-notes').textContent = info.notes || '';
+    $('update-notes').textContent = formatNotes(info.notes);
+    setStatus('');
+    setProgress(-1);
+    renderUpdateDialog();
     UPDATE_MODAL.classList.add('open');
     document.body.style.overflow = 'hidden'; // 弹窗期间禁止页面滚动
   }
 
   function closeUpdateModal() {
     UPDATE_MODAL.classList.remove('open');
+    stopProgressPoll(); // 下载本身继续，只是不再轮询进度
     updateInfo = null;
     document.body.style.overflow = '';
   }
 
-  // 记录"已提醒过该版本"，24h 内不再打扰
+  // 记录"已提醒过该版本"，24h 内不再打扰；下载成功前不记录，失败后可以重新弹出
   function dismissUpdateFor(info) {
     localStorage.setItem('update_dismissed_version', info.version);
     localStorage.setItem('update_dismissed_at', String(Date.now()));
   }
+
+  /* ---------- 弹窗状态机：idle 下载 → downloading 下载中 → done 立即安装 / perm 去开权限 ---------- */
+  var PRIMARY_LABELS = { idle: '下载更新', downloading: '下载中…', done: '立即安装', perm: '去开启安装权限' };
+
+  function renderUpdateDialog() {
+    var btn = $('update-download');
+    var label = PRIMARY_LABELS[updatePhase] || '下载更新';
+    if (updatePhase === 'downloading' && downloadPercent >= 0) {
+      label = '下载中 ' + Math.round(downloadPercent) + '%';
+    }
+    btn.textContent = label;
+    btn.disabled = (updatePhase === 'downloading');
+    // 兜底入口只在应用内下载不可用或已失败时出现，确保用户总能走到下载
+    $('update-fallback').hidden = (!!getAppUpdater())
+      && (updatePhase === 'done' || updatePhase === 'downloading'
+        || (updatePhase === 'idle' && !downloadExhausted));
+  }
+  function setStatus(text) { $('update-status').textContent = text || ''; }
+  function setProgress(percent) {
+    $('update-progress').hidden = (percent == null || percent < 0);
+    $('update-progress-bar').style.width = (percent == null ? 0 : Math.min(100, percent)) + '%';
+  }
+
+  function startDownload() {
+    var up = getAppUpdater();
+    if (!up || !up.download) {
+      setStatus('当前安装包不支持应用内下载，请用下方入口');
+      renderUpdateDialog();
+      return;
+    }
+    if (!updateUrls.length) {
+      setStatus('没有可用的下载链接，请到更新页面手动下载');
+      renderUpdateDialog();
+      return;
+    }
+    if (updatePhase === 'downloading') return;
+    downloadIdx = 0;
+    downloadExhausted = false;
+    enqueueDownload(up);
+  }
+
+  function enqueueDownload(up) {
+    if (downloadIdx >= updateUrls.length) {
+      updatePhase = 'idle';
+      downloadExhausted = true;
+      stopProgressPoll();
+      setStatus('下载失败，可复制链接到浏览器打开，或点「打开更新页面」');
+      renderUpdateDialog();
+      return;
+    }
+    updatePhase = 'downloading';
+    downloadPercent = -1;
+    setProgress(-1);
+    setStatus('正在从源 ' + (downloadIdx + 1) + '/' + updateUrls.length + ' 下载…');
+    renderUpdateDialog();
+    up.download({ url: updateUrls[downloadIdx] }).then(function () {
+      startProgressPoll(); // 已交给系统下载管理器，进度靠查询
+    }, function () {
+      downloadIdx++;
+      enqueueDownload(up); // 这个源起不来就换下一个
+    });
+  }
+
+  function startProgressPoll() {
+    stopProgressPoll();
+    updateTimer = setInterval(pollDownloadProgress, 800);
+  }
+  function stopProgressPoll() {
+    if (updateTimer) { clearInterval(updateTimer); updateTimer = null; }
+  }
+  function pollDownloadProgress() {
+    var up = getAppUpdater();
+    if (!up || !up.getProgress) { stopProgressPoll(); return; }
+    up.getProgress().then(function (st) {
+      if (!UPDATE_MODAL.classList.contains('open')) { stopProgressPoll(); return; }
+      if (st.done) {
+        stopProgressPoll();
+        updatePhase = 'done';
+        downloadPercent = 100;
+        setProgress(100);
+        setStatus('已下载完成，点「立即安装」');
+        renderUpdateDialog();
+        dismissUpdateFor(updateInfo); // 下载成功才记录，失败后仍可重新提醒
+      } else if (st.failed) {
+        downloadIdx++;
+        enqueueDownload(up);
+      } else {
+        downloadPercent = st.percent;
+        setProgress(st.percent);
+        if (st.percent < 0) {
+          setStatus('正在从源 ' + (downloadIdx + 1) + '/' + updateUrls.length + ' 下载（等待响应）…');
+        } else {
+          setStatus('已下载 ' + Math.round(st.percent) + '%');
+        }
+        renderUpdateDialog();
+      }
+    }, function () { stopProgressPoll(); });
+  }
+
+  function tryInstall() {
+    var up = getAppUpdater();
+    if (!up || !up.openInstaller) {
+      setStatus('当前安装包不支持直接安装，请用下方入口');
+      renderUpdateDialog();
+      return;
+    }
+    up.openInstaller().then(function () { /* 系统安装器已拉起 */ }, function (err) {
+      // Capacitor 把错误码放在 code、人类可读信息放在 message
+      var code = (err && (err.code || err.message || err)) || '';
+      if (String(code).indexOf('INSTALL_PERMISSION_DENIED') !== -1) {
+        updatePhase = 'perm';
+        setStatus('需要允许「安装未知应用」权限，点「去开启安装权限」');
+      } else {
+        updatePhase = 'idle';
+        setStatus('安装包尚未就绪，请重新下载或用下方入口');
+      }
+      renderUpdateDialog();
+    });
+  }
+
+  function copyDownloadUrl() {
+    if (!updateUrls.length) { showUndoToast('没有可用的下载链接'); return; }
+    var text = updateUrls[0];
+    var ok = function () { showUndoToast('已复制下载链接，可在浏览器打开'); };
+    var fail = function () { showUndoToast('复制失败，请改用「打开更新页面」'); };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(ok, function () {
+        legacyCopy(text) ? ok() : fail();
+      });
+    } else {
+      legacyCopy(text) ? ok() : fail();
+    }
+  }
+  function legacyCopy(text) {
+    try {
+      var ta = document.createElement('textarea');
+      ta.value = text;
+      ta.setAttribute('readonly', '');
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.select();
+      var ok = document.execCommand('copy');
+      document.body.removeChild(ta);
+      return ok;
+    } catch (e) { return false; }
+  }
+
   $('update-later').addEventListener('click', function () {
     if (updateInfo) dismissUpdateFor(updateInfo);
     closeUpdateModal();
   });
   $('update-download').addEventListener('click', function () {
     if (!updateInfo) return;
-    dismissUpdateFor(updateInfo); // 先记录再打开，避免 WebView 切后台后状态丢失
-    window.open(updateInfo.apkUrl, '_blank'); // 真机点击无反应时改 window.location.href = info.apkUrl
-    closeUpdateModal();
+    if (updatePhase === 'downloading') return;
+    if (updatePhase === 'perm') {
+      var up = getAppUpdater();
+      if (up && up.openSettings) {
+        up.openSettings().then(function () {
+          setTimeout(tryInstall, 1500); // 用户回到 App 后重试一次
+        }, function () {});
+      }
+      return;
+    }
+    if (updatePhase === 'done') { tryInstall(); return; }
+    startDownload();
+  });
+  $('update-copy-url').addEventListener('click', copyDownloadUrl);
+  $('update-open-release').addEventListener('click', function () {
+    var url = (updateInfo && updateInfo.releaseUrl)
+      || 'https://github.com/AIZIYOU466/ya-thoughts/releases/latest';
+    window.open(url, '_blank');
   });
   UPDATE_MODAL.addEventListener('click', function (e) {
     if (e.target !== UPDATE_MODAL) return; // 点卡片内部不处理
@@ -7615,23 +7625,6 @@
       renderList();
     });
 
-  /* ---------- 全局错误捕获（仅 Capacitor 环境 toast + console；浏览器 console 静默） ---------- */
-  var globalErrorFn = function (ev) {
-    try {
-      var msg = ev && ev.message;
-      console.error('[global] 未捕获错误:', ev && ev.error ? ev.error : msg);
-      if (window.Capacitor && window.Capacitor.Plugins) showUndoToast('出错了，请稍后重试');
-    } catch (e) { /* 捕获逻辑自身异常不再上报，避免二次崩溃 */ }
-  };
-  var globalRejectFn = function (ev) {
-    try {
-      var reason = ev && ev.reason;
-      console.error('[global] 未处理的 Promise 拒绝:', reason);
-      if (window.Capacitor && window.Capacitor.Plugins) showUndoToast('出错了，请稍后重试');
-    } catch (e) { /* 同上 */ }
-  };
-  window.addEventListener('error', globalErrorFn);
-  window.addEventListener('unhandledrejection', globalRejectFn);
 })();
 
 /* ---------- UI 动效增强层（独立 IIFE，只做表现增强，不改任何业务逻辑） ---------- */

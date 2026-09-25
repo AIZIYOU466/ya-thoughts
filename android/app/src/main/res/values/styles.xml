@@ -12,13 +12,9 @@
     <style name="AppTheme.NoActionBar" parent="Theme.AppCompat.DayNight.NoActionBar">
         <item name="windowActionBar">false</item>
         <item name="windowNoTitle">true</item>
-        <item name="android:background">@null</item>
-        <!-- 全屏适配：透明状态栏和导航栏，WebView 延伸至系统 UI 区域 -->
-        <item name="android:windowTranslucentStatus">true</item>
-        <item name="android:windowTranslucentNavigation">true</item>
-        <item name="android:windowLayoutInDisplayCutoutMode">shortEdges</item>
-        <item name="android:statusBarColor">@android:color/transparent</item>
-        <item name="android:navigationBarColor">@android:color/transparent</item>
+        <!-- ⚠️ 不要把 windowTranslucentStatus / cutout / 窗口底色 写在这里：
+             BridgeActivity.onCreate 会用库自带的 AppTheme_NoActionBar 覆盖掉本模块主题，
+             这些配置写了也不生效。全屏逻辑在 MainActivity#makeEdgeToEdge 里用代码设置。 -->
     </style>
 
 

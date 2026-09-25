@@ -11,6 +11,9 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    # version.json 是回写提交，会再次触发本工作流（GitHub Actions 不认 [skip ci]），
+    # bot 的 push 直接跳过，否则同一版本会被反复重建成同一份 APK
+    if: ${{ github.event_name != 'push' || github.actor != 'github-actions[bot]' }}
     steps:
       - uses: actions/checkout@v4
 
@@ -68,14 +71,23 @@ jobs:
         run: |
           V="${{ steps.get_version.outputs.version }}"
           R="AIZIYOU466/ya-thoughts"
-          cat > version.json << VJSON_EOF
-          {
-            "version": "$V",
-            "notes": "自动构建 $V",
-            "apkUrl": "https://gh-proxy.com/https://github.com/$R/releases/download/v$V/app-release.apk",
-            "apkUrlBackup": "https://ghfast.top/https://github.com/$R/releases/download/v$V/app-release.apk"
-          }
-          VJSON_EOF
+          # notes 沿用开发者在本仓库手写的这一份；缺失时才回退到默认文案
+          NOTES="$(node -e 'try{console.log(require("./version.json").notes||"")}catch(e){console.log("")}')"
+          if [ -z "$NOTES" ]; then NOTES="发版 v$V"; fi
+          V="$V" R="$R" NOTES="$NOTES" node > version.json.tmp <<'NODE'
+          const v = process.env.V, r = process.env.R, notes = process.env.NOTES;
+          const direct = `https://github.com/${r}/releases/download/v${v}/app-release.apk`;
+          const out = {
+            version: v,
+            notes,
+            // apkUrl 保留：老版本客户端（<=1.7.5）只读这个字段
+            apkUrl: `https://gh-proxy.com/${direct}`,
+            apkUrls: [`https://gh-proxy.com/${direct}`, `https://ghfast.top/${direct}`, direct],
+            releaseUrl: `https://github.com/${r}/releases/tag/v${v}`
+          };
+          process.stdout.write(JSON.stringify(out, null, 2) + '\n');
+          NODE
+          mv version.json.tmp version.json
 
       - name: Commit version.json
         run: |
