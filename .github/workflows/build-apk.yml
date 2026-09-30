@@ -10,7 +10,7 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # version.json 是回写提交，会再次触发本工作流（GitHub Actions 不认 [skip ci]），
     # bot 的 push 直接跳过，否则同一版本会被反复重建成同一份 APK
     if: ${{ github.event_name != 'push' || github.actor != 'github-actions[bot]' }}
@@ -23,7 +23,7 @@ jobs:
           node-version: 22
 
       - name: Setup Java
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: 'temurin'
           java-version: '21'
