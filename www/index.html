@@ -1743,9 +1743,8 @@
     touch-action: none; /* 手势交给 JS，浏览器不缩放不滚动 */
   }
   #img-viewer.open { display: flex; animation: fade-in 0.2s var(--ease); will-change: opacity; }
-  /* 关闭动画由增强层接管：加 .closing 保持可见并淡出 0.18s */
-  #img-viewer.closing { display: flex; animation: fade-out 0.18s var(--ease) forwards; pointer-events: none; }
-  #img-viewer.closing #viewer-img { visibility: hidden; } /* 原 close 逻辑已移除 src，隐藏空图 */
+  /* 关闭动画由 closeViewer 直接接管：加 .closing 保持可见并淡出（图片随遮罩一起淡出） */
+  #img-viewer.closing { display: flex; animation: fade-out 0.16s var(--ease) forwards; pointer-events: none; }
   #viewer-img {
     max-width: 95%;
     max-height: 95%;
@@ -1951,42 +1950,6 @@
     pointer-events: none; overflow: hidden;
   }
 
-  /* ---- 心情设置 ---- */
-  #mood-badge {
-    display: inline-block; font-size: 22px; line-height: 1;
-    margin-left: 8px; vertical-align: middle; cursor: pointer;
-  }
-  #mood-mask {
-    position: fixed; inset: 0; z-index: 9999;
-    display: flex; align-items: center; justify-content: center;
-    background: rgba(0,0,0,0.35); opacity: 0;
-    transition: opacity 0.2s ease;
-    pointer-events: none;
-  }
-  #mood-mask.show { opacity: 1; pointer-events: auto; }
-  #mood-card {
-    background: var(--bg-card); border-radius: 16px;
-    padding: 28px 24px 20px; text-align: center; max-width: 320px; width: 90%;
-    box-shadow: 0 8px 32px rgba(0,0,0,0.18);
-  }
-  #mood-card h2 { margin: 0 0 18px; font-size: 18px; color: var(--text-primary, #1a1a1a); }
-  #mood-grid {
-    display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px;
-    margin-bottom: 18px;
-  }
-  .mood-opt {
-    display: flex; flex-direction: column; align-items: center; gap: 4px;
-    border: 2px solid transparent; border-radius: 12px; padding: 10px 4px;
-    background: none; cursor: pointer; font-size: 12px; color: var(--text-secondary, #666);
-    transition: border-color 0.15s, background 0.15s;
-  }
-  .mood-opt .mood-e { font-size: 28px; line-height: 1; }
-  .mood-opt:active { background: rgba(0,0,0,0.06); }
-  .mood-opt.on { border-color: var(--todo-accent, #2BA88E); background: rgba(43,168,142,0.08); }
-  #mood-close {
-    border: none; background: none; color: var(--todo-accent, #2BA88E);
-    font-size: 15px; font-weight: 600; padding: 8px 24px; cursor: pointer;
-  }
 </style>
 </head>
 <body>
@@ -2025,12 +1988,11 @@
             <stop offset="0" stop-color="#FFE599"/><stop offset="1" stop-color="#FFC93D"/>
           </linearGradient>
         </defs>
-        <text x="130" y="28" text-anchor="middle" font-family="-apple-system,'Helvetica Neue',sans-serif" font-weight="700" font-size="18" letter-spacing="0.5">
+        <text x="130" y="28" text-anchor="middle" font-family="-apple-system,'Helvetica Neue',sans-serif" font-weight="700" font-size="24" letter-spacing="0.5">
           <tspan fill="url(#lgY)">y</tspan><tspan fill="url(#lgA)">a</tspan><tspan style="fill:var(--logo-rest-color)">thoughts</tspan>
         </text>
         <path d="M 68 38 Q 100 32, 132 38 T 196 38 T 196 38" stroke="rgba(123,184,224,0.3)" stroke-width="1.2" fill="none" stroke-linecap="round"/>
       </svg>
-      <span id="mood-badge"></span>
     </h1>
     <div class="hdr-actions">
       <button id="sel-enter" title="选择多条便签" aria-label="选择多条便签">
@@ -2099,12 +2061,6 @@
         <circle cx="12" cy="12" r="9"/><path d="M12 8h.01"/><path d="M12 11v5"/>
       </svg>
       <span>关于</span>
-    </button>
-    <button id="menu-mood">
-      <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-        <circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/>
-      </svg>
-      <span>心情</span>
     </button>
     <div class="menu-sep"></div>
     <button class="menu-sort" data-sort="updated"><span class="menu-sort-check"></span><span>按修改时间</span></button>
@@ -2312,15 +2268,6 @@
       <button type="button" class="confirm-ok"></button>
       <button type="button" class="confirm-alt" style="display:none"></button>
     </div>
-  </div>
-</div>
-
-<!-- 心情选择弹窗 -->
-<div id="mood-mask">
-  <div id="mood-card" role="dialog" aria-modal="true" aria-label="设置心情">
-    <h2>当前心情</h2>
-    <div id="mood-grid"></div>
-    <button id="mood-close">关闭</button>
   </div>
 </div>
 
@@ -3427,7 +3374,8 @@
   var SWIPE_REVEAL_TRIGGER = 40; // Bug2(B)：左滑越过该位移(px)后，菜单才从右侧滑入
   var SWIPE_VEL_SNAP = 0.2;      // 松手时横向速度超过该值(px/ms) → 走惯性滑行（0.5→0.2：慢速滑动也有反馈）
   var DRAG_HOLD = 500;      // 长按多少毫秒进入拖拽
-  var DRAG_JITTER = 3;      // 移动超过该值取消长按/不算点击（10→3：滚动更快跟手）
+  var DRAG_JITTER = 3;      // 判定“算点击”的位移阈值(px)：超过则抑制 click（拖拽落位判定也用它）
+  var DRAG_HOLD_TOL = 10;   // 长按期间手指抖动容差(px)：位移超过才取消长按、才进入左滑/滚动
   var gesture = null;               // 当前进行中的手势（同时只有一个）
   var gestureSuppressClick = false; // 手势消费了本次点按 → 抑制随后的 click（防误开便签）
   var SWIPE_PIN_SVG = '<path d="M12 17v5"/><path d="M9 3h6l1 7 3 3H5l3-3z"/>';
@@ -3483,16 +3431,18 @@
     var dy = t.clientY - g.startY;
     if (g.mode === 'pending') {
       var ax = Math.abs(dx), ay = Math.abs(dy);
-      if (ax > DRAG_JITTER || ay > DRAG_JITTER) {
+      // 用长按容差 DRAG_HOLD_TOL：手指轻微抖动(1~2px)不取消长按，长按拖拽才可靠；
+      // 超过容差才判定方向进入左滑/滚动
+      if (ax > DRAG_HOLD_TOL || ay > DRAG_HOLD_TOL) {
         if (g.longPressTimer) { clearTimeout(g.longPressTimer); g.longPressTimer = null; }
-        // 判定方向：横向占优（左滑）；否则纵向滚动（默认滚动的门槛更低，更跟手）
-        if (dx < -DRAG_JITTER && ax > ay * 1.2) {
+        // 判定方向：横向占优（左滑）；否则纵向滚动
+        if (dx < -DRAG_HOLD_TOL && ax > ay * 1.2) {
           g.mode = 'swipe';
           g.suppressClick = true;
           li.classList.add('swiping');
           g.viewX = dx;
           applySwipe(g);
-        } else if (ay > ax * 1.2 || ay > DRAG_JITTER) {
+        } else if (ay > ax * 1.2 || ay > DRAG_HOLD_TOL) {
           // 立即进入滚动模式，并把**已累计的 dy** 一次性应用到列表
           // 关键：不用 t.clientY 重置 lastY（否则吞掉前面位移）
           g.mode = 'scroll';
@@ -6055,6 +6005,8 @@
   }
 
   function revealViewer(src) {
+    clearTimeout(vCloseTimer); vCloseTimer = null;
+    viewerEl.classList.remove('closing'); // 重新打开：清掉可能残留的关闭态
     if (src) viewerImgEl.src = src;
     else viewerImgEl.removeAttribute('src'); // 无缩略图：先留空，等 ≤1920 的图就绪再显示
     resetViewerTransform();
@@ -6063,14 +6015,33 @@
     document.body.style.overflow = 'hidden'; // 查看期间禁止页面滚动
   }
 
+  // 关闭：移除 .open 保活遮罩播淡出（图片随遮罩一起淡出，不再瞬间消失），动画结束再卸图。
+  var vCloseTimer = null; // 淡出兜底：animationend 丢失（切后台/节流）时强制卸载遮罩
   function closeViewer() {
+    if (!viewerEl.classList.contains('open') && !viewerEl.classList.contains('closing')) return; // 已关：幂等
     viewerToken++; // 作废在途的异步压缩回调，防止关闭后查看器又弹出
     resetViewerTransform(); // 关闭时彻底清理动画/手势状态，防止 vAnimating 卡死
     viewerEl.classList.remove('open');
-    viewerImgEl.removeAttribute('src');
+    viewerEl.classList.add('closing');
     document.body.style.overflow = '';
+    clearTimeout(vCloseTimer);
+    vCloseTimer = setTimeout(finishCloseViewer, 220); // 兜底卸载
+  }
+  function finishCloseViewer() {
+    clearTimeout(vCloseTimer); vCloseTimer = null;
+    if (viewerEl.classList.contains('closing')) viewerEl.classList.remove('closing');
+    viewerImgEl.removeAttribute('src'); // 动画结束才卸图，避免关闭瞬间图片空白闪一下
     if (pendingViewerUrl) { URL.revokeObjectURL(pendingViewerUrl); pendingViewerUrl = null; } // 回收临时压缩图
   }
+  // 右上角 ×：独立直连关闭，点下即关（跳过双击等待与打开 400ms 冷却），响应最快
+  viewerCloseEl.addEventListener('click', function (e) {
+    e.stopPropagation();
+    closeViewer();
+  });
+  // 淡出动画结束：立即卸载遮罩（否则等 220ms 兜底）
+  viewerEl.addEventListener('animationend', function (e) {
+    if (e.target === viewerEl && e.animationName === 'fade-out') finishCloseViewer();
+  });
 
   // 从事件目标向上找 <img>，只在自己所在的容器（编辑器/缩略图条）内找
   function imgFromEvent(e, root) {
@@ -6336,58 +6307,6 @@
   $('about-mask').addEventListener('click', function (e) {
     if (e.target === $('about-mask')) $('about-mask').classList.remove('open');
   });
-
-  /* ============ 心情设置 ============ */
-  var MOODS = [
-    {e:'\u{1F60A}',n:'开心'}, {e:'\u{1F610}',n:'平静'}, {e:'\u{1F622}',n:'难过'},
-    {e:'\u{1F621}',n:'生气'}, {e:'\u{1F634}',n:'困倦'}, {e:'\u{1F914}',n:'思考'},
-    {e:'\u{1F389}',n:'兴奋'}, {e:'\u{1F4AA}',n:'加油'}, {e:'\u{1F60C}',n:'放松'},
-    {e:'\u{1F912}',n:'不适'}
-  ];
-  var MOOD_KEY = 'current_mood';
-  var moodMaskEl = $('mood-mask');
-  var moodGridEl = $('mood-grid');
-
-  function renderMoodBadge() {
-    var stored = '';
-    try { stored = localStorage.getItem(MOOD_KEY) || ''; } catch (e) {}
-    var badge = $('mood-badge');
-    if (badge) badge.textContent = stored;
-  }
-
-  function renderMoodGrid() {
-    var stored = '';
-    try { stored = localStorage.getItem(MOOD_KEY) || ''; } catch (e) {}
-    moodGridEl.innerHTML = '';
-    MOODS.forEach(function (m) {
-      var btn = document.createElement('button');
-      btn.type = 'button';
-      btn.className = 'mood-opt' + (m.e === stored ? ' on' : '');
-      btn.innerHTML = '<span class="mood-e">' + m.e + '</span><span>' + m.n + '</span>';
-      btn.addEventListener('click', function () {
-        try { localStorage.setItem(MOOD_KEY, m.e); } catch (e) {}
-        renderMoodBadge();
-        moodMaskEl.classList.remove('show');
-        showUndoToast('心情已更新');
-      });
-      moodGridEl.appendChild(btn);
-    });
-  }
-
-  function openMood() {
-    renderMoodGrid();
-    moodMaskEl.classList.add('show');
-  }
-
-  $('menu-mood').addEventListener('click', function () { closeMenu(); openMood(); });
-  $('mood-close').addEventListener('click', function () { moodMaskEl.classList.remove('show'); });
-  moodMaskEl.addEventListener('click', function (e) {
-    if (e.target === moodMaskEl) moodMaskEl.classList.remove('show');
-  });
-  var moodBadgeEl = $('mood-badge');
-  if (moodBadgeEl) moodBadgeEl.addEventListener('click', openMood);
-
-  renderMoodBadge(); // 启动时渲染
 
   /* ============ 自动清理设置：⋯ 菜单入口 + 弹窗 + 启动检查 ============ */
   var CLEAN_DONE_KEY = 'auto_clean_done';
@@ -6674,6 +6593,7 @@
   // 查看器手势状态机：'idle' | 'pinching' | 'dragging' | 'doubletap-pending'
   // 双击判定：两次点击 <300ms 且位移 <30px；双击缩放动画期间忽略新手势
   viewerEl.addEventListener('touchstart', function (e) {
+    if (e.target && e.target.closest && e.target.closest('#viewer-close')) return; // × 按钮走独立 click，不进手势状态机
     if (vAnimSelfHeal()) return; // 双击动画进行中：忽略新手势（锁超 400ms 入口自愈解除）
     vMoved = false;
     vStartX = e.touches[0].clientX;
@@ -6723,6 +6643,7 @@
     }
   }, { passive: false });
   viewerEl.addEventListener('touchend', function (e) {
+    if (e.target && e.target.closest && e.target.closest('#viewer-close')) return; // × 按钮：不参与双击关闭判定
     if (vAnimSelfHeal()) return; // 动画锁未解除（含自愈后仍锁定）：不处理 touchend，防误走双击判定
     if (e.touches.length < 2) pinchMode = false;
     if (vGesture === 'pinching' && e.touches.length === 1) { // 双指抬起一根后继续单指平移
@@ -7812,7 +7733,6 @@
   'use strict';
   var listView = document.getElementById('list-view');
   var editorView = document.getElementById('editor-view');
-  var viewerEl = document.getElementById('img-viewer');
   var listEl = document.getElementById('note-list');
   // 触觉反馈：不支持的平台静默忽略
   function buzz(ms) {
@@ -7823,38 +7743,9 @@
          都在同处完成，不再用 MutationObserver 观察/接管（原实现的存在 400ms
          静默窗口与 animationend 丢事件两个隐患，会导致 transform 停在中间态） --- */
 
-  /* --- 图片查看器关闭动画接管：open 移除后保活 0.18s 淡出 ---
-     修复 1.6.0 卡死：旧代码 animationend 比对遗留的 'viewer-fade-out'，与
-     #img-viewer.closing 实际使用的通用 fade-out 不符，条件永假 → .closing 常驻，
-     全屏透明遮罩永久拦截所有输入 = 整页"卡死"。动画名修正 + 兜底定时器双保险。 */
-  var closingLatch = false, closingTimer = null;
-  // ⚠️ 观察 class 的回调里改 class 必须先 contains 判断！classList.add/remove 即使
-  // 「无变化」也会产生一条 class 变更记录，回调内做无变化的增删会自我触发 → 无限循环
-  // 占满主线程 = 整页卡死（open 时 remove 一个不存在的 'closing' 正是如此）。
-  var vo = new MutationObserver(function () {
-    var open = viewerEl.classList.contains('open');
-    var closing = viewerEl.classList.contains('closing');
-    if (!open && !closingLatch) {
-      closingLatch = true; // 闭锁：本次关闭只补一次 .closing，移除后不重加
-      if (!closing) viewerEl.classList.add('closing');
-      clearTimeout(closingTimer);
-      closingTimer = setTimeout(function () { // 兜底：animationend 丢失（切后台/节流）时强制卸载遮罩层
-        closingTimer = null;
-        if (viewerEl.classList.contains('closing')) viewerEl.classList.remove('closing');
-      }, 260);
-    } else if (open) {
-      closingLatch = false;
-      clearTimeout(closingTimer); closingTimer = null;
-      if (closing) viewerEl.classList.remove('closing');
-    }
-  });
-  vo.observe(viewerEl, { attributes: true, attributeFilter: ['class'] });
-  viewerEl.addEventListener('animationend', function (e) {
-    if (e.target === viewerEl && e.animationName === 'fade-out') {
-      clearTimeout(closingTimer); closingTimer = null;
-      if (viewerEl.classList.contains('closing')) viewerEl.classList.remove('closing'); // 闭锁保持 true，MutationObserver 不会重加
-    }
-  });
+  /* --- 图片查看器关闭动画现由查看器代码自身的 closeViewer/finishCloseViewer 直接管理
+         （移除 .open 时保活 .closing 播淡出，动画结束卸载），不再用 MutationObserver
+         观察 class——观察 class 的回调里改 class 极易自我触发成死循环，本块已删除。 --- */
 
   /* --- 首屏卡片依次入场：只对首次渲染生效，之后的重渲染不闪动 --- */
   var bootDone = false;
