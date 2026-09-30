@@ -1,0 +1,263 @@
+# 任务：图片体验优化（上传提速 / 查看器不卡 / 裁剪简化）
+
+## AI 行为规范（必读）
+1. 不要读整个 index.html。用 sed -n 按行号分段读。
+2. 先输出方案报告，等用户确认后再动手。
+3. 用精准 edit，禁止全量重写。
+4. 改完 index.html 后必须执行 cp index.html www/index.html。
+5. 纯原生 JS，var + 具名 function + 单引号 + 中文注释。
+6. 一次改完 3 个模块，不要分次。
+7. 每改一个函数，先验证不破坏老数据兼容（老图没有 thumbBlob 字段）。
+
+## 读取范围
+- readImageElement: sed -n '5732,5800p' index.html
+- insertImageBlob: sed -n '5217,5260p' index.html
+- handleImageFiles: sed -n '5260,5282p' index.html
+- getImageURL + hydrateImages: sed -n '5282,5420p' index.html
+- openViewer 完整: grep -n -A80 'function openViewer' index.html
+- 裁剪区全部: sed -n '5710,5990p' index.html
+- 裁剪 HTML: grep -n -B2 -A30 'crop-overlay' index.html | head -60
+- 裁剪 CSS: grep -n -A5 'crop-frame\|crop-corner\|crop-bar' index.html | head -40
+- DB 表定义: sed -n '2540,2600p' index.html
+
+项目：Ya thoughts 便签 App，Capacitor 8，单文件 index.html + www/index.html
+数据库：IndexedDB，表 notes（便签）+ images（图片）
+图片记录结构：{ id, noteId, mime, blob, pos, createdAt, starred, compressed }
+
+---
+
+## 模块 1：上传提速（createImageBitmap 替代 Image + canvas）
+
+### 现象
+手机拍的照片（3~10MB，4000×3000）插入慢，1 张约 0.5~1.5 秒。
+
+### 根因
+readImageElement() 当前流程（约 5732~5770 行）：
+1. URL.createObjectURL(file)
+2. new Image() 解码原图（主线程阻塞）
+3. canvas.drawImage 压到 1920
+4. canvas.toBlob → new Image() 再解码一次压缩图（多余的一步！）
+
+4 步全在主线程，无法并行。
+
+### 目标方案
+用 createImageBitmap 在后台线程解码 + 缩放，一步到位：
+
+function readImageElement(file) {
+  return new Promise(function (resolve, reject) {
+    if (typeof createImageBitmap !== 'function') {
+      return readImageElementFallback(file).then(resolve, reject);
+    }
+    var maxSide = 1920;
+    var tmpUrl = URL.createObjectURL(file);
+    var probeImg = new Image();
+    var timer = setTimeout(function () {
+      URL.revokeObjectURL(tmpUrl);
+      reject(new Error('timeout'));
+    }, 20000);
+    probeImg.onerror = function () {
+      clearTimeout(timer);
+      URL.revokeObjectURL(tmpUrl);
+      reject(new Error('decode'));
+    };
+    probeImg.onload = function () {
+      clearTimeout(timer);
+      var w = probeImg.naturalWidth, h = probeImg.naturalHeight;
+      URL.revokeObjectURL(tmpUrl);
+      if (w <= maxSide && h <= maxSide) {
+        createImageBitmap(file).then(function (bmp) {
+          var url = URL.createObjectURL(file);
+          var img = new Image();
+          img.onload = function () { resolve(img); };
+          img.onerror = function () { URL.revokeObjectURL(url); reject(new Error('decode')); };
+          img.src = url;
+          if (bmp.close) bmp.close();
+        }).catch(function () { readImageElementFallback(file).then(resolve, reject); });
+        return;
+      }
+      var scale = maxSide / Math.max(w, h);
+      var cw = Math.round(w * scale);
+      var ch = Math.round(h * scale);
+      createImageBitmap(file, { resizeWidth: cw, resizeHeight: ch, resizeQuality: 'high' })
+        .then(function (bmp) {
+          var canvas = document.createElement('canvas');
+          canvas.width = cw; canvas.height = ch;
+          canvas.getContext('2d').drawImage(bmp, 0, 0);
+          if (bmp.close) bmp.close();
+          canvas.toBlob(function (blob) {
+            if (!blob) { readImageElementFallback(file).then(resolve, reject); return; }
+            var compUrl = URL.createObjectURL(blob);
+            var compImg = new Image();
+            compImg.onload = function () { resolve(compImg); };
+            compImg.onerror = function () { URL.revokeObjectURL(compUrl); reject(new Error('decode')); };
+            compImg.src = compUrl;
+          }, 'image/jpeg', 0.85);
+        })
+        .catch(function () { readImageElementFallback(file).then(resolve, reject); });
+    };
+    probeImg.src = tmpUrl;
+  });
+}
+
+关键要求：
+- createImageBitmap 不可用时回退到旧实现（把现有 readImageElement 逻辑重命名为 readImageElementFallback）
+- 压缩图质量保持 0.85
+- 保留原 1920 长边限制
+- 保留 20s 超时
+
+### 验收
+- 一张 5MB 手机照片插入时间从 ~1s 降到 ~300ms
+- 大图仍被压到 1920 长边
+
+---
+
+## 模块 2：查看器不卡（缩略图 + 渐进加载）
+
+### 现象
+点击编辑器里的图片 → openViewer → 卡死 0.5~2 秒（大图必卡，小图不卡）。
+
+### 根因
+openViewer(src, imgId) 直接把 src（大图 blob URL）赋给 #viewer-img，浏览器主线程解码原图。
+
+### 目标方案：缩略图先显示 + 原图后台加载
+
+### 实施步骤
+
+#### 2.1 新增 thumbBlob 字段
+
+新增函数 makeThumbBlob(blob)：长边 ≤720px、质量 0.7 的 JPEG Blob，小图直接返回原 blob。
+
+在 insertImageBlob(rec) 里，先 makeThumbBlob(blob) → rec.thumbBlob = thumbBlob → rec.compressed = true，再走原逻辑。
+
+#### 2.2 新增缓存变量
+
+在文件头部变量声明区（找 imgUrlCache 同级位置）加：
+var imgThumbCache = {};
+
+#### 2.3 hydrateImages 改用缩略图
+
+hydrateImages 里读图片时：
+- 优先用 rec.thumbBlob 生成 thumbUrl，编辑器里 img.src = thumbUrl
+- 老数据（无 thumbBlob）：用原图当缩略图 + 后台异步生成 thumbBlob 并写库（一次性）
+- 新增缓存：imgThumbCache[id] = thumbUrl
+
+#### 2.4 openViewer 改为渐进加载
+
+openViewer 里：
+1. 先用 thumbUrl（imgThumbCache 里）显示缩略图
+2. 后台加载原图 blob URL
+3. 加载完替换 viewerImgEl.src
+
+### 验收
+- 编辑器里滚动/点击图片无卡顿
+- 查看器打开是"缩略图立即显示 → 1 秒内变清晰"
+- 老图（无 thumbBlob）首次打开会稍卡（一次性），之后走缩略图
+
+---
+
+## 模块 3：裁剪简化（4 个比例按钮 + 自动居中）
+
+### 现象
+- 裁剪框有拖拽、缩放、平移、四角拖拽，交互太多
+- 裁剪框里图片糊
+
+### 目标方案：大幅简化 UI
+
+#### 3.1 去掉的东西
+- 四角拖拽（.crop-corner 相关全部删除）
+- 手指拖拽框
+- 双指缩放
+- 平移图片
+
+#### 3.2 保留的东西
+- 4 个比例按钮：1:1 / 4:3 / 16:9 / 原图
+- 点按钮 → 裁剪框自动居中裁好
+- 底部有"取消" / "确认"按钮
+- 图片缩放：固定 fit（长边撑满裁剪框），不用手势
+
+#### 3.3 新交互
+
+用户选图 → 打开裁剪界面：
+- 图片按比例自动居中显示在裁剪框内（裁剪框大小固定，图片自动缩放到刚好覆盖）
+- 底部比例按钮：[1:1] [4:3] [16:9] [原图]
+- 点比例 → 裁剪框比例变化 + 图片重新居中
+- 点"确认" → 裁剪 + 插入
+
+#### 3.4 裁剪界面 HTML 简化
+
+HTML 改为：
+<div id="crop-overlay">
+  <div id="crop-stage">
+    <div id="crop-clip">
+      <img id="crop-img" alt="裁剪预览">
+    </div>
+    <div id="crop-frame"></div>
+  </div>
+  <div id="crop-bar">
+    <button id="crop-cancel">取消</button>
+    <div class="crop-ratios">
+      <button data-ratio="1">1:1</button>
+      <button data-ratio="1.333">4:3</button>
+      <button data-ratio="1.778">16:9</button>
+      <button data-ratio="0" class="on">原图</button>
+    </div>
+    <button id="crop-ok">确认</button>
+  </div>
+</div>
+
+（data-ratio="0" 表示"原图比例"，即用图片本身宽高比）
+
+#### 3.5 裁剪清晰度
+
+confirmCrop 里的 canvas 输出质量 0.85→0.92（比现在 0.88 更高）。
+输出长边从 2560 → 1920（与压缩图统一，避免二次压缩）。
+
+### 验收
+- 选图后裁剪界面只有 4 个比例按钮 + 取消/确认
+- 手指不能拖框、不能缩放、不能平移（禁止这些手势）
+- 点比例 → 图片自动重新居中 + 裁剪框比例变化
+- 确认后裁剪图清晰
+
+---
+
+## 严格约束
+- 不动导出、通知、回收箱、backButton 逻辑。
+- 老数据兼容：没有 thumbBlob 字段的图片，首次加载时后台生成并写库，不能报错。
+- 改完 index.html 后必须 cp index.html www/index.html。
+- 报告 ls -la index.html www/index.html 两文件大小一致。
+
+## 输出要求
+
+### 第一步（先输出报告，不动代码）
+
+模块 1：
+- readImageElement 当前实现（约 5732~5770 行）
+- 计划改动（重命名旧函数 + 新增 createImageBitmap 版本）
+
+模块 2：
+- openViewer 完整代码（贴出来）
+- hydrateImages 完整代码
+- insertImageBlob 完整代码
+- 计划改动
+
+模块 3：
+- 裁剪相关 HTML/CSS/JS 的完整清单（每个函数名 + 行号）
+- 计划删除的部分 / 计划保留的部分 / 计划新增的部分
+
+通用：
+- 需要新增的变量（如 imgThumbCache）
+- 需要新增的字段（如 rec.thumbBlob）
+- 是否影响 DB schema（不需要 migration 因为字段可选）
+- 有无技术风险
+
+### 第二步（等用户确认后）
+
+- 一次性改完 3 个模块
+- 报告改动行号、grep 验证、两文件大小一致
+- grep 验证：
+  · grep -c "createImageBitmap" index.html（应 ≥ 1）
+  · grep -c "thumbBlob" index.html（应 ≥ 5）
+  · grep -c "imgThumbCache" index.html（应 ≥ 3）
+  · grep -c "crop-corner" index.html（应为 0，已删）
+  · grep -c "data-ratio" index.html（应 = 4）
+  · ls -la index.html www/index.html（两文件大小一致）

@@ -1773,7 +1773,7 @@
 
   /* ============ 图片裁剪 overlay（选图后全屏裁剪，确认后才插入） ============ */
   #crop-overlay {
-    position: fixed; inset: 0; z-index: 105;
+    position: fixed; inset: 0; z-index: 99999;
     display: none;
     background: rgba(0, 0, 0, 0.92);
     touch-action: none; /* 手势交给 JS（Android WebView 手势必须 Touch Events） */
@@ -1799,15 +1799,6 @@
     border: 1.5px solid #fff;
     pointer-events: none; /* 不抢图片手势 */
   }
-  .crop-corner {
-    position: absolute; width: 22px; height: 22px;
-    border: 2px solid #fff;
-    pointer-events: none;
-  }
-  .crop-corner.tl { left: -2px; top: -2px; border-right: none; border-bottom: none; }
-  .crop-corner.tr { right: -2px; top: -2px; border-left: none; border-bottom: none; }
-  .crop-corner.bl { left: -2px; bottom: -2px; border-right: none; border-top: none; }
-  .crop-corner.br { right: -2px; bottom: -2px; border-left: none; border-top: none; }
   #crop-bar {
     position: absolute;
     left: 50%; bottom: calc(env(safe-area-inset-bottom) + 16px);
@@ -1834,9 +1825,9 @@
   }
   #crop-ratios { display: flex; align-items: center; gap: 2px; }
   #crop-ratios .crop-ratio-btn {
-    width: 40px; height: 40px;
+    min-width: 40px; height: 40px; padding: 0 8px;
     display: inline-flex; align-items: center; justify-content: center;
-    border-radius: 12px;
+    border-radius: 12px; font-size: 13px;
     color: var(--text-secondary);
     transition: background 0.15s var(--ease), color 0.15s var(--ease);
   }
@@ -2378,28 +2369,15 @@
     <div id="crop-clip">
       <img id="crop-img" alt="裁剪图片">
     </div>
-    <div id="crop-frame" aria-hidden="true">
-      <span class="crop-corner tl"></span>
-      <span class="crop-corner tr"></span>
-      <span class="crop-corner bl"></span>
-      <span class="crop-corner br"></span>
-    </div>
+    <div id="crop-frame" aria-hidden="true"></div>
   </div>
   <div id="crop-bar">
     <button id="crop-cancel" type="button">取消</button>
     <div id="crop-ratios" aria-label="裁剪比例">
-      <button type="button" class="crop-ratio-btn active" data-ratio="1:1" title="1:1">
-        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="2"/></svg>
-      </button>
-      <button type="button" class="crop-ratio-btn" data-ratio="4:3" title="4:3">
-        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><rect x="3" y="5.25" width="18" height="13.5" rx="2"/></svg>
-      </button>
-      <button type="button" class="crop-ratio-btn" data-ratio="16:9" title="16:9">
-        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><rect x="3" y="6.94" width="18" height="10.125" rx="2"/></svg>
-      </button>
-      <button type="button" class="crop-ratio-btn" data-ratio="orig" title="原图">
-        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="9.5" r="1.5"/><path d="M21 16l-4.7-4.7L9 18.6"/></svg>
-      </button>
+      <button type="button" class="crop-ratio-btn active" data-ratio="1">1:1</button>
+      <button type="button" class="crop-ratio-btn" data-ratio="1.333">4:3</button>
+      <button type="button" class="crop-ratio-btn" data-ratio="1.778">16:9</button>
+      <button type="button" class="crop-ratio-btn" data-ratio="0">原图</button>
     </div>
     <button id="crop-ok" type="button">确认</button>
   </div>
@@ -2494,7 +2472,8 @@
   var saveTimer = null;
   var pendingSaveId = null; // backToList 捕获的离开便签：currentId 置 null 后写库仍可定位
   var statusTimer = null;
-  var imgUrlCache = {}; // 图片 id → objectURL，本会话内复用
+  var imgUrlCache = {}; // 图片 id → 原图 objectURL，本会话内复用
+  var imgThumbCache = {}; // 图片 id → 缩略图 objectURL，编辑器与查看器渐进加载共用
   var stripRenderToken = 0; // 防止并发渲染重复追加缩略图
   var openToken = 0; // 每次打开/离开编辑器 +1；在途异步结果回写前先校验，防笔记切换竞态
   var savedRange = null; // 点「图片」按钮前保存的编辑器选区，插入图片时恢复
@@ -5223,16 +5202,28 @@
       blob: blob,
       pos: Date.now(), // 存储时在正文中的顺序（DOM 顺序）
       createdAt: Date.now(),
-      starred: false // 图片重点标注，默认无
+      starred: false, // 图片重点标注，默认无
+      compressed: true // 新图直接标记，跳过老图压缩检查
     };
     imgUrlCache[rec.id] = URL.createObjectURL(rec.blob);
-    return dbPutImage(rec).then(function () {
+    // 先生成缩略图，再写库（编辑器用缩略图显示，查看器渐进加载用）
+    return makeThumbBlob(blob).then(function (thumbBlob) {
+      rec.thumbBlob = thumbBlob;
+      imgThumbCache[rec.id] = URL.createObjectURL(thumbBlob);
+    }).catch(function () { /* 缩略图生成失败：原图当缩略图 */
+      rec.thumbBlob = blob;
+    }).then(function () {
+      return dbPutImage(rec);
+    }).then(function () {
       if (currentId !== rec.noteId) {
-        // 上传落库前用户已离开该笔记：作废插入并清掉孤儿记录，避免图片串到别的便签
         dbDeleteImage(rec.id).catch(function () { /* 存储失败静默 */ });
         if (imgUrlCache[rec.id]) {
           URL.revokeObjectURL(imgUrlCache[rec.id]);
           delete imgUrlCache[rec.id];
+        }
+        if (imgThumbCache[rec.id]) {
+          URL.revokeObjectURL(imgThumbCache[rec.id]);
+          delete imgThumbCache[rec.id];
         }
         return false;
       }
@@ -5240,9 +5231,9 @@
       img.dataset.imgId = rec.id;
       img.dataset.imgNoteId = rec.noteId; // 供重点标注写库时补 noteId
       img.alt = '便签图片';
-      img.contentEditable = 'false'; // 防 contenteditable 光标/编辑误入图片（存在时整段禁用编辑）
-      img.draggable = false; // 防 contenteditable 原生拖拽吞 click（影响查看器打开）
-      img.src = imgUrlCache[rec.id]; // 对象 URL 立即可用，不等落库
+      img.contentEditable = 'false';
+      img.draggable = false;
+      img.src = imgThumbCache[rec.id] || imgUrlCache[rec.id]; // 缩略图优先，立即可用
       insertNodeAtCaret(img);
       renderImageStrip();
       return true;
@@ -5250,6 +5241,10 @@
       if (imgUrlCache[rec.id]) {
         URL.revokeObjectURL(imgUrlCache[rec.id]);
         delete imgUrlCache[rec.id];
+      }
+      if (imgThumbCache[rec.id]) {
+        URL.revokeObjectURL(imgThumbCache[rec.id]);
+        delete imgThumbCache[rec.id];
       }
       showUndoToast('图片保存失败，请重试');
       return false;
@@ -5279,53 +5274,38 @@
     });
   }
 
+  // 读-合并-写：IndexedDB put 是整条替换，先取最新记录再打补丁，
+  // 避免并发写（愈合 blob、生成 thumbBlob、补 pos）互相覆盖字段
+  function mergePutImage(id, patch) {
+    return dbGetImage(id).then(function (cur) {
+      if (!cur) return;
+      for (var k in patch) { if (patch.hasOwnProperty(k)) cur[k] = patch[k]; }
+      return dbPutImage(cur);
+    }).catch(function () { /* 静默 */ });
+  }
+
+  // 图片原图 URL（会话内缓存复用）。返回 URL 对应的位图长边保证 ≤1920：
+  // 老图/导入图先 off-thread 缩好再回写库（一次性愈合），避免 <img> 在主线程整张解码大图卡死。
   function getImageURL(id) {
     if (imgUrlCache[id]) return Promise.resolve(imgUrlCache[id]);
     return dbGetImage(id).then(function (rec) {
-      if (!rec) return null;
-      var url = URL.createObjectURL(rec.blob);
-      imgUrlCache[id] = url;
-      return url;
-    }).catch(function () { return null; });
-  }
-
-  // 老图检测并压缩（一次性，静默执行）：解码 → 长边 >1920 则 canvas 压到 1920/0.85 →
-  // 更新 IndexedDB 记录、替换缓存 objectURL、刷新 img.src。小图也打 compressed 标记，
-  // 之后每次打开直接跳过，不再解码查尺寸。
-  function maybeShrinkOldImage(rec, img, id, myToken) {
-    if (!rec || !rec.blob) return Promise.resolve();
-    return loadBlobToImage(rec.blob).then(function (el) {
-      var w = el.naturalWidth, h = el.naturalHeight;
-      if (w <= 1920 && h <= 1920) {
-        rec.compressed = true; // 本就不大：标记一次，后续打开不重复解码
-        return dbPutImage(rec).catch(function () { /* 静默 */ });
+      if (!rec || !rec.blob) return null;
+      // 已确认 ≤1920，或无 createImageBitmap 可降级：直接用
+      if (rec.compressed || typeof createImageBitmap !== 'function') {
+        var u0 = URL.createObjectURL(rec.blob);
+        imgUrlCache[id] = u0;
+        return u0;
       }
-      var scale = 1920 / Math.max(w, h);
-      var canvas = document.createElement('canvas');
-      canvas.width = Math.round(w * scale);
-      canvas.height = Math.round(h * scale);
-      canvas.getContext('2d').drawImage(el, 0, 0, canvas.width, canvas.height);
-      return blobFromCanvas(canvas).then(function (newBlob) {
-        if (!newBlob) { // 编码失败不回退活：标记已尝试，避免每次打开都解码一遍
-          rec.compressed = true;
-          return dbPutImage(rec).catch(function () { /* 静默 */ });
-        }
-        rec.blob = newBlob;
-        rec.mime = 'image/jpeg';
-        rec.compressed = true;
-        return dbPutImage(rec).then(function () {
-          if (myToken !== openToken) return; // 已切笔记：库已更新，DOM 不换
-          if (imgUrlCache[id]) {
-            URL.revokeObjectURL(imgUrlCache[id]);
-            delete imgUrlCache[id];
-          }
-          return getImageURL(id).then(function (url) {
-            if (myToken !== openToken) return;
-            if (url && img.isConnected) img.src = url; // 换上新压缩图
-          });
+      return downscaleBlob(rec.blob, 1920).then(function (res) {
+        var patch = { compressed: true };
+        if (res.changed) { patch.blob = res.blob; patch.mime = 'image/jpeg'; }
+        return mergePutImage(id, patch).then(function () {
+          var url = URL.createObjectURL(res.blob);
+          imgUrlCache[id] = url;
+          return url;
         });
       });
-    });
+    }).catch(function () { return null; });
   }
 
   // Blob → Image 元素（拿自然尺寸；老图压缩/尺寸检查共用）
@@ -5340,27 +5320,79 @@
   }
 
   // canvas → JPEG Blob（toBlob 优先，旧内核回退 toDataURL；失败返回 null）
-  function blobFromCanvas(canvas) {
+  function blobFromCanvas(canvas, quality) {
+    quality = quality || 0.85;
     return new Promise(function (resolve) {
       if (canvas.toBlob) {
-        canvas.toBlob(function (b) { resolve(b || null); }, 'image/jpeg', 0.85);
+        canvas.toBlob(function (b) { resolve(b || null); }, 'image/jpeg', quality);
       } else {
-        try { resolve(dataURLtoBlob(canvas.toDataURL('image/jpeg', 0.85))); }
+        try { resolve(dataURLtoBlob(canvas.toDataURL('image/jpeg', quality))); }
         catch (e) { resolve(null); }
       }
     });
   }
 
-  // Blob → 压缩到长边 ≤1920 / 0.85 的 JPEG Blob（openViewer 兜底用）
-  function compressBlobToBlob(blob) {
+  // 把 blob 的位图长边缩到 ≤maxSide。优先 createImageBitmap（后台线程解码+缩放，
+  // 不阻塞主线程——这是避免 WebView 主线程整张解码大图卡死的关键）；
+  // 旧内核无该 API 时退回 <img>+canvas。返回 { blob, changed }，无需缩放/失败时原样返回。
+  function downscaleBlob(blob, maxSide, quality) {
+    quality = quality || 0.9;
+    return new Promise(function (resolve) {
+      if (!blob) { resolve({ blob: blob, changed: false }); return; }
+      if (typeof createImageBitmap !== 'function') {
+        downscaleByImg(blob, maxSide, quality).then(resolve);
+        return;
+      }
+      var done = false;
+      var finish = function (r) { if (done) return; done = true; clearTimeout(timer); resolve(r); };
+      // 兜底：个别 WebView 的 createImageBitmap 可能不回调，8s 后退回原图，避免图片永久空白
+      var timer = setTimeout(function () { finish({ blob: blob, changed: false }); }, 1500);
+      createImageBitmap(blob).then(function (bmp) {
+        var w = bmp.width, h = bmp.height;
+        if (w <= maxSide && h <= maxSide) {
+          if (bmp.close) bmp.close();
+          finish({ blob: blob, changed: false });
+          return;
+        }
+        var scale = maxSide / Math.max(w, h);
+        var cw = Math.round(w * scale), ch = Math.round(h * scale);
+        if (bmp.close) bmp.close();
+        createImageBitmap(blob, { resizeWidth: cw, resizeHeight: ch, resizeQuality: 'high' })
+          .then(function (bmp2) {
+            if (done) { if (bmp2.close) bmp2.close(); return; }
+            var canvas = document.createElement('canvas');
+            canvas.width = cw; canvas.height = ch;
+            canvas.getContext('2d').drawImage(bmp2, 0, 0);
+            if (bmp2.close) bmp2.close();
+            blobFromCanvas(canvas, quality).then(function (nb) {
+              finish(nb ? { blob: nb, changed: true } : { blob: blob, changed: false });
+            });
+          })
+          .catch(function () { finish({ blob: blob, changed: false }); });
+      }).catch(function () { finish({ blob: blob, changed: false }); });
+    });
+  }
+
+  // 旧内核回退：<img> 拿尺寸 + canvas 缩放（主线程解码，仅在无 createImageBitmap 时使用）
+  function downscaleByImg(blob, maxSide, quality) {
     return loadBlobToImage(blob).then(function (el) {
       var w = el.naturalWidth, h = el.naturalHeight;
-      var scale = 1920 / Math.max(w, h);
+      if (!w || !h || (w <= maxSide && h <= maxSide)) return { blob: blob, changed: false };
+      var scale = maxSide / Math.max(w, h);
       var cw = Math.round(w * scale), ch = Math.round(h * scale);
       var canvas = document.createElement('canvas');
       canvas.width = cw; canvas.height = ch;
       canvas.getContext('2d').drawImage(el, 0, 0, cw, ch);
-      return blobFromCanvas(canvas);
+      return blobFromCanvas(canvas, quality).then(function (nb) {
+        return nb ? { blob: nb, changed: true } : { blob: blob, changed: false };
+      });
+    }).catch(function () { return { blob: blob, changed: false }; });
+  }
+
+  // 生成缩略图 Blob：长边 ≤720px、质量 0.7 的 JPEG；小图直接返回原 blob
+  function makeThumbBlob(blob) {
+    return downscaleBlob(blob, 720, 0.7).then(function (res) {
+      return res.changed ? res.blob : blob;
     });
   }
 
@@ -5377,32 +5409,34 @@
     Array.prototype.forEach.call(imgs, function (img, idx) {
       var id = img.dataset.imgId;
       if (!id) return;
-      img.dataset.imgNoteId = currentId || ''; // 供重点标注写库时补 noteId
-      if (imgUrlCache[id]) { img.src = imgUrlCache[id]; } // 命中缓存直接显示（不 return：老图压缩检查仍需走 dbGetImage）
-      getImageURL(id).then(function (url) {
-        if (myToken !== openToken) return; // 已切到别的笔记，丢弃过期结果
-        if (url && img.isConnected) img.src = url;
-      });
+      img.dataset.imgNoteId = currentId || '';
+      // 缩略图优先显示（解码快）
+      if (imgThumbCache[id]) img.src = imgThumbCache[id];
+      // 原图 URL 预热到 imgUrlCache 供查看器用；编辑器 img.src 永不赋原图
+      // （1920 图在编辑器滚动时仍会卡；编辑器只用缩略图）
+      getImageURL(id);
       dbGetImage(id).then(function (rec) {
-        if (myToken !== openToken) return; // 过期结果不回写
-        if (!rec) return;
-        // 老图一次性压缩（v1.6.0 前插入的全分辨率图）：首次打开解码查尺寸并压缩，
-        // 之后带 compressed 标记直接跳过；压缩失败也标记，避免每次打开重复解码
-        var chain = rec.compressed ? Promise.resolve() :
-          maybeShrinkOldImage(rec, img, id, myToken).catch(function () {
-            if (rec) { rec.compressed = true; dbPutImage(rec).catch(function () {}); }
-          });
-        chain.then(function () {
-          if (myToken !== openToken) return;
-          if (rec.pos === undefined) {
-            rec.pos = idx;
-            return dbPutImage(rec);
+        if (myToken !== openToken || !rec) return;
+        // 缩略图：老记录没有 thumbBlob → off-thread 生成并回写库（一次性）
+        if (!imgThumbCache[id]) {
+          if (rec.thumbBlob) {
+            imgThumbCache[id] = URL.createObjectURL(rec.thumbBlob);
+            if (img.isConnected) img.src = imgThumbCache[id];
+          } else {
+            makeThumbBlob(rec.blob).then(function (tb) {
+              if (myToken !== openToken) return;
+              imgThumbCache[id] = URL.createObjectURL(tb);
+              if (img.isConnected) img.src = imgThumbCache[id];
+              return mergePutImage(id, { thumbBlob: tb });
+            }).catch(function () { /* 生成失败静默 */ });
           }
-          if (rec.starred && img.isConnected) {
-            img.classList.add('starred'); // 库里标记了重点 → 恢复样式
-            renderImageStrip();
-          }
-        }).catch(function () { /* 补写失败静默 */ });
+        }
+        // 旧记录缺 pos 时按 DOM 顺序补写；否则恢复重点标注样式
+        if (rec.pos === undefined) mergePutImage(id, { pos: idx });
+        else if (rec.starred && img.isConnected) {
+          img.classList.add('starred');
+          renderImageStrip();
+        }
       }).catch(function () { /* 读取失败静默 */ });
     });
     renderImageStrip(myToken);
@@ -5422,18 +5456,33 @@
 
     var token = ++stripRenderToken;
     ids.forEach(function (id) {
+      // 缩略图条优先用 thumbCache（小图解码快，不卡滚动）
+      var thumbUrl = imgThumbCache[id];
+      if (thumbUrl) {
+        if (token !== stripRenderToken || myToken !== openToken) return;
+        var wrap = document.createElement('div');
+        wrap.className = 'img-thumb';
+        var srcImg = editorEl.querySelector('img[data-img-id="' + id + '"]');
+        if (srcImg && srcImg.classList.contains('starred')) wrap.classList.add('starred');
+        var img = document.createElement('img');
+        img.src = thumbUrl;
+        img.alt = '便签图片';
+        img.dataset.imgId = id;
+        wrap.appendChild(img);
+        stripEl.appendChild(wrap);
+        return;
+      }
       getImageURL(id).then(function (url) {
-        // 双重校验：本条渲染已被更新，或已切换笔记，都丢弃过期结果
         if (!url || token !== stripRenderToken || myToken !== openToken) return;
         var wrap = document.createElement('div');
         wrap.className = 'img-thumb';
         var srcImg = editorEl.querySelector('img[data-img-id="' + id + '"]');
-        if (srcImg && srcImg.classList.contains('starred')) wrap.classList.add('starred'); // 缩略图同步星标
+        if (srcImg && srcImg.classList.contains('starred')) wrap.classList.add('starred');
 
         var img = document.createElement('img');
         img.src = url;
         img.alt = '便签图片';
-        img.dataset.imgId = id; // 查看器尺寸检查去重 key
+        img.dataset.imgId = id;
 
         wrap.appendChild(img);
         stripEl.appendChild(wrap);
@@ -5724,12 +5773,13 @@
   // App 启动时强制重置（防止上次会话残留）
   resetCropBusy();
   var cropSkipped = 0;  // 本批被取消的张数（队列结束时 toast 提示）
-  var cropData = null;  // 当前裁剪上下文：{img, job, baseW, baseH, scale, tx, ty, minScale, frame}
-  var cropTouch = null; // 手势状态：{mode:'pinch'|'pan', startDist, startScale, lastX, lastY}
+  var cropData = null;  // 当前裁剪上下文：{img, job, ratio, frame}
+
 
   // createObjectURL → Image 元素（拿自然尺寸；同时作为裁剪与 canvas 的数据源）
   // 大图自动压缩到长边 ≤ 1920px，避免 WebView 解码大 dataURL 静默失败
-  function readImageElement(file) {
+  // 旧实现：Image + canvas 主线程解码压缩（createImageBitmap 不可用时回退）
+  function readImageElementFallback(file) {
     return new Promise(function (resolve, reject) {
       var blobUrl = URL.createObjectURL(file);
       var timer = setTimeout(function () {
@@ -5771,23 +5821,23 @@
     });
   }
 
+  // createImageBitmap 后台解码 + 缩放，省去 probe 步骤
+  function readImageElement(file) {
+    // 回退：createImageBitmap 在部分 Android WebView 上会永久挂起，
+    // 先用旧方案 readImageElementFallback（稳定可靠）
+    return readImageElementFallback(file);
+  }
+
+  // 裁剪初始化：图片 cover fit 到舞台，固定居中（无手势缩放/平移）
   function cropInitData(job) {
     var img = job.img;
-    var sw = cropStageEl.clientWidth, sh = cropStageEl.clientHeight;
-    var fit = Math.min(sw / img.naturalWidth, sh / img.naturalHeight) * 0.92; // contain 92%，初始已覆盖裁剪框
-    cropImgEl.style.width = Math.round(img.naturalWidth * fit) + 'px';
-    cropImgEl.style.height = Math.round(img.naturalHeight * fit) + 'px';
     cropData = {
       img: img, job: job,
-      baseW: img.naturalWidth * fit, baseH: img.naturalHeight * fit,
-      scale: 1, minScale: 0.5,
-      tx: (sw - img.naturalWidth * fit) / 2,
-      ty: (sh - img.naturalHeight * fit) / 2,
-      frame: null
+      ratio: 1, frame: null
     };
   }
 
-  // 裁剪框：比例 + 尺寸 + 位置（中心略上移，给底部工具栏让位）；同时算出最小缩放
+  // 裁剪框：比例 + 居中；图片 cover fit 覆盖裁剪框（无手势）
   function layoutCropFrame() {
     var d = cropData;
     var sw = cropStageEl.clientWidth, sh = cropStageEl.clientHeight;
@@ -5795,58 +5845,44 @@
     var fw = Math.min(sw * 0.62, sh * 0.5);
     var fh = fw / r;
     var fx = (sw - fw) / 2;
-    var fy = Math.max(0, sh * 0.45 - fh / 2); // 中心在 45% 高度
+    var fy = Math.max(0, sh * 0.45 - fh / 2);
     cropFrameEl.style.width = fw + 'px';
     cropFrameEl.style.height = fh + 'px';
     cropFrameEl.style.left = fx + 'px';
     cropFrameEl.style.top = fy + 'px';
     d.frame = { x: fx, y: fy, w: fw, h: fh };
-    // 裁剪窗口：只在裁剪框矩形内显示图片（舞台坐标 → 包裹层 clip，切换比例时才变）
+    // clip：只在裁剪框矩形内显示图片
     cropClipEl.style.clipPath =
       'inset(' + fy + 'px ' + (sw - fx - fw) + 'px ' + (sh - fy - fh) + 'px ' + fx + 'px)';
-    d.minScale = Math.max(0.5, Math.max(fw / d.baseW, fh / d.baseH)); // 保证裁剪框始终有图
-  }
-
-  function applyCropTransform() {
-    if (!cropData) return;
+    // 图片 cover fit：缩放比取 max（刚好覆盖裁剪框）
+    var iw = d.img.naturalWidth, ih = d.img.naturalHeight;
+    var fit = Math.max(fw / iw, fh / ih);
+    var dw = Math.round(iw * fit), dh = Math.round(ih * fit);
+    // 图片在裁剪框内居中（偏移相对裁剪框左上角，负值表示溢出）
+    var ox = (fw - dw) / 2, oy = (fh - dh) / 2;
+    cropImgEl.style.width = dw + 'px';
+    cropImgEl.style.height = dh + 'px';
     cropImgEl.style.transform =
-      'translate(' + cropData.tx + 'px,' + cropData.ty + 'px) scale(' + cropData.scale + ')';
-  }
-
-  // 平移钳制：图片显示区必须覆盖整个裁剪框；触到边界时轻微震动提示
-  function clampCropPan(vibrate) {
-    var d = cropData, f = d.frame;
-    var imgW = d.baseW * d.scale, imgH = d.baseH * d.scale;
-    var nx = d.tx, ny = d.ty;
-    if (imgW >= f.w) nx = Math.min(f.x, Math.max(f.x + f.w - imgW, d.tx));
-    else nx = f.x + (f.w - imgW) / 2;
-    if (imgH >= f.h) ny = Math.min(f.y, Math.max(f.y + f.h - imgH, d.ty));
-    else ny = f.y + (f.h - imgH) / 2;
-    if (vibrate && (nx !== d.tx || ny !== d.ty) && navigator.vibrate) {
-      try { navigator.vibrate(10); } catch (e) {} // 到边轻震提示
-    }
-    d.tx = nx; d.ty = ny;
+      'translate(' + (fx + ox) + 'px,' + (fy + oy) + 'px)';
   }
 
   function openCropUI(job) {
-    cropEl.classList.add('open'); // 先显示再量尺寸：display:none 时 clientWidth/Height 为 0
+    cropEl.classList.add('open');
     document.body.style.overflow = 'hidden';
     cropInitData(job);
-    cropData.ratio = 1; // 默认 1:1；高亮第一个比例按钮
+    cropData.ratio = 1; // 默认 1:1
     Array.prototype.forEach.call(document.querySelectorAll('#crop-ratios .crop-ratio-btn'), function (b) {
-      b.classList.toggle('active', b.dataset.ratio === '1:1');
+      b.classList.toggle('active', b.dataset.ratio === '1');
     });
     layoutCropFrame();
-    applyCropTransform();
-    cropImgEl.src = job.img.src; // 复用刚才解码的 DataURL
+    cropImgEl.src = job.img.src;
   }
   function hideCropUI() {
     cropEl.classList.remove('open');
     cropImgEl.removeAttribute('src');
-    if (cropClipEl) cropClipEl.style.clipPath = ''; // 复位裁剪窗口，避免下次残留旧矩形
+    if (cropClipEl) cropClipEl.style.clipPath = '';
     if (cropData && cropData.job && cropData.job.url) { URL.revokeObjectURL(cropData.job.url); cropData.job.url = null; }
     cropData = null;
-    cropTouch = null;
     document.body.style.overflow = '';
   }
 
@@ -5868,43 +5904,45 @@
     nextCropJob();
   }
 
-  // 确认：裁剪框屏幕坐标 → 图片原始坐标 → Canvas → toBlob(JPEG 0.88) → 走现有插入链路
-  // 修复卡顿：先截取上下文并立即关闭界面，重活（drawImage + 编码）挪到下一任务异步执行；
-  // 输出长边封顶 2560px，避免大图裁剪后 IndexedDB 写入与渲染卡顿（下采样由 drawImage 完成）
+  // 确认：cover fit 坐标 → 图片原始坐标 → Canvas → toBlob(JPEG 0.92) → 插入
   function confirmCrop() {
     var d = cropData;
     if (!d || !d.frame) return;
-    var job = d.job;                       // 提前快照：hideCropUI 会清 cropData
+    var job = d.job;
     var img = d.img;
     var f = d.frame;
-    var imgW = d.baseW * d.scale, imgH = d.baseH * d.scale;
-    var rx = f.x - d.tx, ry = f.y - d.ty;  // 裁剪框相对图片显示区左上角
-    var sx = rx / imgW * img.naturalWidth;
-    var sy = ry / imgH * img.naturalHeight;
-    var sw = f.w / imgW * img.naturalWidth;
-    var sh = f.h / imgH * img.naturalHeight;
+    var iw = img.naturalWidth, ih = img.naturalHeight;
+    // cover fit：与 layoutCropFrame 一致
+    var fit = Math.max(f.w / iw, f.h / ih);
+    var dw = iw * fit, dh = ih * fit;
+    var ox = (f.w - dw) / 2, oy = (f.h - dh) / 2;
+    // 裁剪框在原图上的映射
+    var sx = -ox / fit;
+    var sy = -oy / fit;
+    var sw = f.w / fit;
+    var sh = f.h / fit;
     var cw = Math.max(1, Math.round(sw)), chh = Math.max(1, Math.round(sh));
-    var cap = 2560 / Math.max(cw, chh);   // 输出长边 ≤ 2560px
+    var cap = 1920 / Math.max(cw, chh); // 输出长边 ≤ 1920px
     if (cap < 1) { cw = Math.round(cw * cap); chh = Math.round(chh * cap); }
-    hideCropUI(); // 立即响应：确认后界面马上关闭，不等到编码结束
-    armCropBusyTimer(); // 启动 30s 超时自愈
-    setTimeout(function () { // 重活挪出点击回调，不阻塞主线程
+    hideCropUI();
+    armCropBusyTimer();
+    setTimeout(function () {
       try {
         var canvas = document.createElement('canvas');
         canvas.width = cw; canvas.height = chh;
         var ctx = canvas.getContext('2d');
         ctx.drawImage(img, sx, sy, sw, sh, 0, 0, cw, chh);
         var done = function (blob) {
-          if (currentId === job.noteId) insertImageBlob(blob, 'image/jpeg'); // 已切笔记则放弃插入
+          if (currentId === job.noteId) insertImageBlob(blob, 'image/jpeg');
           nextCropJob();
         };
         if (canvas.toBlob) {
           canvas.toBlob(function (b) {
             if (b) done(b);
-            else done(dataURLtoBlob(canvas.toDataURL('image/jpeg', 0.88))); // 罕见 null 兜底
-          }, 'image/jpeg', 0.88);
+            else done(dataURLtoBlob(canvas.toDataURL('image/jpeg', 0.92)));
+          }, 'image/jpeg', 0.92);
         } else {
-          done(dataURLtoBlob(canvas.toDataURL('image/jpeg', 0.88)));
+          done(dataURLtoBlob(canvas.toDataURL('image/jpeg', 0.92)));
         }
       } catch (e) {
         console.error('[crop] confirmCrop 异常:', e);
@@ -5923,67 +5961,18 @@
     return new Blob([arr], { type: mime || 'image/jpeg' });
   }
 
-  // 裁剪手势：单指平移 + 双指捏合（0.5~3x，且不小于覆盖裁剪框所需的最小值）
-  cropStageEl.addEventListener('touchstart', function (e) {
-    e.preventDefault();
-    if (!cropData) return;
-    if (e.touches.length === 2) {
-      cropTouch = { mode: 'pinch', startDist: touchDist(e.touches), startScale: cropData.scale };
-    } else if (e.touches.length === 1 && !cropTouch) {
-      cropTouch = { mode: 'pan', lastX: e.touches[0].clientX, lastY: e.touches[0].clientY };
-    }
-  }, { passive: false });
-  cropStageEl.addEventListener('touchmove', function (e) {
-    e.preventDefault();
-    if (!cropTouch || !cropData) return;
-    if (cropTouch.mode === 'pinch' && e.touches.length >= 2) {
-      var d = cropData;
-      var cx = (e.touches[0].clientX + e.touches[1].clientX) / 2;
-      var cy = (e.touches[0].clientY + e.touches[1].clientY) / 2;
-      var ns = Math.min(3, Math.max(d.minScale,
-        cropTouch.startScale * touchDist(e.touches) / cropTouch.startDist));
-      var k = ns / d.scale;
-      d.tx = cx - (cx - d.tx) * k; // 捏合中心保持原位
-      d.ty = cy - (cy - d.ty) * k;
-      d.scale = ns;
-      clampCropPan(false);
-      applyCropTransform();
-    } else if (cropTouch.mode === 'pan' && e.touches.length === 1) {
-      var x = e.touches[0].clientX, y = e.touches[0].clientY;
-      cropData.tx += x - cropTouch.lastX;
-      cropData.ty += y - cropTouch.lastY;
-      cropTouch.lastX = x; cropTouch.lastY = y;
-      clampCropPan(true); // 拖到边界轻震提示
-      applyCropTransform();
-    }
-  }, { passive: false });
-  function cropTouchend(e) {
-    if (!e.touches.length) cropTouch = null;
-    else if (e.touches.length === 1 && cropTouch && cropTouch.mode === 'pinch') {
-      cropTouch.mode = 'pan'; // 双指抬到剩一根：继续单指平移
-      cropTouch.lastX = e.touches[0].clientX;
-      cropTouch.lastY = e.touches[0].clientY;
-    }
-  }
-  cropStageEl.addEventListener('touchend', cropTouchend);
-  cropStageEl.addEventListener('touchcancel', cropTouchend);
-
   cropOkBtn.addEventListener('click', confirmCrop);
   $('crop-cancel').addEventListener('click', cancelCrop);
-  // 比例切换：1:1 / 4:3 / 16:9 / 原图（data-ratio 直读，orig=按图片实际宽高比）
+  // 比例切换：直读按钮 ratio 属性（0 = 原图比例）
   document.addEventListener('click', function (e) {
     var btn = e.target && e.target.closest ? e.target.closest('#crop-ratios .crop-ratio-btn') : null;
     if (!btn) return;
     if (!cropData) return;
-    var label = btn.dataset.ratio;
-    cropData.ratio = label === 'orig' ? 0 :
-      parseFloat(label.split(':')[0]) / parseFloat(label.split(':')[1]);
+    cropData.ratio = parseFloat(btn.dataset.ratio);
     Array.prototype.forEach.call(document.querySelectorAll('#crop-ratios .crop-ratio-btn'), function (b) {
       b.classList.toggle('active', b === btn);
     });
     layoutCropFrame();
-    clampCropPan(false);
-    applyCropTransform();
   });
 
   /* ---------- 图片交互：放大查看 / 长按删除 ---------- */
@@ -6021,49 +6010,53 @@
     applyViewerTransform();
   }
 
-  var viewerChecked = {};      // imgId（无则 blob src）→ 已做尺寸检查（会话级去重：同一图只查一次）
-  var pendingViewerUrl = null; // 兜底压缩产生的临时 objectURL，关闭查看器时回收
-  var viewerToken = 0;         // openViewer 令牌：异步压缩期间已关闭/重开则作废弹出
+  var pendingViewerUrl = null; // 查看器临时 objectURL（无 imgId 时原图缩放产物），关闭时回收
+  var viewerToken = 0;         // openViewer 令牌：异步准备期间已关闭/重开则作废替换
 
   function openViewer(src, imgId) {
     if (!src) return;
-    if (viewerEl.classList.contains('open') && viewerImgEl.getAttribute('src') === src) return; // 幂等：已开同图不重复
+    if (viewerEl.classList.contains('open') && viewerImgEl.getAttribute('src') === src) return;
     var myToken = ++viewerToken;
-    var checkedKey = imgId || src;
-    // 兜底尺寸防护：blob URL 且本会话未查过 → 快速尺寸检查，长边 > 1920 先压缩再打开
-    // （覆盖 hydrate 压缩尚未完成时点开大图的竞态；已压缩图查一次后置标，后续直接开）
-    if (src.indexOf('blob:') === 0 && !viewerChecked[checkedKey]) {
-      viewerChecked[checkedKey] = true;
-      if (typeof createImageBitmap === 'function') {
-        fetchBlobByUrl(src).then(function (blob) {
-          if (myToken !== viewerToken) return; // 期间已关闭/重开：丢弃
-          if (!blob) { revealViewer(src); return; }
-          return createImageBitmap(blob).then(function (bmp) {
-            if (myToken !== viewerToken) { if (bmp.close) bmp.close(); return; }
-            var w = bmp.width, h = bmp.height;
-            if (bmp.close) bmp.close();
-            if (w <= 1920 && h <= 1920) { revealViewer(src); return; }
-            showUndoToast('加载中…', 3000);
-            return compressBlobToBlob(blob).then(function (newBlob) {
-              if (myToken !== viewerToken) return;
-              if (!newBlob) { revealViewer(src); return; }
-              pendingViewerUrl = URL.createObjectURL(newBlob); // 临时压缩图，仅本次查看
-              revealViewer(pendingViewerUrl);
-            });
-          });
-        }).catch(function () { if (myToken === viewerToken) revealViewer(src); });
+    // 先立即出图：有缩略图用缩略图，没有先留空。
+    // 绝不把可能全分辨率的原图直接交给 #viewer-img——Android WebView 会在主线程整张解码导致卡死。
+    var thumbUrl = imgId ? imgThumbCache[imgId] : null;
+    revealViewer(thumbUrl || '');
+    // 再取“长边保证 ≤1920”的原图替换（getImageURL 内部 off-thread 缩放）
+    viewerOriginUrl(imgId, src).then(function (url) {
+      if (myToken !== viewerToken || !url) {
+        if (!imgId && url) URL.revokeObjectURL(url); // 已关闭/过期：回收本次临时 URL
         return;
       }
-      // 旧内核无 createImageBitmap：直接打开 + 短暂 loading 提示
-      showUndoToast('加载中…');
-      revealViewer(src);
-      return;
-    }
-    revealViewer(src);
+      if (!imgId) { // 无 imgId 的临时 URL：关闭查看器时由 pendingViewerUrl 回收
+        if (pendingViewerUrl && pendingViewerUrl !== url) URL.revokeObjectURL(pendingViewerUrl);
+        pendingViewerUrl = url;
+      }
+      var swap = function () {
+        if (myToken !== viewerToken) return;
+        viewerImgEl.src = url;
+      };
+      var pre = new Image();
+      pre.onload = swap;
+      pre.onerror = swap; // 加载失败：保持当前显示，不阻塞
+      pre.src = url;
+    });
+  }
+
+  // 查看器原图 URL：有 imgId 走 getImageURL（会话缓存 + 保证 ≤1920）；
+  // 无 imgId（罕见）用 src 取回 blob 再 off-thread 缩放，返回临时 URL（调用方负责回收）
+  function viewerOriginUrl(imgId, src) {
+    if (imgId) return getImageURL(imgId);
+    return fetchBlobByUrl(src).then(function (blob) {
+      if (!blob) return null;
+      return downscaleBlob(blob, 1920).then(function (res) {
+        return URL.createObjectURL(res.blob);
+      });
+    });
   }
 
   function revealViewer(src) {
-    viewerImgEl.src = src;
+    if (src) viewerImgEl.src = src;
+    else viewerImgEl.removeAttribute('src'); // 无缩略图：先留空，等 ≤1920 的图就绪再显示
     resetViewerTransform();
     viewerEl.classList.add('open');
     vOpenedAt = Date.now();
@@ -6112,6 +6105,10 @@
       if (imgUrlCache[id]) {
         URL.revokeObjectURL(imgUrlCache[id]);
         delete imgUrlCache[id];
+      }
+      if (imgThumbCache[id]) {
+        URL.revokeObjectURL(imgThumbCache[id]);
+        delete imgThumbCache[id];
       }
       editorEl.dispatchEvent(new Event('input', { bubbles: true })); // 触发自动保存
       renderImageStrip();
@@ -6524,6 +6521,10 @@
           URL.revokeObjectURL(imgUrlCache[id]);
           delete imgUrlCache[id];
         }
+        if (imgThumbCache[id]) {
+          URL.revokeObjectURL(imgThumbCache[id]);
+          delete imgThumbCache[id];
+        }
       });
       notes = notes.filter(function (n) { return doomed.indexOf(n.id) === -1; }); // 物理删除
     }).catch(function () { /* 存储失败：下次启动再试 */ });
@@ -6555,6 +6556,10 @@
           if (imgUrlCache[id]) {
             URL.revokeObjectURL(imgUrlCache[id]);
             delete imgUrlCache[id];
+          }
+          if (imgThumbCache[id]) {
+            URL.revokeObjectURL(imgThumbCache[id]);
+            delete imgThumbCache[id];
           }
         });
         notes = notes.filter(function (n) { return ids.indexOf(n.id) === -1; }); // 物理删除（回收箱内没有恢复入口了）
@@ -6810,8 +6815,8 @@
     imgInput.click();
   });
   imgInput.addEventListener('change', function () {
-    var files = Array.prototype.slice.call(imgInput.files); // 快照，避免重置 input 清空 FileList
-    imgInput.value = ''; // 立即重置，保证同一张图能重复上传
+    var files = Array.prototype.slice.call(imgInput.files);
+    imgInput.value = '';
     handleImageFiles(files);
   });
 
@@ -7823,27 +7828,31 @@
      #img-viewer.closing 实际使用的通用 fade-out 不符，条件永假 → .closing 常驻，
      全屏透明遮罩永久拦截所有输入 = 整页"卡死"。动画名修正 + 兜底定时器双保险。 */
   var closingLatch = false, closingTimer = null;
+  // ⚠️ 观察 class 的回调里改 class 必须先 contains 判断！classList.add/remove 即使
+  // 「无变化」也会产生一条 class 变更记录，回调内做无变化的增删会自我触发 → 无限循环
+  // 占满主线程 = 整页卡死（open 时 remove 一个不存在的 'closing' 正是如此）。
   var vo = new MutationObserver(function () {
     var open = viewerEl.classList.contains('open');
+    var closing = viewerEl.classList.contains('closing');
     if (!open && !closingLatch) {
       closingLatch = true; // 闭锁：本次关闭只补一次 .closing，移除后不重加
-      viewerEl.classList.add('closing');
+      if (!closing) viewerEl.classList.add('closing');
       clearTimeout(closingTimer);
       closingTimer = setTimeout(function () { // 兜底：animationend 丢失（切后台/节流）时强制卸载遮罩层
         closingTimer = null;
-        viewerEl.classList.remove('closing');
+        if (viewerEl.classList.contains('closing')) viewerEl.classList.remove('closing');
       }, 260);
     } else if (open) {
       closingLatch = false;
       clearTimeout(closingTimer); closingTimer = null;
-      viewerEl.classList.remove('closing');
+      if (closing) viewerEl.classList.remove('closing');
     }
   });
   vo.observe(viewerEl, { attributes: true, attributeFilter: ['class'] });
   viewerEl.addEventListener('animationend', function (e) {
     if (e.target === viewerEl && e.animationName === 'fade-out') {
       clearTimeout(closingTimer); closingTimer = null;
-      viewerEl.classList.remove('closing'); // 闭锁保持 true，MutationObserver 不会重加
+      if (viewerEl.classList.contains('closing')) viewerEl.classList.remove('closing'); // 闭锁保持 true，MutationObserver 不会重加
     }
   });
 
