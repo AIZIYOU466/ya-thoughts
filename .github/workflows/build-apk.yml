@@ -15,10 +15,10 @@ jobs:
     # bot 的 push 直接跳过，否则同一版本会被反复重建成同一份 APK
     if: ${{ github.event_name != 'push' || github.actor != 'github-actions[bot]' }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: 22
 
@@ -62,7 +62,7 @@ jobs:
       # 构建日志留档：失败时能从 artifact 看到 Gradle 报什么，不用管理员权限翻 Actions 日志
       - name: Upload build log
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: build-log
           path: android/build-apk.log
@@ -109,7 +109,7 @@ jobs:
           git push
 
       - name: Create Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: v${{ steps.get_version.outputs.version }}
           name: Ya thoughts v${{ steps.get_version.outputs.version }}
@@ -119,7 +119,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Upload APK
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: YaThoughts-APK
           path: android/app/build/outputs/apk/release/app-release.apk
