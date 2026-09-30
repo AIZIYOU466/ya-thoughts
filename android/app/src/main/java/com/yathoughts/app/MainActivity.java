@@ -31,13 +31,15 @@ public class MainActivity extends BridgeActivity {
     }
 
     // 手势退出 / 切后台：JS 层 visibilitychange 已覆盖，此处为额外保险
-    // 直接 evalJs 触发 commitSaveLight，确保数据在进程被杀前落盘
+    // 直接执行 JS 触发 commitSaveLight，确保数据在进程被杀前落盘
+    // Capacitor 8 的 Bridge 只有 eval(String, ValueCallback)，没有 evalJs(String)
     @Override
     public void onPause() {
         super.onPause();
         try {
-            bridge.evalJs(
-                "if(window._commitSaveLight)window._commitSaveLight()"
+            bridge.eval(
+                "if(window._commitSaveLight)window._commitSaveLight()",
+                null
             );
         } catch (Exception e) { /* Bridge 已销毁则忽略 */ }
     }
