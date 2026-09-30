@@ -1,11 +1,11 @@
 {
-  "version": "1.7.10",
+  "version": "1.7.11",
   "notes": "性能优化 v1.7.9（v1.7.8 构建失败未发布，本版为修复后的重新发版）：\n启动加速：非关键任务（通知同步/清理/备份/更新检查）延迟到空闲时执行，不阻塞首屏；通知调度从逐条原生调用改为批量提交，100条便签从200次IPC降为2次；\n退出优化：beforeunload 改为轻量DB写入（跳过通知同步和图片同步），新增 visibilitychange 切后台立即保存，Android 切后台时直接执行 JS 触发落盘，不等待 beforeunload；\n渲染优化：backdrop-filter 模糊半径从24px降至12px（GPU采样量降4倍）；禁用系统窗口转场动画消除退出卡顿；禁用启动窗口预览图；\n修复：Android 切后台保存改用 Capacitor 8 正确的 Bridge.eval() 调用，解决上个版本编译失败无法发版的问题。",
-  "apkUrl": "https://gh-proxy.com/https://github.com/AIZIYOU466/ya-thoughts/releases/download/v1.7.10/app-release.apk",
+  "apkUrl": "https://gh-proxy.com/https://github.com/AIZIYOU466/ya-thoughts/releases/download/v1.7.11/app-release.apk",
   "apkUrls": [
-    "https://gh-proxy.com/https://github.com/AIZIYOU466/ya-thoughts/releases/download/v1.7.10/app-release.apk",
-    "https://ghfast.top/https://github.com/AIZIYOU466/ya-thoughts/releases/download/v1.7.10/app-release.apk",
-    "https://github.com/AIZIYOU466/ya-thoughts/releases/download/v1.7.10/app-release.apk"
+    "https://gh-proxy.com/https://github.com/AIZIYOU466/ya-thoughts/releases/download/v1.7.11/app-release.apk",
+    "https://ghfast.top/https://github.com/AIZIYOU466/ya-thoughts/releases/download/v1.7.11/app-release.apk",
+    "https://github.com/AIZIYOU466/ya-thoughts/releases/download/v1.7.11/app-release.apk"
   ],
-  "releaseUrl": "https://github.com/AIZIYOU466/ya-thoughts/releases/tag/v1.7.10"
+  "releaseUrl": "https://github.com/AIZIYOU466/ya-thoughts/releases/tag/v1.7.11"
 }
