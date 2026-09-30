@@ -62,7 +62,9 @@
     --glass-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.7);
     --glass-card-bg: rgba(255, 255, 255, 0.72); /* 卡片：不模糊，仅半透明白 + 边框 + 高光 */
     --time-sub: #8A8F99;   /* 卡片时间小字（任务5） */
-    --logo-rest-color: #2E6BE6; /* yathoughts logo 文字色 */
+    --logo-rest-color: #2E6BE6;
+    --logo-y-from: #2E6BE6;
+    --logo-y-to: #1E40AF;
     --todo-accent: #2BA88E; /* 待办青绿（任务4） */
   }
   /* 深色变量：由系统偏好驱动（已弃用手动切换，localStorage/data-theme 全部移除） */
@@ -116,6 +118,8 @@
       --glass-card-bg: rgba(34, 38, 48, 0.72);
       --time-sub: #B0B4BB;
       --logo-rest-color: #5B95F0;
+      --logo-y-from: #FFFFFF;
+      --logo-y-to: #E0EEFF;
       --todo-accent: #2BA88E;
     }
   }
@@ -705,7 +709,7 @@
     cursor: pointer;
     transition: background 0.2s var(--ease), border-color 0.2s var(--ease);
   }
-  #list-view:not(.multi) .is-todo .todo-chk { display: inline-flex; animation: box-pop 0.2s var(--ease-spring); }
+  #list-view:not(.multi) .is-todo .todo-chk { display: inline-flex; }
   .note-item .todo-chk.on { background: var(--todo-accent); border-color: var(--todo-accent); color: #fff; } /* 已完成：绿实心+白勾 */
   .note-item .todo-chk.overdue { border-color: var(--danger); } /* 已过期：空心红圈 */
   .note-item.is-done { opacity: 0.6; }
@@ -2021,10 +2025,10 @@
   </div>
   <header id="list-header">
     <h1>
-      <svg viewBox="0 0 260 44" height="26" style="display:inline-block;vertical-align:middle" aria-label="yathoughts">
+      <svg viewBox="0 0 260 44" height="26" style="display:block" aria-label="yathoughts">
         <defs>
           <linearGradient id="lgY" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0" stop-color="#FFFFFF"/><stop offset="1" stop-color="#E0EEFF"/>
+            <stop offset="0" style="stop-color:var(--logo-y-from)"/><stop offset="1" style="stop-color:var(--logo-y-to)"/>
           </linearGradient>
           <linearGradient id="lgA" x1="0" y1="0" x2="0" y2="1">
             <stop offset="0" stop-color="#FFE599"/><stop offset="1" stop-color="#FFC93D"/>
@@ -2115,7 +2119,6 @@
     <button class="menu-sort" data-sort="updated"><span class="menu-sort-check"></span><span>按修改时间</span></button>
     <button class="menu-sort" data-sort="created"><span class="menu-sort-check"></span><span>按创建时间</span></button>
     <button class="menu-sort" data-sort="title"><span class="menu-sort-check"></span><span>按标题（A-Z）</span></button>
-    <button class="menu-sort" data-sort="custom"><span class="menu-sort-check"></span><span>自定义排序</span></button>
   </div>
   <div id="list-viewport">
   <div id="empty">
@@ -3393,6 +3396,14 @@
       var pa = isPinned(a), pb = isPinned(b);
       if (pa !== pb) return pa ? -1 : 1; // 置顶永远在前（分段/搜索过滤后依然生效）
       if (pa && pb) return b.pinnedAt - a.pinnedAt; // 置顶区按 pinnedAt 倒序
+      // A-Z 排序：已完成沉底，其余全按标题排（覆盖各 rank 分组）
+      if (sortBy === 'title') {
+        var da = isDone(a) ? 1 : 0, db = isDone(b) ? 1 : 0;
+        if (da !== db) return da - db;
+        var t = titleOf(a).localeCompare(titleOf(b), 'zh-CN');
+        if (t !== 0) return t;
+        return b.updatedAt - a.updatedAt;
+      }
       var ra = rank(a), rb = rank(b);
       if (ra !== rb) return ra - rb;
       if (ra === 0) { // 进行中：有 dueAt 按 dueAt 升序，无按 updatedAt 倒序
