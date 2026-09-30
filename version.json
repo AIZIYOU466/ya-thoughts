@@ -1,11 +1,11 @@
 {
-  "version": "1.7.12",
-  "notes": "移除「心情」功能（顶栏心情表情、⋯ 菜单「心情」入口与心情选择弹窗、相关样式与存储全部删除）；修复长按拖拽排序：长按期间手指轻微抖动(1~2px)不再取消长按（长按容差 3px→10px），长按拖拽排序恢复可用；主页居中 yathoughts 品牌标题字号增大（18→24）；图片查看器右上角 × 关闭按钮改为直连响应——点下即关，跳过双击等待与 400ms 打开冷却，并让图片随遮罩一起淡出（不再瞬间消失）。",
-  "apkUrl": "https://gh-proxy.com/https://github.com/AIZIYOU466/ya-thoughts/releases/download/v1.7.12/app-release.apk",
+  "version": "1.7.13",
+  "notes": "1. 修复长按拖拽排序：根因是 Android WebView 把长按识别为原生长按，触发 contextmenu 后 touchcancel 掉整条触摸序列，后续 touchmove/touchend 全丢。改为在卡片 touchstart 上 preventDefault 阻止该识别，点按改由手势层复现（复选框/摘要按钮仍走原生 click）；\n2. 启动白闪：WebView 及根元素背景设为页面底色，消除首帧绘制前的白屏闪动；\n3. 相机/相册大图改为后台线程解码并缩到长边≤1920，避免主线程整张解码 12MP 原图导致「唤起裁剪慢」，裁剪后插入更流畅；\n4. 图片查看器：点黑色遮罩立即关闭（不再等 300ms 双击判定），右上角 × 依旧点下即关，图片随遮罩一起淡出；\n5. 点正文图片只看图，主动收起 contenteditable 焦点，不再弹出手机键盘。",
+  "apkUrl": "https://gh-proxy.com/https://github.com/AIZIYOU466/ya-thoughts/releases/download/v1.7.13/app-release.apk",
   "apkUrls": [
-    "https://gh-proxy.com/https://github.com/AIZIYOU466/ya-thoughts/releases/download/v1.7.12/app-release.apk",
-    "https://ghfast.top/https://github.com/AIZIYOU466/ya-thoughts/releases/download/v1.7.12/app-release.apk",
-    "https://github.com/AIZIYOU466/ya-thoughts/releases/download/v1.7.12/app-release.apk"
+    "https://gh-proxy.com/https://github.com/AIZIYOU466/ya-thoughts/releases/download/v1.7.13/app-release.apk",
+    "https://ghfast.top/https://github.com/AIZIYOU466/ya-thoughts/releases/download/v1.7.13/app-release.apk",
+    "https://github.com/AIZIYOU466/ya-thoughts/releases/download/v1.7.13/app-release.apk"
   ],
-  "releaseUrl": "https://github.com/AIZIYOU466/ya-thoughts/releases/tag/v1.7.12"
+  "releaseUrl": "https://github.com/AIZIYOU466/ya-thoughts/releases/tag/v1.7.13"
 }

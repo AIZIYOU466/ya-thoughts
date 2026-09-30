@@ -127,6 +127,7 @@
   /* ============ 基础 ============ */
   * { box-sizing: border-box; margin: 0; padding: 0; scrollbar-width: none; }
   *::-webkit-scrollbar { display: none; }
+  html { background: var(--page-grad-a); } /* 根元素兜底底色：WebView 首帧绘前不露白 */
   html, body { width: 100vw !important; max-width: 100vw !important; min-width: 0 !important; margin: 0 !important; padding: 0 !important; overflow-x: hidden !important; box-sizing: border-box !important; height: 100%; height: var(--app-height, 100dvh); }
   body {
     font-family: -apple-system, "PingFang SC", "Helvetica Neue", sans-serif;
@@ -3525,10 +3526,19 @@
         startMomentum(endV);
       }
     } else {
-      // 未进入左滑/拖拽/滚动的简单点按：移动过才抑制 click
+      // 未进入左滑/拖拽/滚动的简单点按。卡片上已 preventDefault（见 onGestureStart），
+      // 合成 click 失效 → 静止点按在此复现：打开便签 / 切换多选；移动过则视为滑动不收尾
       var t = e.changedTouches[0];
-      if (t && (Math.abs(t.clientX - g.startX) > DRAG_JITTER ||
-                Math.abs(t.clientY - g.startY) > DRAG_JITTER)) gestureSuppressClick = true;
+      var moved = t && (Math.abs(t.clientX - g.startX) > DRAG_HOLD_TOL ||
+                        Math.abs(t.clientY - g.startY) > DRAG_HOLD_TOL);
+      if (moved) {
+        gestureSuppressClick = true;
+      } else if (g.clickSuppressed && t && li.isConnected && g.id &&
+                 !cardInteractiveTarget(t.target)) {
+        gestureSuppressClick = true; // 兑底：若个别核心仍合成 click，由列表 click 处理吞掉，防重复打开
+        if (multiMode) toggleSelect(g.id);
+        else openNote(g.id);
+      }
     }
     if (li.isConnected) li.classList.remove('swiping', 'dragging');
     gesture = null;
@@ -3733,9 +3743,18 @@
     })(performance.now());
   }
 
-  // 手势启动（挂在每张 .note-item 的 touchstart 上，passive:true 不 preventDefault）：
+  // 手势启动（挂在每张 .note-item 的 touchstart 上，passive:false，卡片上会 preventDefault）：
   // 记录起点、清掉上次残留定时器、启动 500ms 长按定时器、注册 window move/end/cancel。
-  // 不 preventDefault：click 合成不受影响，按钮点击、卡片打开都走原生 click。
+  // 卡片内依赖原生 click 的交互子元素（待办复选框、摘要展开按钮）：不拦截其 touchstart，
+  // 保留浏览器合成 click，它们自身的 click 处理照旧。
+  function cardInteractiveTarget(t) {
+    return !!(t && t.closest && (t.closest('.todo-chk') || t.closest('.summary-toggle')));
+  }
+
+  // 不 preventDefault 的话，Android WebView 长按会触发原生 contextmenu 并紧跟 touchcancel，
+  // 整条触摸序列被取消 → 长按拖拽的后续 touchmove/touchend 全部丢失而失效；
+  // 因此在卡片（非交互子元素）touchstart 上 preventDefault 阻止浏览器识别该长按，
+  // 代价是合成 click 失效 → 卡片点按改由 onGestureEnd 复现。
   function onGestureStart(e) {
     stopMomentum(); // 新手指按下：立刻停掉惯性/弹簧动画，跟手优先
     stopSwipeFling(); // 上一张卡的左滑惯性未结束：立即停，避免继续驱动
@@ -3760,6 +3779,13 @@
       gestureSuppressClick = true;
       return;
     }
+    // 阻止 WebView 把本次按压识别为长按（不弹菜单、不取消触摸序列）；
+    // 复选框/摘要展开按钮依赖原生 click，不拦截，保证它们自身处理照旧
+    var suppressClickNow = false;
+    if (!cardInteractiveTarget(e.target) && e.cancelable) {
+      e.preventDefault();
+      suppressClickNow = true;
+    }
     closeOpenSwipe(li); // 点其他卡片时，展开中的卡片先弹回
     gesture = {
       li: li,
@@ -3772,6 +3798,7 @@
       viewX: 0,
       mode: 'pending',
       suppressClick: false,
+      clickSuppressed: suppressClickNow,
       longPressTimer: null
     };
     attachGestureListeners(); // move/end/cancel 全挂 window（passive:false），end/cancel 时移除
@@ -4254,7 +4281,7 @@
       li.dataset.id = note.id; // 事件委托用：点击时从这里取 id
 
       // 手势：左滑操作菜单 + 长按拖拽排序（见「手势层」小节，纯 Touch Events）
-      li.addEventListener('touchstart', onGestureStart, { passive: true }); // 不 preventDefault，click 合成不受影响
+      li.addEventListener('touchstart', onGestureStart, { passive: false }); // 会在卡片上 preventDefault：阻止 WebView 长按取消触摸流、保证拖拽可用（见 onGestureStart）
       // 长按/右键不再弹系统菜单（原长按操作菜单已移除）
       li.addEventListener('contextmenu', function (e) { e.preventDefault(); });
 
@@ -5295,8 +5322,9 @@
       }
       var done = false;
       var finish = function (r) { if (done) return; done = true; clearTimeout(timer); resolve(r); };
-      // 兜底：个别 WebView 的 createImageBitmap 可能不回调，8s 后退回原图，避免图片永久空白
-      var timer = setTimeout(function () { finish({ blob: blob, changed: false }); }, 1500);
+      // 兜底：个别 WebView 的 createImageBitmap 可能不回调，3s 后退回原图，避免图片永久空白
+      // （12MP 相机图两次后台解码可能达秒级，超时太短会白白回退到主线程解码）
+      var timer = setTimeout(function () { finish({ blob: blob, changed: false }); }, 3000);
       createImageBitmap(blob).then(function (bmp) {
         var w = bmp.width, h = bmp.height;
         if (w <= maxSide && h <= maxSide) {
@@ -5771,11 +5799,22 @@
     });
   }
 
-  // createImageBitmap 后台解码 + 缩放，省去 probe 步骤
+  // 相机/相册大图：先在后台线程解码并缩到长边 ≤1920（createImageBitmap），
+  // 避免主线程整张解码 12MP 原图造成「唤起裁剪慢」；缩放成功则用缩好的小图建 <img>，
+  // 未缩放（小图）或后台解码失败/超时则回退旧方案（旧方案自己管理显示用 objectURL）。
   function readImageElement(file) {
-    // 回退：createImageBitmap 在部分 Android WebView 上会永久挂起，
-    // 先用旧方案 readImageElementFallback（稳定可靠）
-    return readImageElementFallback(file);
+    return downscaleBlob(file, 1920).then(function (res) {
+      if (!res || !res.changed || !res.blob) return readImageElementFallback(file);
+      var url = URL.createObjectURL(res.blob); // 保留：裁剪界面 cropImgEl 复用同一 URL 显示
+      return new Promise(function (resolve, reject) {
+        var img = new Image();
+        img.onload = function () { resolve(img); };
+        img.onerror = function () { URL.revokeObjectURL(url); reject(new Error('decode')); };
+        img.src = url;
+      });
+    }).catch(function () {
+      return readImageElementFallback(file);
+    });
   }
 
   // 裁剪初始化：图片 cover fit 到舞台，固定居中（无手势缩放/平移）
@@ -6566,6 +6605,8 @@
     if (!img) return;
     if (longPressFired) { longPressFired = false; return; }
     openViewer(img.src, img.dataset.imgId || '');
+    // 点图只看图，不唤起键盘：contenteditable 因点击获得焦点会弹出输入法，主动收起
+    if (document.activeElement === editorEl) editorEl.blur();
   });
   stripEl.addEventListener('click', function (e) {
     var img = imgFromEvent(e, stripEl);
@@ -6657,6 +6698,13 @@
       var ct = e.changedTouches[0];
       var now = Date.now();
       var tx = ct.clientX, ty = ct.clientY;
+      // 点在黑色遮罩（非图片）上：立即关闭，不等双击判定（双击缩放只针对图片）
+      if (ct.target === viewerEl) {
+        clearTimeout(vTapTimer); vTapTimer = null;
+        vGesture = 'idle'; vPendingClose = false; vLastTapT = 0;
+        closeViewer();
+        return;
+      }
       if (vGesture === 'doubletap-pending' && vLastTapT &&
           now - vLastTapT < 300 &&
           Math.abs(tx - vLastTapX) < 30 && Math.abs(ty - vLastTapY) < 30) {

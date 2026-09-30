@@ -62,6 +62,11 @@ public class MainActivity extends BridgeActivity {
         window.setNavigationBarColor(Color.TRANSPARENT);
         window.setBackgroundDrawable(new ColorDrawable(night ? BG_DARK : BG_LIGHT));
 
+        // WebView 自身默认白底：首帧 HTML 绘制前会整屏闪一下白。设为页面底色消除启动白闪。
+        try {
+            getBridge().getWebView().setBackgroundColor(night ? BG_DARK : BG_LIGHT);
+        } catch (Exception e) { /* Bridge/WebView 尚未就绪则忽略 */ }
+
         // 状态栏/导航栏图标颜色跟随系统深浅色，避免出现白底白图标看不见
         // 注：这两个 setter 返回 void，不能链式调用
         WindowInsetsControllerCompat insets =
