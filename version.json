@@ -1,11 +1,11 @@
 {
-  "version": "1.7.14",
-  "notes": "1. 长按拖拽再修：改为「时间戳 + 触摸移动」双通道进入拖拽——不再只依赖长按定时器（部分 WebView 会节流/丢该定时器），只要按住超过 0.5s 再移动就进入拖拽；同时取消「按标题排序时禁用拖拽」的限制，任何排序下都能长按拖拽（拖拽后自动转为自定义排序）；\n2. 启动闪动：移除首屏卡片入场动画（它给卡片加 opacity 动画，fill both，会让已完成的待办卡片在动画结束后从 1 突降到 0.6，即你看到的「由深变灰」，也加重了启动闪动）；配合 WebView/根元素底色，消除白闪；\n3. 相机/相册大图后台线程解码缩到长边≤1920，加快唤起裁剪与插入；\n4. 图片查看器点黑色遮罩立即关闭，右上角 × 点下即关并随遮罩淡出；\n5. 点正文图片不再弹出手机键盘。",
-  "apkUrl": "https://gh-proxy.com/https://github.com/AIZIYOU466/ya-thoughts/releases/download/v1.7.14/app-release.apk",
+  "version": "1.7.15",
+  "notes": "1. 长按拖拽：让位判定改为标准 sortable（按「其余卡片中线是否在被拖卡中心之上」计数，无 20px 死区）→ 实时避让、跟手即让位；新增 VIBRATE 权限，长按进入拖拽时触发马达震动（此前 WebView 无该权限会静默忽略 navigator.vibrate）；\n2. 待办与笔记卡片同尺寸：卡片内容改为常驻 flex 行，待办复选框与正文并排（此前复选框独占一行，导致待办卡更高）；\n3. 启动跳动：移除底部胶囊的启动入场动画，并去掉 JS 写 --app-height（高度改由纯 CSS 决定），避免进入软件瞬间整页跳动；\n4. 沿袭：相机大图后台解码、查看器点遮罩即关、点图不弹键盘。",
+  "apkUrl": "https://gh-proxy.com/https://github.com/AIZIYOU466/ya-thoughts/releases/download/v1.7.15/app-release.apk",
   "apkUrls": [
-    "https://gh-proxy.com/https://github.com/AIZIYOU466/ya-thoughts/releases/download/v1.7.14/app-release.apk",
-    "https://ghfast.top/https://github.com/AIZIYOU466/ya-thoughts/releases/download/v1.7.14/app-release.apk",
-    "https://github.com/AIZIYOU466/ya-thoughts/releases/download/v1.7.14/app-release.apk"
+    "https://gh-proxy.com/https://github.com/AIZIYOU466/ya-thoughts/releases/download/v1.7.15/app-release.apk",
+    "https://ghfast.top/https://github.com/AIZIYOU466/ya-thoughts/releases/download/v1.7.15/app-release.apk",
+    "https://github.com/AIZIYOU466/ya-thoughts/releases/download/v1.7.15/app-release.apk"
   ],
-  "releaseUrl": "https://github.com/AIZIYOU466/ya-thoughts/releases/tag/v1.7.14"
+  "releaseUrl": "https://github.com/AIZIYOU466/ya-thoughts/releases/tag/v1.7.15"
 }

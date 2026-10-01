@@ -34,6 +34,10 @@
 
     <uses-permission android:name="android.permission.INTERNET" />
 
+    <!-- 触觉反馈：navigator.vibrate（长按拖拽/操作按钮的马达震动）需要该权限，
+         否则 WebView 会静默忽略震动调用 -->
+    <uses-permission android:name="android.permission.VIBRATE" />
+
     <!-- 通知权限（Android 13+ 必须） -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 

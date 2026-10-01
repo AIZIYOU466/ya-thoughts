@@ -128,7 +128,7 @@
   * { box-sizing: border-box; margin: 0; padding: 0; scrollbar-width: none; }
   *::-webkit-scrollbar { display: none; }
   html { background: var(--page-grad-a); } /* 根元素兜底底色：WebView 首帧绘前不露白 */
-  html, body { width: 100vw !important; max-width: 100vw !important; min-width: 0 !important; margin: 0 !important; padding: 0 !important; overflow-x: hidden !important; box-sizing: border-box !important; height: 100%; height: var(--app-height, 100dvh); }
+  html, body { width: 100vw !important; max-width: 100vw !important; min-width: 0 !important; margin: 0 !important; padding: 0 !important; overflow-x: hidden !important; box-sizing: border-box !important; height: 100%; }
   body {
     font-family: -apple-system, "PingFang SC", "Helvetica Neue", sans-serif;
     /* 全局柔和渐变底 + 两团淡模糊光斑（radial-gradient 模拟，无外部图片） */
@@ -163,7 +163,7 @@
   }
   img { -webkit-user-drag: none; }
 
-  .view { display: none; height: 100%; height: var(--app-height, 100dvh); }
+  .view { display: none; height: 100%; }
   .view.active { display: flex; flex-direction: column; }
   /* 编辑页：不透明底板（body 同款渐变）在滑入时完全遮住列表页，不再透字；
      始终 display:flex + visibility:hidden 保持渲染（不摘树），返回时 DOM/动画不重播。
@@ -555,6 +555,10 @@
     box-shadow: var(--shadow-card), var(--glass-highlight);
     transition: background 0.18s var(--ease), transform 0.25s var(--ease-swift), box-shadow 0.18s var(--ease);
     z-index: 2; /* Bug2(B)：显式确立『卡片在上』；合成层在滑动期间动态提升（见 applySwipe） */
+    /* 常驻 flex 行：待办复选框与正文并排、不再各占一行 → 待办卡与笔记卡同高；
+       纯笔记卡只有 .note-body 一个流内子元素，布局不变（绝对定位的角标不受影响） */
+    display: flex;
+    gap: 12px;
   }
   .note-item .swipe-body:active { background: var(--tap-press); }
   .note-item.swiping .swipe-body { transition: none; } /* 跟手时关过渡 */
@@ -660,7 +664,7 @@
     font-size: 13px; line-height: 1;
     color: transparent;
   }
-  #list-view.multi .note-item .swipe-body { display: flex; gap: 12px; padding-left: 28px; }
+  #list-view.multi .note-item .swipe-body { padding-left: 28px; }
   #list-view.multi .sel-box { display: inline-flex; animation: box-pop 0.2s var(--ease-spring); }
   .note-item .sel-box.on { background: var(--primary); border-color: var(--primary); color: #fff; }
   .note-item:has(.sel-box.on) { background: var(--sel-card); }
@@ -1071,11 +1075,6 @@
     width: fit-content;
     max-width: calc(100vw - 32px);
     z-index: 10;
-    animation: newbar-in 0.2s var(--ease-swift) both; /* 入场：上滑 200ms + 淡入 */
-  }
-  @keyframes newbar-in {
-    from { opacity: 0; transform: translate(-50%, 16px); }
-    to   { opacity: 1; transform: translate(-50%, 0); }
   }
   .new-cap {
     height: 48px;
@@ -2363,17 +2362,9 @@
     reportFatalError(r && r.message ? r.message : r);
   });
 
-  // 全屏适配：动态设置视口高度，兼容旧版 WebView 不支持 100dvh 的情况
-  // 状态栏/导航栏的安全区域由 CSS 的 env(safe-area-inset-*) 处理，无需在 JS 里换算
-  function setViewportHeight() {
-    document.documentElement.style.setProperty('--app-height', window.innerHeight + 'px');
-  }
-  window.addEventListener('resize', setViewportHeight);
-  window.addEventListener('orientationchange', function() {
-    setTimeout(setViewportHeight, 300); // 等待屏幕旋转完成
-  });
-  setViewportHeight(); // 初始调用
-
+  /* 全屏高度：直接用 height:100%（html/body 取视口高度，.view 为 position:fixed;inset:0）。
+     原先 JS 写 --app-height = innerHeight 会在 WebView 首次布局后尺寸校正时变化一次，
+     导致进入软件瞬间整页跳一下；改为纯 CSS 后高度不再被 JS 二次改写。 */
   var LEGACY_KEY = 'minimal-notes-v1'; // 旧版 localStorage 键，仅用于一次性迁移
   var DB_NAME = 'minimal-notes';
   var DB_VERSION = 3; // v3：便签增加待办字段 type/dueAt/doneAt 与预留字段
@@ -3928,25 +3919,22 @@
   }
 
   /* 拖拽跟随（rAF 节流）：把卡片放到手指下方，实时按被拖卡片中心点 y 计算目标索引。
-     hoverIndex 判定用卡片「天然槽位中心线」±20px（offsetTop 是布局位，不受让位
-     translate 影响）—— 相邻卡片让位后边界不会跟着退让，拖 1 过 2、3 时依次灵敏让位；
-     快速跨多格时一次算到位。只有 hoverIndex 变化才重算让位，避免每帧重排。 */
-  var DRAG_SLOT_TOL = 20; // 中心点进入目标卡片中心线 ±20px 即触发让位
+     目标索引 = 其余卡片中「天然槽位中线在拖拽卡中心之上」的数量（offsetTop 是布局位，
+     不受让位 translate 影响）—— 无死区，跨过某卡中线即刻让位，快速跨多格一次算到位；
+     只有目标索引变化才重算让位，避免每帧重排。 */
   var dragRafId = 0;      // 拖拽 rAF 节流句柄（同一时间只挂一帧）
 
+  // 目标索引 = 其余卡片中「中线在拖拽卡中心之上」的数量：无死区、实时让位（标准 sortable 判定）
   function moveDrag(g) {
     if (Math.abs(g.dragShift) > DRAG_JITTER) g.suppressClick = true;
     var items = g.items, li = g.li;
     // 被拖卡渲染中心：布局位 offsetTop + 手指位移 + 半高（translate 不改 offsetTop）
     var cy = li.offsetTop + g.dragShift + li.offsetHeight / 2;
-    var hover = g.dragIndex;
-    var best = DRAG_SLOT_TOL; // 只有进入某张卡中心线 ±20px 才换位
+    var hover = 0;
     for (var j = 0; j < items.length; j++) {
       var it = items[j];
       if (it === li) continue;
-      var c = it.offsetTop + it.offsetHeight / 2; // 目标卡天然中心线
-      var dist = Math.abs(cy - c);
-      if (dist <= best) { best = dist; hover = j; }
+      if (cy > it.offsetTop + it.offsetHeight / 2) hover++;
     }
     if (hover !== g.dragIndex) { g.dragIndex = hover; applyDragShifts(g); } // 仅 hover 变化才重算
     li.style.transform = 'translate3d(0px,' + g.dragShift + 'px,0) scale(1.02)';
