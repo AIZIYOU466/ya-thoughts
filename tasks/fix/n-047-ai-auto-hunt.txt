@@ -1,0 +1,114 @@
+# 任务：让 AI 写自动化巡检脚本（auto-hunt.js）
+
+## 背景
+项目已有 E2E 框架（tests/e2e/runner.js），但只有模板 spec。
+本任务：让 AI 写一个覆盖全功能的巡检脚本，
+用于每次改代码后自动跑、自动发现回归 bug。
+
+## AI 行为规范（必读）
+1. 不要读整个 index.html。用 sed -n 按行号分段读。
+2. 先输出方案报告：列出你打算覆盖的场景清单（≥15 个），
+   等用户确认后再写脚本。
+3. 用精准 edit，禁止全量重写。
+4. 脚本用现有 tests/e2e/runner.js 的辅助函数（tap/longPress/drag/
+   waitFor/$$/shot/assert）。
+5. 每写完 1 个场景，立即跑一次验证，把输出贴给用户。
+6. 断言失败 = 发现 bug（可能是真 bug，也可能是脚本写错）。
+   必须先判断，再决定是改脚本还是改 index.html。
+7. 纯原生 JS。
+
+## 读取范围
+- 现有 E2E 框架: cat tests/e2e/runner.js
+- 现有 spec 模板: cat tests/e2e/specs/template.spec.js
+- HTML 结构: grep -n 'id="' index.html | head -100
+- 核心函数: grep -n "function createNote\|function openNote\|function toggleTodo\|function setSeg\|function sortedNotesFor\|function renderList\|function deleteNote\|function doImport\|function doExport" index.html
+- 菜单/按钮: sed -n '2011,2050p' index.html
+
+项目：Ya thoughts 便签 App，单文件 index.html + www/index.html
+
+## 目标产物
+/tests/e2e/auto-hunt.js —— 一键跑全部场景，输出巡检报告
+
+## 必须覆盖的场景（用户可增删）
+
+### 基础 CRUD
+1. 新建笔记 → 列表出现
+2. 打开便签 → 编辑 → 返回 → 内容保存
+3. 删除便签 → 列表消失
+4. 新建待办 → 列表出现（带复选框）
+
+### 待办
+5. 点击待办复选框 → 状态切换（进行中 ↔ 已完成）
+6. 待办切换到"已完成"分类 → 能看到刚完成的
+7. 待办设置提醒时间 → 保存后卡片有倒计时角标
+
+### 分类/排序
+8. 切到"待办"分类 → 列表只显示待办
+9. 切到"已完成"分类 → 只显示已完成
+10. 按标题 A-Z 排序 → 顺序正确
+11. 按创建时间排序 → 顺序正确
+12. 按修改时间排序 → 顺序正确
+
+### 搜索
+13. 输入关键字 → 列表过滤
+14. 清空搜索 → 列表恢复
+
+### 拖拽
+15. 长按卡片 → 卡片浮起（.dragging class）
+16. 拖动跨过中线 → 目标位置让位（DOM 顺序变化）
+
+### 左滑
+17. 左滑卡片 → 露出操作按钮（.swipe-open class）
+
+### 回收箱
+18. 删除便签 → 回收箱里能看到
+19. 回收箱恢复 → 便签回到列表
+
+### 导出/导入
+20. 导出 → 数据结构完整（version/notes/images 字段）
+    （注：导出会调 Capacitor Share，浏览器环境可能失败，
+     断言"调用发生"而不是"文件真的下载"）
+
+### 每次操作后自动检查
+- 无 console.error
+- 无未捕获异常
+- 列表 DOM 与数据状态一致
+
+## 断言策略
+
+每个场景必须有可自动验证的断言：
+- DOM 数量/文本/class 变化
+- 全局变量状态（如果可访问）
+- IndexedDB 数据（用 page.evaluate 读）
+
+不能有"看起来对就行"这种模糊断言。
+
+## 输出格式
+
+    ════ auto-hunt 巡检报告 ════
+    ✅ 场景 1: 新建笔记
+    ✅ 场景 2: 编辑保存
+    ❌ 场景 3: 删除便签 —— 断言失败: 删除后列表应该 0 条，实际 1 条
+       截图: /tmp/e2e-scene3-xxx.png
+       日志: [err] xxx
+    ✅ 场景 4: ...
+    ──────────────────────────
+    总计: 18 通过 / 2 失败
+    失败场景: 3, 12
+
+## 严格约束
+- 不动 index.html（只新增 tests/e2e/auto-hunt.js 和 specs/*.js）
+- 如果发现 index.html 有 bug → 先报告，不直接改，等用户确认
+- 用现有 runner.js 的接口，不要重写框架
+
+## 输出要求
+
+### 第一步（先输出报告，不动代码）
+- 场景清单（≥15 个，编号 + 一句话描述 + 关键断言）
+- 预计每个场景用到的辅助函数
+- 有疑问的地方（比如某个功能找不到入口）
+
+### 第二步（等用户确认后）
+- 依次写场景 + 跑验证 + 报告
+- 每写完 3 个场景，跑一次并汇报
+- 最后写 auto-hunt.js 主入口，跑全套
