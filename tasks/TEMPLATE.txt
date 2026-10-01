@@ -29,3 +29,21 @@
 验收标准：
 - <可验证的条件>
 - <如：真机打开 XX 页面，操作 XX，效果符合预期>
+
+
+## E2E 验证（强制）
+
+本容器已装 Playwright + Chromium，可模拟点击/长按/拖动/输入，
+能抓 console/error/DOM/IndexedDB。
+
+改代码前后的强制流程：
+1. 改前：写一个复现脚本 tests/e2e/specs/xxx.spec.js，
+   跑 node tests/e2e/specs/xxx.spec.js，贴输出（应 ❌ 显示 bug）
+2. 改后：再跑，贴输出（应 ✅ 通过）
+
+"无法真机验证"不是借口——JS 逻辑层必须 100% 通过 E2E。
+只能真机测的（振动/键盘/触摸/性能）在报告里单独列出。
+
+写不出复现脚本 = 没定位到根因，不许动代码。
+
+详细用法见 tests/e2e/README.md。
